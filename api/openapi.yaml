@@ -1,0 +1,172 @@
+openapi: 3.1.0
+info:
+  title: SERK Construction — Financial Kernel API
+  version: 0.1.0
+  description: |
+    Deterministic financial kernel of SERK Construction. Every command is
+    authorised server-side, committed in one PostgreSQL transaction, audited
+    and published to the transactional outbox. AI components never call this
+    API with write authority (LAW 02).
+servers:
+  - url: https://api.example.serk/
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: string, pattern: '^-?[0-9]{1,18}(\.[0-9]{1,6})?$', description: Plain decimal string in the currency's minor units; exponent notation or extra decimals are rejected, never rounded }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+    Line:
+      type: object
+      required: [account_id, side, amount]
+      properties:
+        account_id: { type: string, format: uuid }
+        side: { type: string, enum: [DEBIT, CREDIT] }
+        amount: { $ref: '#/components/schemas/Money', description: Functional-currency amount, positive }
+        txn_amount: { $ref: '#/components/schemas/Money', description: Original foreign-currency amount; requires fx_snapshot_id, and amount must equal round_half_even(txn_amount × snapshot rate) }
+        fx_snapshot_id: { type: string, format: uuid, description: Must be APPROVED and of the pair txn_currency/functional_currency (or its inverse) }
+        applied_rate: { type: string, readOnly: true, description: Functional units per one transaction unit, bound by the kernel }
+        project_id: { type: string, format: uuid }
+        cost_code_id: { type: string, format: uuid }
+        memo: { type: string, maxLength: 500 }
+    JournalCommand:
+      type: object
+      required: [legal_entity_id, functional_currency, business_event_at, description, source_type, idempotency_key, lines]
+      additionalProperties: false
+      properties:
+        legal_entity_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        functional_currency: { type: string, pattern: '^[A-Z]{3}$' }
+        business_event_at: { type: string, format: date-time, description: Accounting date of the event (UTC), not server time }
+        description: { type: string, maxLength: 2000 }
+        source_type: { type: string, example: MANUAL }
+        source_ref: { type: string }
+        idempotency_key: { type: string, maxLength: 128, description: Client-generated; replays return the original journal }
+        lines: { type: array, minItems: 2, maxItems: 10000, items: { $ref: '#/components/schemas/Line' } }
+    Journal:
+      allOf:
+        - $ref: '#/components/schemas/JournalCommand'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [DRAFT, APPROVED, POSTED, REVERSED, CANCELLED] }
+            created_by: { type: string }
+            approved_by: { type: string }
+            posted_by: { type: string }
+            reversal_of: { type: string, format: uuid }
+            reversed_by: { type: string, format: uuid }
+            version: { type: integer }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [unauthenticated, forbidden, not_found, validation, invalid_state, segregation_of_duties,
+                     idempotency_conflict, version_conflict, invariant_violation, fx_exception, rate_limited,
+                     malformed_json, unsupported_media_type, too_large, timeout, internal]
+            message: { type: string }
+paths:
+  /healthz:
+    get: { security: [], summary: Liveness, responses: { '200': { description: ok } } }
+  /readyz:
+    get: { security: [], summary: Readiness (database reachable), responses: { '200': { description: ready }, '503': { description: not ready } } }
+  /v1/journals:
+    post:
+      summary: Create a DRAFT journal (permission journal.create)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JournalCommand' } } } }
+      responses:
+        '201': { description: created, content: { application/json: { schema: { type: object, properties: { id: { type: string }, replayed: { type: boolean } } } } } }
+        '200': { description: idempotent replay of an identical command }
+        '409': { description: idempotency key reused with a different payload }
+        '422': { description: validation failure (unbalanced, bad currency, missing fx snapshot...) }
+  /v1/journals/{id}:
+    get:
+      summary: Read a journal (permission journal.read; 404 outside the caller's tenant)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: journal, content: { application/json: { schema: { $ref: '#/components/schemas/Journal' } } } }
+        '404': { description: not found }
+  /v1/journals/{id}/approve:
+    post:
+      summary: DRAFT → APPROVED (permission journal.approve; approver ≠ preparer)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: approved journal }, '409': { description: invalid_state or segregation_of_duties } }
+  /v1/journals/{id}/post:
+    post:
+      summary: APPROVED → POSTED (permission journal.post; strict mode requires poster ≠ approver ≠ preparer)
+      description: The database re-checks balance, open fiscal period and immutability at COMMIT.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: posted journal }, '409': { description: invalid_state, segregation_of_duties or invariant_violation } }
+  /v1/journals/{id}/reverse:
+    post:
+      summary: Create the DRAFT reversal of a POSTED journal (permission journal.reverse)
+      description: The reversal follows the normal approve/post path; posting it marks the original REVERSED atomically.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idempotency_key, reason, business_event_at]
+              additionalProperties: false
+              properties:
+                idempotency_key: { type: string }
+                reason: { type: string }
+                business_event_at: { type: string, format: date-time, description: Required so that identical retries hash identically }
+      responses: { '201': { description: reversal created }, '409': { description: original not posted or already reversed } }
+  /v1/fx/snapshots:
+    post:
+      summary: Record an FX observation (permission fx.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [source_id, source_type, base_currency, quote_currency, rate, rate_type, effective_from_utc, published_at_utc, source_document_hash]
+              properties:
+                source_id: { type: string, example: NBE }
+                source_type: { type: string, enum: [CENTRAL_BANK, COMMERCIAL_BANK, CONTRACT, PROVIDER] }
+                base_currency: { type: string }
+                quote_currency: { type: string }
+                rate: { type: string, description: Quote units per 1 base unit, exact decimal string }
+                rate_type: { type: string, enum: [OFFICIAL, COMMERCIAL, CONTRACTUAL, CLOSING, BUDGET] }
+                effective_from_utc: { type: string, format: date-time }
+                published_at_utc: { type: string, format: date-time }
+                source_document_hash: { type: string }
+                approve: { type: boolean, default: false }
+      responses: { '201': { description: snapshot recorded } }
+  /v1/fx/convert:
+    post:
+      summary: Convert under policy using only approved snapshots knowable at the cutoff (permission fx.read)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount, target_currency]
+              properties:
+                amount: { $ref: '#/components/schemas/Money' }
+                target_currency: { type: string }
+                business_event_at: { type: string, format: date-time }
+                knowledge_cutoff: { type: string, format: date-time, description: Defaults to business_event_at }
+                rate_type: { type: string }
+                source_priority: { type: array, items: { type: string } }
+                allow_inverse: { type: boolean }
+                max_staleness_hours: { type: integer }
+                rounding: { type: string, enum: [HALF_EVEN, HALF_UP, DOWN, UP] }
+      responses:
+        '200': { description: conversion bound to a snapshot id and algorithm version }
+        '422': { description: fx_exception — no approved rate (never a fabricated one) }
