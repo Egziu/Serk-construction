@@ -2,7 +2,7 @@
 # Re-runs the audit's raw-SQL attacks against the remediated schema, as a
 # tenant's own database role (the role a compromised application holds).
 set -u
-DB=serk_gate_a
+DB=${DB:-serk_gate_a}
 SU="psql -h /tmp -p 5433 -U postgres -d $DB -X -At"
 echo "### Gate A after-evidence — $(psql -h /tmp -p 5433 -U postgres -d $DB -Atc 'select version()' | cut -d, -f1), $(date -u +%FT%TZ)"
 echo "### schema migrations applied: $($SU -c "select string_agg(version::text, ',' order by version) from schema_migrations" 2>/dev/null || $SU -c "select 'n/a'")"
@@ -48,5 +48,12 @@ I=$($SU -c "select id from workflow_instances where tenant_id='$W' and status='A
 if [ -n "$I" ]; then
   as $W -c "insert into workflow_effects(tenant_id,instance_id,step_index,action,subject_type,subject_id,executed_by) select tenant_id,id,current_step,'journal.approve',subject_type,subject_id,'u-attacker' from workflow_instances where id='$I'"
 else echo "(no ACTIVE instance left in this tenant)"; fi
+
+echo "-- start an instance of the mandatory definition with a one-person route:"
+DEF=$($SU -c "select id from workflow_definitions where tenant_id='$W' and status='PUBLISHED' and mandatory and subject='journal'")
+as $W -c "insert into workflow_instances(tenant_id,definition_id,subject_type,subject_id,facts,route,initiated_by)
+          values ('$W','$DEF','journal','$J','{\"created_by\":\"x\"}','[{\"id\":\"a\",\"permission\":\"journal.approve\",\"approvals\":1,\"effect\":\"journal.approve\"}]','mallory')"
+echo "-- retire the mandatory definition directly:"
+as $W -c "update workflow_definitions set status='RETIRED' where id='$DEF'"
 
 for T in $A $W; do $SU -c "DROP ROLE IF EXISTS $(role $T)" >/dev/null; done
