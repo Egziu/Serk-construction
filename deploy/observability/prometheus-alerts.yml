@@ -1,0 +1,112 @@
+# SERK Construction — Prometheus alert rules (GATEA-11).
+#
+# Metric sources:
+#   serk_http_*, serk_auth_*, serk_revoked_*, serk_session_*, serk_db_authority_*,
+#   serk_internal_*      -> API process counters/histograms (internal/obs, httpapi)
+#   serk_outbox_*, serk_ledger_*, serk_audit_*, serk_workflow_*, serk_db_health_*
+#                        -> ops_health_metrics() via the serk_metrics login
+#                           (aggregates only, no tenant data; migration 0011)
+#
+# Rules marked "drill: evaluated" are exercised by
+# internal/httpapi/metrics_drill_test.go against real induced failures on
+# PostgreSQL 16 (evidence: docs/operations/evidence/alert-drill-*.txt).
+# Rules marked "drill: not evaluated" use PromQL functions (ratios, quantiles)
+# that need a real Prometheus; they are NOT TESTED until a staging Prometheus
+# exists (GATEA-08 BLOCKED).
+#
+# Thresholds are PROPOSED engineering defaults, to be confirmed with operations.
+groups:
+  - name: serk-integrity
+    rules:
+      - alert: SerkLedgerIntegrityViolation        # drill: evaluated
+        expr: serk_ledger_integrity_violations > 0
+        for: 0m
+        labels: {severity: critical, page: "true"}
+        annotations:
+          summary: "ledger_integrity_scan() returned rows: posted ledger may have been altered out of band"
+          runbook: docs/operations/INCIDENT_RESPONSE.md#ledger-integrity
+      - alert: SerkAuditChainMismatch              # drill: evaluated
+        expr: serk_audit_head_mismatches > 0
+        for: 0m
+        labels: {severity: critical, page: "true"}
+        annotations:
+          summary: "audit head disagrees with the audit log (truncation or rewrite)"
+          runbook: docs/operations/INCIDENT_RESPONSE.md#audit-chain
+      - alert: SerkDBHealthScrapeFailing           # drill: evaluated
+        expr: serk_db_health_up == 0
+        for: 2m
+        labels: {severity: critical, page: "true"}
+        annotations:
+          summary: "database health cannot be read: integrity signals are blind"
+
+  - name: serk-delivery
+    rules:
+      - alert: SerkOutboxLagHigh                   # drill: evaluated
+        expr: serk_outbox_oldest_pending_age_seconds > 300
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "outbox relay lagging more than 5 minutes"
+          runbook: docs/operations/INCIDENT_RESPONSE.md#outbox-lag
+      - alert: SerkOutboxLagCritical               # drill: evaluated
+        expr: serk_outbox_oldest_pending_age_seconds > 1800
+        for: 5m
+        labels: {severity: critical, page: "true"}
+        annotations:
+          summary: "outbox relay lagging more than 30 minutes"
+      - alert: SerkOutboxDeadLetters               # drill: evaluated
+        expr: serk_outbox_dead_letters > 0
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: "events exhausted delivery retries; replay after fixing the consumer"
+      - alert: SerkWorkflowEffectFailures          # drill: evaluated (non-firing only; positive case NOT drilled)
+        expr: serk_workflow_effect_failures > 0
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "workflow effects failing on active instances (console shows the cause)"
+
+  - name: serk-security
+    rules:
+      - alert: SerkApprovalRefusedAtDatabase       # drill: evaluated
+        expr: increase(serk_db_authority_refusals_total[10m]) > 0
+        for: 0m
+        labels: {severity: warning, team: security}
+        annotations:
+          summary: "the database refused an authority change the API attempted (should never happen; investigate as possible tampering)"
+      - alert: SerkAuthFailureSpike                # drill: evaluated
+        expr: increase(serk_auth_failures_total[5m]) > 20
+        for: 0m
+        labels: {severity: warning, team: security}
+        annotations:
+          summary: "credential failures above baseline (stuffing / misconfigured client)"
+      - alert: SerkRevokedSessionUsed              # drill: evaluated
+        expr: increase(serk_revoked_session_uses_total[10m]) > 0
+        for: 0m
+        labels: {severity: info, team: security}
+        annotations:
+          summary: "a revoked session was presented (terminated user or stolen token)"
+      - alert: SerkSessionCheckUnavailable         # drill: evaluated (non-firing only; DB-outage case NOT drilled)
+        expr: increase(serk_session_check_errors_total[5m]) > 0
+        for: 0m
+        labels: {severity: critical, page: "true"}
+        annotations:
+          summary: "session revocation checks failing: requests are refused (fail closed)"
+
+  - name: serk-slo
+    rules:
+      - alert: SerkAvailabilitySLOBurn             # drill: not evaluated
+        expr: |
+          (sum(rate(serk_http_requests_total{code=~"5.."}[1h])) / sum(rate(serk_http_requests_total[1h]))) > (14.4 * 0.005)
+        for: 5m
+        labels: {severity: critical, page: "true"}
+        annotations:
+          summary: "fast burn of the proposed 99.5% availability error budget"
+      - alert: SerkLatencySLO                      # drill: not evaluated
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(serk_http_request_duration_seconds_bucket[10m]))) > 1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "p95 API latency above the proposed 1 s objective"

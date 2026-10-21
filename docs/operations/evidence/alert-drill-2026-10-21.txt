@@ -1,0 +1,15 @@
+### GATEA-11 alert drill, 2026-10-21T20:51:27Z, base commit 32a220e + observability working tree
+### go version go1.24.7 linux/amd64; PostgreSQL 16.15; dedicated fresh database per drill
+### command: go test -count=1 ./internal/httpapi ./internal/obs -run 'AlertDrill|RequestTelemetry|Exposition|Traceparent|DBHealth' -v
+    metrics_drill_test.go:243: metrics after inducing failures: ledger_violations=1 audit_mismatches=1 outbox_lag_s=3600 dead_letters=1 authority_refusals=1 auth_failures=25 revoked_uses=1
+    metrics_drill_test.go:246: alerts firing: [SerkApprovalRefusedAtDatabase SerkAuditChainMismatch SerkAuthFailureSpike SerkLedgerIntegrityViolation SerkOutboxDeadLetters SerkOutboxLagCritical SerkOutboxLagHigh SerkRevokedSessionUsed]
+    metrics_drill_test.go:258: monitor pool closed: serk_db_health_up=0 -> SerkDBHealthScrapeFailing fires
+--- PASS: TestAlertDrill_InducedFailuresFireTheRightAlerts (0.50s)
+--- PASS: TestRequestTelemetryAndTraceContext (0.20s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/httpapi	0.700s
+--- PASS: TestExpositionFormat (0.00s)
+--- PASS: TestTraceparent (0.00s)
+--- PASS: TestDBHealthWithoutPoolReportsDown (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/obs	0.005s

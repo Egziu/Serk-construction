@@ -46,7 +46,7 @@ func TestPrivileges_CatalogInvariants(t *testing.T) {
 			  AND NOT COALESCE(array_to_string(p.proconfig, ',') LIKE 'search_path=pg_catalog, public%', false)`,
 		"table writable by PUBLIC or deletable by an app role": `
 			SELECT c.relname || ':' || r FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
-			  unnest(ARRAY['serk_app','serk_publisher','serk_scheduler','serk_health']) r
+			  unnest(ARRAY['serk_app','serk_publisher','serk_scheduler','serk_health','serk_monitor']) r
 			WHERE n.nspname = 'public' AND c.relkind = 'r'
 			  AND (has_table_privilege(r, c.oid, 'DELETE') OR has_table_privilege(r, c.oid, 'TRUNCATE')
 			       OR has_table_privilege(r, c.oid, 'TRIGGER') OR has_table_privilege(r, c.oid, 'REFERENCES'))`,
@@ -61,15 +61,21 @@ func TestPrivileges_CatalogInvariants(t *testing.T) {
 			   OR has_function_privilege(r, 'approval_key_install(uuid,text,bytea)', 'EXECUTE')
 			   OR has_table_privilege(r, 'approval_attestations', 'INSERT')
 			   OR has_table_privilege(r, 'approval_attestations', 'UPDATE')`,
+		"monitoring role can read any table (it must see aggregates only)": `
+			SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'public' AND c.relkind = 'r' AND has_table_privilege('serk_monitor', c.oid, 'SELECT')`,
+		"approval evidence writable or consumable by a runtime role": `
+			SELECT r FROM unnest(ARRAY['serk_app','serk_publisher','serk_scheduler','serk_health','serk_monitor']) r
+			WHERE has_table_privilege(r, 'approval_consumptions', 'INSERT') OR has_table_privilege(r, 'fiscal_period_closes', 'INSERT')`,
 		"approval authority held by a non-tenant role": `
-			SELECT r FROM unnest(ARRAY['serk_publisher','serk_scheduler','serk_health']) r
+			SELECT r FROM unnest(ARRAY['serk_publisher','serk_scheduler','serk_health','serk_monitor']) r
 			WHERE has_function_privilege(r, 'approval_authorize(jsonb)', 'EXECUTE')
 			   OR has_function_privilege(r, 'workflow_decide_definition(uuid,text,text,text)', 'EXECUTE')
 			   OR has_table_privilege(r, 'journals', 'UPDATE')
 			   OR has_table_privilege(r, 'journals', 'INSERT')`,
 		"runtime role with cluster-level power": `
 			SELECT rolname FROM pg_roles
-			WHERE (rolname IN ('serk_app','serk_publisher','serk_scheduler','serk_health','serk_relay') OR rolname LIKE 'serk\_t\_%')
+			WHERE (rolname IN ('serk_app','serk_publisher','serk_scheduler','serk_health','serk_relay','serk_monitor') OR rolname LIKE 'serk\_t\_%')
 			  AND (rolsuper OR rolcreaterole OR rolcreatedb OR rolbypassrls OR rolreplication)`,
 	} {
 		if bad := catalogRows(t, f, q); len(bad) > 0 {
@@ -104,7 +110,7 @@ func TestPrivileges_NewFunctionsAreClosedByDefault(t *testing.T) {
 // refused the helpers and the approval boundary.
 func TestPrivileges_NonTenantRolesAreRefused(t *testing.T) {
 	f := newFixture(t)
-	for _, group := range []string{"serk_health", "serk_publisher", "serk_scheduler"} {
+	for _, group := range []string{"serk_health", "serk_publisher", "serk_scheduler", "serk_monitor"} {
 		dsn := f.db.LoginRole(t, group)
 		conn, err := pgx.Connect(f.ctx, dsn)
 		if err != nil {
@@ -153,6 +159,30 @@ func TestPrivileges_TenantLoginCannotRewriteHistory(t *testing.T) {
 		// Refused by privilege, not by a typo in the attack statement.
 		if err != nil && !strings.Contains(err.Error(), "permission denied") && !strings.Contains(err.Error(), "must be owner") {
 			t.Errorf("%s: refused for the wrong reason: %v", name, err)
+		}
+	}
+}
+
+// The monitoring login sees health aggregates and nothing else.
+func TestPrivileges_MonitorSeesAggregatesOnly(t *testing.T) {
+	f := newFixture(t)
+	conn, err := pgx.Connect(f.ctx, f.db.LoginRole(t, "serk_monitor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(context.Background())
+	var n int
+	if err := conn.QueryRow(f.ctx, `SELECT count(*) FROM ops_health_metrics()`).Scan(&n); err != nil || n < 10 {
+		t.Fatalf("monitor cannot read health metrics: n=%d err=%v", n, err)
+	}
+	var tenants float64
+	if err := conn.QueryRow(f.ctx, `SELECT value FROM ops_health_metrics() WHERE metric = 'tenants'`).Scan(&tenants); err != nil || tenants < 2 {
+		t.Fatalf("aggregate tenants=%v err=%v", tenants, err)
+	}
+	for _, stmt := range []string{`SELECT count(*) FROM journals`, `SELECT count(*) FROM outbox`, `SELECT count(*) FROM tenants`,
+		`SELECT * FROM ledger_integrity_scan()`, `SELECT audit_log_verify(gen_random_uuid())`} {
+		if _, err := conn.Exec(f.ctx, stmt); err == nil || !strings.Contains(err.Error(), "permission denied") {
+			t.Errorf("monitor could run %q (err=%v)", stmt, err)
 		}
 	}
 }

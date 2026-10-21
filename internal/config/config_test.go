@@ -155,3 +155,34 @@ func TestProductionManifestHasNoDemoDefaults(t *testing.T) {
 		t.Error("Dockerfile does not drop to a non-root user")
 	}
 }
+
+// GATEA-11: metrics are on a separate listener; a monitor DSN without a
+// listener, or a plaintext monitor DSN in production, is refused.
+func TestObservabilityConfig(t *testing.T) {
+	env := prodEnv()
+	env["SERK_METRICS_LISTEN"] = "10.0.0.5:9464"
+	env["SERK_MONITOR_DSN"] = "postgres://serk_metrics:" + goodSecret2 + "@db.internal:5432/serk?sslmode=verify-full"
+	c, err := Load(src(env, nil))
+	if err != nil {
+		t.Fatalf("hardened observability config refused: %v", err)
+	}
+	if c.MetricsListen != "10.0.0.5:9464" || c.MonitorDSN == "" {
+		t.Fatalf("%+v", c)
+	}
+	for name, mutate := range map[string]func(map[string]string){
+		"metrics on the public listener": func(e map[string]string) { e["SERK_METRICS_LISTEN"] = ":8080" },
+		"monitor DSN without a listener": func(e map[string]string) { delete(e, "SERK_METRICS_LISTEN") },
+		"plaintext monitor DSN": func(e map[string]string) {
+			e["SERK_MONITOR_DSN"] = "postgres://serk_metrics:x@db:5432/serk?sslmode=disable"
+		},
+	} {
+		e := map[string]string{}
+		for k, v := range env {
+			e[k] = v
+		}
+		mutate(e)
+		if _, err := Load(src(e, nil)); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s accepted: %v", name, err)
+		}
+	}
+}

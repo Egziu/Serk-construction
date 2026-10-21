@@ -55,6 +55,12 @@ type Config struct {
 	// set: a login that is a member of serk_scheduler only.
 	SchedulerDSN          string
 	WorkflowTimerInterval int // seconds
+
+	// Observability (GATEA-11). MetricsListen serves /metrics on a separate,
+	// internal-only listener ("" = disabled). MonitorDSN is a login that is a
+	// member of serk_monitor only (EXECUTE ops_health_metrics()).
+	MetricsListen string
+	MonitorDSN    string
 }
 
 // ErrInvalid wraps every validation failure.
@@ -139,6 +145,12 @@ func Load(src Source) (Config, error) {
 		return Config{}, err
 	}
 	c.SchedulerDSN = string(sched)
+	c.MetricsListen = src.str("SERK_METRICS_LISTEN", "")
+	mon, err := src.secret("SERK_MONITOR_DSN")
+	if err != nil {
+		return Config{}, err
+	}
+	c.MonitorDSN = string(mon)
 	if c.WorkflowTimerInterval, err = src.num("SERK_WORKFLOW_TIMER_INTERVAL_SECONDS", 30); err != nil {
 		return Config{}, err
 	}
@@ -213,6 +225,15 @@ func (c Config) Validate() error {
 	}
 	if c.SchedulerDSN != "" && prod {
 		checkDSN(c.SchedulerDSN, "SERK_SCHEDULER_DSN", bad)
+	}
+	if c.MetricsListen != "" && c.MetricsListen == c.Listen {
+		bad("SERK_METRICS_LISTEN must be a separate, internal-only listener (not SERK_LISTEN)")
+	}
+	if c.MonitorDSN != "" && c.MetricsListen == "" {
+		bad("SERK_MONITOR_DSN is set but SERK_METRICS_LISTEN is not: database health would never be exposed")
+	}
+	if c.MonitorDSN != "" && prod {
+		checkDSN(c.MonitorDSN, "SERK_MONITOR_DSN", bad)
 	}
 	for tenant, dsn := range c.DedicatedDSNs {
 		if prod {

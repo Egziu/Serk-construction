@@ -30,3 +30,13 @@ END$$;
 -- The 0.1.0 shared application login is retired (SC-04): it no longer sees
 -- any rows, and should be removed from existing clusters:
 --   DROP ROLE IF EXISTS serk_api;
+-- Metrics login (GATEA-11): EXECUTE ops_health_metrics() only (migration 0011).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_monitor') THEN
+    CREATE ROLE serk_monitor NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_metrics') THEN
+    CREATE ROLE serk_metrics LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT IN ROLE serk_monitor;
+  END IF;
+END$$;

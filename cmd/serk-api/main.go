@@ -21,6 +21,7 @@ import (
 	"github.com/serk-group/serk-construction/internal/config"
 	"github.com/serk-group/serk-construction/internal/httpapi"
 	"github.com/serk-group/serk-construction/internal/kernel"
+	"github.com/serk-group/serk-construction/internal/obs"
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/attest"
 	"github.com/serk-group/serk-construction/pkg/auth"
@@ -68,7 +69,26 @@ func main() {
 	}
 
 	svc := kernel.New(router, auth.NewAuthorizer(nil, cfg.SoDStrict)).UseApprovalSigner(attest.Signer{Master: cfg.ApprovalSecret})
-	h := httpapi.New(httpapi.Config{Verifier: verifier, Kernel: svc, Store: router, Logger: log, RatePerMinute: cfg.RatePerMinute,
+	metrics := obs.NewRegistry()
+	if cfg.MonitorDSN != "" {
+		mon, err := pgxpool.New(ctx, cfg.MonitorDSN)
+		if err != nil {
+			log.Error("monitor database", "err", err)
+			os.Exit(1)
+		}
+		defer mon.Close()
+		metrics.Collect(obs.DBHealth{Pool: mon}.Collector())
+	}
+	if cfg.MetricsListen != "" {
+		go func() {
+			if err := httpapi.Listen(ctx, cfg.MetricsListen, metrics.Handler(), log); err != nil {
+				log.Error("metrics listener", "err", err)
+			}
+		}()
+	} else {
+		log.Warn("metrics disabled (SERK_METRICS_LISTEN not set): no SLO or alert signals will be available")
+	}
+	h := httpapi.New(httpapi.Config{Verifier: verifier, Kernel: svc, Store: router, Logger: log, RatePerMinute: cfg.RatePerMinute, Metrics: metrics,
 		Abuse: httpapi.AbuseConfig{PreAuthPerMinute: cfg.PreAuthPerMinute, AuthFailuresPerMinute: cfg.AuthFailuresPerMin, TrustedProxies: cfg.TrustedProxies}})
 	if cfg.SchedulerDSN != "" {
 		sched, err := pgxpool.New(ctx, cfg.SchedulerDSN)

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/serk-group/serk-construction/internal/kernel"
+	"github.com/serk-group/serk-construction/internal/obs"
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/auth"
 	"github.com/serk-group/serk-construction/pkg/fx"
@@ -37,6 +39,33 @@ type Config struct {
 	Logger        *slog.Logger
 	RatePerMinute int // per-principal command budget; 0 = default 300
 	Abuse         AbuseConfig
+	// Metrics receives the API's counters and histograms; nil creates a
+	// private registry (expose it with Server.Metrics().Handler()).
+	Metrics *obs.Registry
+}
+
+// serverMetrics are the API's own instruments (GATEA-11).
+type serverMetrics struct {
+	requests   *obs.CounterVec
+	latency    *obs.HistogramVec
+	authFail   *obs.CounterVec
+	revoked    *obs.CounterVec
+	sessionErr *obs.CounterVec
+	refusals   *obs.CounterVec
+	internal   *obs.CounterVec
+}
+
+func newServerMetrics(r *obs.Registry) serverMetrics {
+	return serverMetrics{
+		requests:   r.Counter("serk_http_requests_total", "HTTP requests by route pattern, method and status code.", "route", "method", "code"),
+		latency:    r.Histogram("serk_http_request_duration_seconds", "HTTP request latency by route pattern.", obs.DefaultLatencyBuckets, "route"),
+		authFail:   r.Counter("serk_auth_failures_total", "Rejected credentials before authentication succeeded, by reason.", "reason"),
+		revoked:    r.Counter("serk_revoked_session_uses_total", "Requests presenting a revoked session."),
+		sessionErr: r.Counter("serk_session_check_errors_total", "Session revocation checks that failed (requests refused with 503)."),
+		refusals: r.Counter("serk_db_authority_refusals_total",
+			"Changes the database refused for lack of verified approval evidence or privilege, by kind.", "kind"),
+		internal: r.Counter("serk_internal_errors_total", "Requests that ended in an unclassified internal error."),
+	}
 }
 
 // Server is the HTTP handler.
@@ -47,7 +76,11 @@ type Server struct {
 	preauth   *windowLimiter // per client IP, before any token work
 	authFail  *windowLimiter // invalid credentials per client IP, with lockout
 	inflight  chan struct{}
+	m         serverMetrics
 }
+
+// Metrics returns the registry holding the API's instruments.
+func (s *Server) Metrics() *obs.Registry { return s.cfg.Metrics }
 
 // New builds the handler tree.
 func New(cfg Config) *Server {
@@ -58,7 +91,10 @@ func New(cfg Config) *Server {
 		cfg.RatePerMinute = 300
 	}
 	cfg.Abuse.defaults()
-	s := &Server{cfg: cfg, mux: http.NewServeMux(),
+	if cfg.Metrics == nil {
+		cfg.Metrics = obs.NewRegistry()
+	}
+	s := &Server{cfg: cfg, mux: http.NewServeMux(), m: newServerMetrics(cfg.Metrics),
 		principal: newWindowLimiter(cfg.RatePerMinute, time.Minute, 0),
 		preauth:   newWindowLimiter(cfg.Abuse.PreAuthPerMinute, time.Minute, 0),
 		authFail:  newWindowLimiter(cfg.Abuse.AuthFailuresPerMinute, time.Minute, cfg.Abuse.AuthFailureBlock),
@@ -114,14 +150,41 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+	// W3C Trace Context: continue the caller's trace or start one; the
+	// trace id is on every log line and echoed so a proxy or OpenTelemetry
+	// collector can correlate.
+	traceID, _, ok := obs.ParseTraceparent(r.Header.Get("traceparent"))
+	if !ok {
+		traceID = obs.NewTraceID()
+	}
+	h.Set("traceparent", obs.Traceparent(traceID, obs.NewSpanID()))
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-	ctx, cancel := context.WithTimeout(kernel.WithRequestID(r.Context(), rid), requestTimeout)
+	holder := &principalHolder{}
+	ctx, cancel := context.WithTimeout(kernel.WithRequestID(context.WithValue(r.Context(), holderKey, holder), rid), requestTimeout)
 	defer cancel()
 	start := time.Now()
 	rec := &statusRecorder{ResponseWriter: w, status: 200}
-	s.mux.ServeHTTP(rec, r.WithContext(ctx))
-	s.cfg.Logger.Info("http", "rid", rid, "method", r.Method, "path", r.URL.Path, "status", rec.status, "ms", time.Since(start).Milliseconds())
+	req := r.WithContext(ctx)
+	s.mux.ServeHTTP(rec, req)
+	route := req.Pattern // set by ServeMux on match; bounded cardinality
+	if route == "" {
+		route = "unmatched"
+	}
+	elapsed := time.Since(start)
+	s.m.requests.Inc(route, r.Method, strconv.Itoa(rec.status))
+	s.m.latency.Observe(elapsed.Seconds(), route)
+	attrs := []any{"rid", rid, "trace_id", traceID, "method", r.Method, "route", route, "status", rec.status, "ms", elapsed.Milliseconds()}
+	if holder.p != nil {
+		attrs = append(attrs, "tenant", holder.p.TenantID, "sub", holder.p.UserID)
+	}
+	s.cfg.Logger.Info("http", attrs...)
 }
+
+// principalHolder lets the outer middleware log who acted without parsing
+// the token twice.
+type principalHolder struct{ p *auth.Principal }
+
+const holderKey ctxKey = 2
 
 type statusRecorder struct {
 	http.ResponseWriter
@@ -183,11 +246,13 @@ func (s *Server) authed(next func(http.ResponseWriter, *http.Request)) http.Hand
 		if s.cfg.Kernel != nil {
 			if err := s.cfg.Kernel.CheckSession(r.Context(), p); err != nil {
 				if errors.Is(err, kernel.ErrSessionRevoked) {
+					s.m.revoked.Inc()
 					s.cfg.Logger.Warn("security", "event", "revoked_session_used", "tenant", p.TenantID, "sub", p.UserID)
 					w.Header().Set("WWW-Authenticate", `Bearer realm="serk", error="invalid_token", error_description="session revoked"`)
 					writeErr(w, http.StatusUnauthorized, "session_revoked", "session revoked; authenticate again")
 					return
 				}
+				s.m.sessionErr.Inc()
 				s.cfg.Logger.Error("security", "event", "session_check_failed", "err", err)
 				w.Header().Set("Retry-After", "5")
 				writeErr(w, http.StatusServiceUnavailable, "unavailable", "session verification unavailable")
@@ -198,6 +263,10 @@ func (s *Server) authed(next func(http.ResponseWriter, *http.Request)) http.Hand
 			w.Header().Set("Retry-After", "60")
 			writeErr(w, http.StatusTooManyRequests, "rate_limited", "command budget exceeded")
 			return
+		}
+		if hd, ok := r.Context().Value(holderKey).(*principalHolder); ok {
+			pp := p
+			hd.p = &pp
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), principalKey, p)))
 	})
@@ -455,12 +524,18 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		errors.Is(err, fx.ErrSameCurrency), isValidation(err):
 		writeErr(w, http.StatusUnprocessableEntity, "validation", err.Error())
 	case errors.Is(err, postgres.ErrInvariant):
+		if msg := err.Error(); strings.Contains(msg, "attestation") || strings.Contains(msg, "approval record") {
+			s.m.refusals.Inc("attestation")
+		} else if strings.Contains(msg, "privilege:") {
+			s.m.refusals.Inc("privilege")
+		}
 		// Database-level refusal (balance, period, immutability). Only the
 		// trigger's reason survives; identifiers are stripped from the message.
 		writeErr(w, http.StatusConflict, "invariant_violation", "the database refused the change: "+trimPG(err))
 	case errors.Is(err, context.DeadlineExceeded):
 		writeErr(w, http.StatusGatewayTimeout, "timeout", "request timed out")
 	default:
+		s.m.internal.Inc()
 		s.cfg.Logger.Error("internal", "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal", "internal error")
 	}
@@ -488,6 +563,7 @@ func trimPG(err error) string {
 // authFailure counts an invalid credential and logs a security event without
 // any token material.
 func (s *Server) authFailure(ip, reason string) {
+	s.m.authFail.Inc(reason)
 	s.authFail.hit(ip)
 	if s.authFail.blocked(ip) {
 		s.cfg.Logger.Warn("security", "event", "auth_lockout", "ip", ip, "reason", reason)
