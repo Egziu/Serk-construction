@@ -78,6 +78,28 @@ func TestPrivileges_CatalogInvariants(t *testing.T) {
 	}
 }
 
+// R-10: functions created by the migrator in the future must be closed by
+// default (0008's per-schema form was a no-op; 0009 sets the global default).
+func TestPrivileges_NewFunctionsAreClosedByDefault(t *testing.T) {
+	f := newFixture(t)
+	tx, err := f.admin.Begin(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(f.ctx) }()
+	if _, err := tx.Exec(f.ctx, `CREATE FUNCTION public.zz_default_acl_probe() RETURNS int LANGUAGE sql AS 'SELECT 1'`); err != nil {
+		t.Fatal(err)
+	}
+	var open bool
+	if err := tx.QueryRow(f.ctx, `SELECT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x
+		WHERE p.proname = 'zz_default_acl_probe' AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')`).Scan(&open); err != nil {
+		t.Fatal(err)
+	}
+	if open {
+		t.Error("a newly created function is EXECUTE-able by PUBLIC: default privileges are not closed")
+	}
+}
+
 // Real attempts, not just catalog reads: each non-tenant runtime principal is
 // refused the helpers and the approval boundary.
 func TestPrivileges_NonTenantRolesAreRefused(t *testing.T) {

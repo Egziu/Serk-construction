@@ -47,6 +47,11 @@ func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p auth.Principal, ac
 	if s.signer == nil {
 		return fmt.Errorf("%w: no signer configured", ErrApprovalSigning)
 	}
+	// A revoked session signs nothing, even if the request passed the API
+	// middleware before the revocation committed.
+	if err := checkSessionTx(ctx, tx, p); err != nil {
+		return err
+	}
 	hash, err := postgres.SubjectHash(ctx, tx, subjectType, subjectID)
 	if err != nil {
 		return err

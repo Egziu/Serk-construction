@@ -53,6 +53,10 @@ const (
 	// PermApprovalHighValue is the executive sign-off used by workflow
 	// threshold steps (e.g. journals at or above a materiality limit).
 	PermApprovalHighValue Permission = "approval.high_value"
+
+	// PermIdentityRevoke revokes other people's sessions (termination, role
+	// removal, suspected compromise). Everyone may revoke their own.
+	PermIdentityRevoke Permission = "identity.revoke_sessions"
 )
 
 // Role is a named permission bundle. Roles are tenant-scoped data in
@@ -77,8 +81,10 @@ var DefaultRoles = map[string]Role{
 	"auditor":            {Name: "auditor", Permissions: []Permission{PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead}},
 	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead}},
 	"project_accountant": {Name: "project_accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermWorkflowRead}},
-	"process_owner":      {Name: "process_owner", Permissions: []Permission{PermWorkflowDefine, PermWorkflowRead}},
-	"workflow_admin":     {Name: "workflow_admin", Permissions: []Permission{PermWorkflowAdmin, PermWorkflowRead, PermScopeTenantWide}},
+	// Identity administration holds no financial permission at all.
+	"security_admin": {Name: "security_admin", Permissions: []Permission{PermIdentityRevoke, PermAuditRead}},
+	"process_owner":  {Name: "process_owner", Permissions: []Permission{PermWorkflowDefine, PermWorkflowRead}},
+	"workflow_admin": {Name: "workflow_admin", Permissions: []Permission{PermWorkflowAdmin, PermWorkflowRead, PermScopeTenantWide}},
 }
 
 // Principal is the authenticated caller bound to exactly one tenant.
@@ -94,6 +100,11 @@ type Principal struct {
 	MFA bool
 	// AuthTime is when the user last actively authenticated (OIDC "auth_time").
 	AuthTime time.Time
+	// SessionID is the token identifier (JWT "jti"); IssuedAt is the token's
+	// "iat". Both are checked against the shared revocation list on every
+	// request and inside every approval transaction.
+	SessionID string
+	IssuedAt  time.Time
 }
 
 // Errors.

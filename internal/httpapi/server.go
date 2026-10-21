@@ -95,6 +95,8 @@ func New(cfg Config) *Server {
 	s.mux.Handle("POST /v1/workflow/instances/{id}/cancel", s.authed(s.cancelWorkflow))
 	s.mux.Handle("GET /v1/workflow/tasks", s.authed(s.workflowTasks))
 	s.mux.Handle("GET /v1/workflow/metrics", s.authed(s.workflowMetrics))
+	s.mux.Handle("POST /v1/identity/sessions/revoke", s.authed(s.revokeSessions))
+	s.mux.Handle("POST /v1/identity/logout", s.authed(s.logout))
 	return s
 }
 
@@ -175,6 +177,22 @@ func (s *Server) authed(next func(http.ResponseWriter, *http.Request)) http.Hand
 			w.Header().Set("WWW-Authenticate", `Bearer realm="serk", error="invalid_token"`)
 			writeErr(w, http.StatusUnauthorized, "unauthenticated", "invalid token")
 			return
+		}
+		// GATEA-07: shared revocation list, consulted on every request so a
+		// revocation is effective on all replicas at once. Fail closed.
+		if s.cfg.Kernel != nil {
+			if err := s.cfg.Kernel.CheckSession(r.Context(), p); err != nil {
+				if errors.Is(err, kernel.ErrSessionRevoked) {
+					s.cfg.Logger.Warn("security", "event", "revoked_session_used", "tenant", p.TenantID, "sub", p.UserID)
+					w.Header().Set("WWW-Authenticate", `Bearer realm="serk", error="invalid_token", error_description="session revoked"`)
+					writeErr(w, http.StatusUnauthorized, "session_revoked", "session revoked; authenticate again")
+					return
+				}
+				s.cfg.Logger.Error("security", "event", "session_check_failed", "err", err)
+				w.Header().Set("Retry-After", "5")
+				writeErr(w, http.StatusServiceUnavailable, "unavailable", "session verification unavailable")
+				return
+			}
 		}
 		if !s.principal.hit(p.TenantID + "/" + p.UserID) {
 			w.Header().Set("Retry-After", "60")
@@ -403,6 +421,10 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		// RFC 9470 step-up authentication challenge.
 		w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_user_authentication", error_description="recent multi-factor authentication required", max_age=600`)
 		writeErr(w, http.StatusUnauthorized, "step_up_required", "recent multi-factor authentication required")
+	case errors.Is(err, kernel.ErrSessionRevoked):
+		writeErr(w, http.StatusUnauthorized, "session_revoked", "session revoked; authenticate again")
+	case errors.Is(err, kernel.ErrInvalidInput):
+		writeErr(w, http.StatusUnprocessableEntity, "validation", err.Error())
 	case errors.Is(err, auth.ErrUnauthenticated):
 		writeErr(w, http.StatusUnauthorized, "unauthenticated", "authentication required")
 	case errors.Is(err, kernel.ErrWorkflowRequired):
@@ -496,4 +518,31 @@ func Listen(ctx context.Context, addr string, h http.Handler, log *slog.Logger) 
 
 func parseDecimal(s string) (decimal.Decimal, error) {
 	return decimal.NewFromString(strings.TrimSpace(s))
+}
+
+// revokeSessions kills every token of a subject issued up to now (termination,
+// role removal, suspected compromise, or "log out everywhere" for oneself).
+func (s *Server) revokeSessions(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Subject string `json:"subject"`
+		Reason  string `json:"reason"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	cutoff, err := s.cfg.Kernel.RevokeSessions(r.Context(), principalFrom(r.Context()), body.Subject, body.Reason)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"subject": body.Subject, "revoked_before": cutoff.UTC().Format(time.RFC3339Nano)})
+}
+
+// logout revokes exactly the presented token (its jti).
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if err := s.cfg.Kernel.Logout(r.Context(), principalFrom(r.Context())); err != nil {
+		s.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

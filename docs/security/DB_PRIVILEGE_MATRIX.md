@@ -49,7 +49,11 @@ and `audit_log_chain`/`audit_log_verify` with `search_path=public` (no
 `pg_catalog` first). Not an escalation (invoker functions run with the caller's
 rights), but a least-privilege violation. 0008 revokes PUBLIC on all, grants
 `serk_app` what its statements and guard triggers call, pins both search paths,
-and sets `ALTER DEFAULT PRIVILEGES … REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`.
+and attempted to close future functions with `ALTER DEFAULT PRIVILEGES IN SCHEMA public …`.
+**That last statement was a no-op** (R-10: per-schema default privileges can only
+add to the global defaults). It was caught by the catalog invariant when 0009
+created a trigger function; 0009 applies the global form, and
+`TestPrivileges_NewFunctionsAreClosedByDefault` now proves it (its mutant fails).
 
 ## 4. Generated matrix (verbatim)
 

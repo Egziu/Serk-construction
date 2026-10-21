@@ -68,6 +68,10 @@ func (c Claims) principal() auth.Principal {
 	if c.AuthTime > 0 {
 		p.AuthTime = time.Unix(c.AuthTime, 0)
 	}
+	p.SessionID = c.TokenID
+	if c.IssuedAt > 0 {
+		p.IssuedAt = time.Unix(c.IssuedAt, 0)
+	}
 	return p
 }
 

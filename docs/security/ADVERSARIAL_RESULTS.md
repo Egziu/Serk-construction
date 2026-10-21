@@ -68,6 +68,7 @@ Each mutant was applied to the migration, the suite was run, and the original wa
 | M4: MFA freshness ignored (`mfa_fresh := mfa`) | TestAttestation_MFAFreshnessIsVerifiedInSQL |
 | M5: decision `ctx` check removed | initially **survived**; TestAttestation_DecisionBoundToStepAndOutcome was added and now kills it |
 | M6: 0008 REVOKE loop removed | TestPrivileges_CatalogInvariants and TestPrivileges_NonTenantRolesAreRefused |
+| M7: 0009 global default-privilege revoke removed | TestPrivileges_NewFunctionsAreClosedByDefault |
 
 ## 5. Not tested / limits (honest)
 
