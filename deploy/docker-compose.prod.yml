@@ -1,0 +1,80 @@
+# PRODUCTION profile (SC-06). Secrets come from files mounted by the
+# orchestrator (docker secrets here; Kubernetes secrets or a vault agent
+# elsewhere), never from this file. The database has no published port and
+# sits on an internal network; only the TLS proxy is reachable.
+#
+# Before first start create (outside version control):
+#   secrets/postgres_admin_dsn   postgres://<owner>:<pw>@db:5432/serk?sslmode=verify-full (migrations/provisioning only)
+#   secrets/tenant_db_secret     `openssl rand -hex 32`
+#   secrets/health_dsn           postgres://serk_health:<pw>@db:5432/serk?sslmode=verify-full
+#   secrets/postgres_password    superuser password for the database container
+# and set SERK_OIDC_* to your identity provider.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_DB: serk
+    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/run/secrets/db_tls_cert", "-c", "ssl_key_file=/run/secrets/db_tls_key",
+              "-c", "password_encryption=scram-sha-256", "-c", "log_connections=on"]
+    secrets: [postgres_password, db_tls_cert, db_tls_key]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      retries: 10
+  migrate:
+    image: ${SERK_IMAGE:?set SERK_IMAGE to a signed, digest-pinned image}
+    entrypoint: ["/serk-migrate"]
+    environment:
+      SERK_ADMIN_DSN_FILE: /run/secrets/postgres_admin_dsn
+    secrets: [postgres_admin_dsn]
+    networks: [backend]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    depends_on: { db: { condition: service_healthy } }
+  api:
+    image: ${SERK_IMAGE:?set SERK_IMAGE to a signed, digest-pinned image}
+    environment:
+      SERK_ENV: production
+      SERK_LISTEN: ":8080"
+      SERK_DB_BASE_DSN: postgres://db:5432/serk?sslmode=verify-full
+      SERK_HEALTH_DSN_FILE: /run/secrets/health_dsn
+      SERK_TENANT_DB_SECRET_FILE: /run/secrets/tenant_db_secret
+      SERK_OIDC_ISSUER: ${SERK_OIDC_ISSUER:?}
+      SERK_OIDC_JWKS_URL: ${SERK_OIDC_JWKS_URL:?}
+      SERK_OIDC_AUDIENCE: ${SERK_OIDC_AUDIENCE:?}
+      SERK_TRUSTED_PROXIES: 172.30.0.0/24
+      PGSSLROOTCERT: /run/secrets/db_ca
+    secrets: [health_dsn, tenant_db_secret, db_ca]
+    networks: [backend, edge]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+  proxy:
+    image: caddy:2
+    ports: ["443:443"]
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddy_data:/data]
+    networks: [edge]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+networks:
+  backend: { internal: true }
+  edge:
+    ipam: { config: [{ subnet: 172.30.0.0/24 }] }
+secrets:
+  postgres_password: { file: ./secrets/postgres_password }
+  postgres_admin_dsn: { file: ./secrets/postgres_admin_dsn }
+  tenant_db_secret: { file: ./secrets/tenant_db_secret }
+  health_dsn: { file: ./secrets/health_dsn }
+  db_tls_cert: { file: ./secrets/db_tls_cert }
+  db_tls_key: { file: ./secrets/db_tls_key }
+  db_ca: { file: ./secrets/db_ca }
+volumes:
+  pgdata:
+  caddy_data:

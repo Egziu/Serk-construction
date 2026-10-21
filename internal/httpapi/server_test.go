@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,8 @@ import (
 )
 
 type env struct {
+	svc      *kernel.Service
+	db       *testdb.Env
 	t        *testing.T
 	srv      *httptest.Server
 	tenant   string
@@ -58,6 +61,7 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	svc := kernel.New(db.Router, auth.NewAuthorizer(nil, true))
+	e.svc, e.db = svc, db
 	h := New(Config{Verifier: testVerifier, Kernel: svc, Store: db.Router, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RatePerMinute: 50})
 	e.srv = httptest.NewServer(h)
 	t.Cleanup(e.srv.Close)
@@ -313,4 +317,52 @@ func (e *env) mfaToken(user string, roles ...string) string {
 		e.t.Fatal(err)
 	}
 	return tok
+}
+
+// SC-13: a flood of invalid tokens from one client is cut off before token
+// verification, the lockout also blocks that client's valid tokens, other
+// clients are unaffected, and the security log never contains the token.
+func TestAPIPreAuthFloodProtection(t *testing.T) {
+	e := newEnv(t)
+	var logs bytes.Buffer
+	h := New(Config{Verifier: testVerifier, Kernel: e.svc, Store: e.db.Router, RatePerMinute: 1000,
+		Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+		Abuse:  AbuseConfig{AuthFailuresPerMinute: 10, TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}}})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	call := func(client, token string) int {
+		req, _ := http.NewRequest("GET", srv.URL+"/v1/journals/"+uuid.NewString(), nil)
+		req.Header.Set("X-Forwarded-For", client)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	const junk = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.SECRET-LOOKING-TOKEN-MATERIAL"
+	var codes []int
+	for i := 0; i < 15; i++ {
+		codes = append(codes, call("198.51.100.1", junk))
+	}
+	for i, c := range codes {
+		want := 401
+		if i >= 10 {
+			want = 429
+		}
+		if c != want {
+			t.Fatalf("attempt %d: %d want %d (all: %v)", i+1, c, want, codes)
+		}
+	}
+	valid := e.token("prep", "accountant")
+	if c := call("198.51.100.1", valid); c != 429 {
+		t.Fatalf("locked-out client got %d with a valid token", c)
+	}
+	if c := call("198.51.100.2", valid); c != 404 { // authenticated; random id not found
+		t.Fatalf("other client affected: %d", c)
+	}
+	if !strings.Contains(logs.String(), "auth_lockout") || strings.Contains(logs.String(), "SECRET-LOOKING") {
+		t.Fatalf("security log wrong: %s", logs.String())
+	}
 }

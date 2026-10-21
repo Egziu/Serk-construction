@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,13 +35,17 @@ type Config struct {
 	Store         interface{ Ping(context.Context) error }
 	Logger        *slog.Logger
 	RatePerMinute int // per-principal command budget; 0 = default 300
+	Abuse         AbuseConfig
 }
 
 // Server is the HTTP handler.
 type Server struct {
-	cfg     Config
-	mux     *http.ServeMux
-	limiter *limiter
+	cfg       Config
+	mux       *http.ServeMux
+	principal *windowLimiter // per authenticated principal
+	preauth   *windowLimiter // per client IP, before any token work
+	authFail  *windowLimiter // invalid credentials per client IP, with lockout
+	inflight  chan struct{}
 }
 
 // New builds the handler tree.
@@ -53,7 +56,12 @@ func New(cfg Config) *Server {
 	if cfg.RatePerMinute == 0 {
 		cfg.RatePerMinute = 300
 	}
-	s := &Server{cfg: cfg, mux: http.NewServeMux(), limiter: newLimiter(cfg.RatePerMinute)}
+	cfg.Abuse.defaults()
+	s := &Server{cfg: cfg, mux: http.NewServeMux(),
+		principal: newWindowLimiter(cfg.RatePerMinute, time.Minute, 0),
+		preauth:   newWindowLimiter(cfg.Abuse.PreAuthPerMinute, time.Minute, 0),
+		authFail:  newWindowLimiter(cfg.Abuse.AuthFailuresPerMinute, time.Minute, cfg.Abuse.AuthFailureBlock),
+		inflight:  make(chan struct{}, cfg.Abuse.MaxInFlight)}
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.HandleFunc("GET /readyz", s.readyz)
 	s.mux.Handle("POST /v1/journals", s.authed(s.createJournal))
@@ -115,22 +123,46 @@ func principalFrom(ctx context.Context) auth.Principal {
 	return p
 }
 
-// authed verifies the bearer token, applies rate limiting and injects the principal.
+// authed applies pre-authentication abuse controls, verifies the bearer
+// token, applies the per-principal budget and injects the principal.
 func (s *Server) authed(next func(http.ResponseWriter, *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := clientIP(r, s.cfg.Abuse.TrustedProxies).String()
+		// SC-13: everything below happens before any token parsing.
+		if s.authFail.blocked(ip) {
+			w.Header().Set("Retry-After", "300")
+			writeErr(w, http.StatusTooManyRequests, "rate_limited", "too many failed authentication attempts")
+			return
+		}
+		if !s.preauth.hit(ip) {
+			s.cfg.Logger.Warn("security", "event", "preauth_rate_limited", "ip", ip)
+			w.Header().Set("Retry-After", "60")
+			writeErr(w, http.StatusTooManyRequests, "rate_limited", "request budget exceeded")
+			return
+		}
+		select {
+		case s.inflight <- struct{}{}:
+			defer func() { <-s.inflight }()
+		default:
+			w.Header().Set("Retry-After", "5")
+			writeErr(w, http.StatusServiceUnavailable, "overloaded", "server busy")
+			return
+		}
 		hdr := r.Header.Get("Authorization")
-		if !strings.HasPrefix(hdr, "Bearer ") {
+		if !strings.HasPrefix(hdr, "Bearer ") || len(hdr) > 8192 {
+			s.authFailure(ip, "missing_or_oversized")
 			w.Header().Set("WWW-Authenticate", `Bearer realm="serk"`)
 			writeErr(w, http.StatusUnauthorized, "unauthenticated", "bearer token required")
 			return
 		}
 		p, err := s.cfg.Verifier.Verify(strings.TrimPrefix(hdr, "Bearer "), time.Now())
 		if err != nil {
+			s.authFailure(ip, "invalid_token")
 			w.Header().Set("WWW-Authenticate", `Bearer realm="serk", error="invalid_token"`)
 			writeErr(w, http.StatusUnauthorized, "unauthenticated", "invalid token")
 			return
 		}
-		if !s.limiter.allow(p.TenantID + "/" + p.UserID) {
+		if !s.principal.hit(p.TenantID + "/" + p.UserID) {
 			w.Header().Set("Retry-After", "60")
 			writeErr(w, http.StatusTooManyRequests, "rate_limited", "command budget exceeded")
 			return
@@ -409,45 +441,15 @@ func trimPG(err error) string {
 	return msg
 }
 
-// ---------------------------------------------------------------------------
-// Fixed-window per-principal rate limiter (in-process). A shared store is
-// the documented next step for multi-replica deployments.
-// ---------------------------------------------------------------------------
-
-type limiter struct {
-	mu     sync.Mutex
-	limit  int
-	window map[string]*bucket
-}
-
-type bucket struct {
-	count int
-	reset time.Time
-}
-
-func newLimiter(limit int) *limiter { return &limiter{limit: limit, window: map[string]*bucket{}} }
-
-func (l *limiter) allow(key string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := time.Now()
-	b := l.window[key]
-	if b == nil || now.After(b.reset) {
-		if len(l.window) > 10_000 { // bound memory under key churn: drop only expired windows
-			for k, v := range l.window {
-				if now.After(v.reset) {
-					delete(l.window, k)
-				}
-			}
-		}
-		b = &bucket{reset: now.Add(time.Minute)}
-		l.window[key] = b
+// authFailure counts an invalid credential and logs a security event without
+// any token material.
+func (s *Server) authFailure(ip, reason string) {
+	s.authFail.hit(ip)
+	if s.authFail.blocked(ip) {
+		s.cfg.Logger.Warn("security", "event", "auth_lockout", "ip", ip, "reason", reason)
+		return
 	}
-	if b.count >= l.limit {
-		return false
-	}
-	b.count++
-	return true
+	s.cfg.Logger.Info("security", "event", "auth_failure", "ip", ip, "reason", reason)
 }
 
 // Listen runs the server with hardened timeouts until ctx is cancelled.

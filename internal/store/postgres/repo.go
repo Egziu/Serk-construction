@@ -167,6 +167,11 @@ func bindLines(ctx context.Context, tx pgx.Tx, j *ledger.Journal) error {
 				return fmt.Errorf("%w: line %d account %s only accepts %s transactions", ErrLineRejected, l.LineNo, acct.Code, acct.Currency)
 			}
 		}
+		if l.CostCodeID != "" {
+			if err := checkCostCode(ctx, tx, j, l); err != nil {
+				return err
+			}
+		}
 		if l.TxnAmount == nil {
 			l.AppliedRate = decimal.Zero
 			continue
@@ -519,4 +524,33 @@ type OutboxRow struct {
 func MarkPublished(ctx context.Context, tx pgx.Tx, id int64) error {
 	_, err := tx.Exec(ctx, `UPDATE outbox SET published_at=now(), attempts=attempts+1 WHERE id=$1`, id)
 	return err
+}
+
+// checkCostCode gives a clear validation error for a cost code that the
+// database trigger (0005) would also refuse.
+func checkCostCode(ctx context.Context, tx pgx.Tx, j *ledger.Journal, l *ledger.Line) error {
+	var project, status, vstatus, code string
+	var from time.Time
+	var to *time.Time
+	err := tx.QueryRow(ctx, `SELECT c.project_id::text, c.status, v.status, c.code, c.valid_from, c.valid_to
+		FROM cost_codes c JOIN wbs_nodes n ON n.id = c.wbs_node_id JOIN wbs_versions v ON v.id = n.version_id
+		WHERE c.id = $1::uuid`, l.CostCodeID).Scan(&project, &status, &vstatus, &code, &from, &to)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("%w: line %d: unknown cost code", ErrLineRejected, l.LineNo)
+	}
+	if err != nil {
+		return err
+	}
+	day := j.BusinessEventAt.UTC().Truncate(24 * time.Hour)
+	switch {
+	case project != j.ProjectID:
+		return fmt.Errorf("%w: line %d: cost code %s belongs to another project", ErrLineRejected, l.LineNo, code)
+	case vstatus != "APPROVED":
+		return fmt.Errorf("%w: line %d: cost code %s is in a %s WBS version", ErrLineRejected, l.LineNo, code, vstatus)
+	case status != "ACTIVE":
+		return fmt.Errorf("%w: line %d: cost code %s is %s", ErrLineRejected, l.LineNo, code, status)
+	case day.Before(from) || (to != nil && day.After(*to)):
+		return fmt.Errorf("%w: line %d: cost code %s is not valid on %s", ErrLineRejected, l.LineNo, code, day.Format("2006-01-02"))
+	}
+	return nil
 }

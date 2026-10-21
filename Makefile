@@ -1,45 +1,43 @@
-# SERK Construction — financial kernel vertical slice
-GO      ?= go
-PKGS    := ./...
-ADMIN_DSN ?= postgres://postgres:postgres@localhost:5432/serk_construction?sslmode=disable
-APP_DSN   ?= postgres://serk_api:serk_api@localhost:5432/serk_construction?sslmode=disable
+# SERK Construction
+GO ?= go
+ADMIN_DSN ?= postgres://postgres:dev-only-postgres-password-not-for-production@localhost:5432/serk_construction?sslmode=disable
 
-.PHONY: all build test test-unit test-integration vet fmt lint migrate run db-up db-down token clean
+.PHONY: all build test test-unit test-integration vet fmt migrate dev-up dev-down check-prod-config clean
 
 all: fmt vet test build
 
 build:
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o bin/serk-api ./cmd/serk-api
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o bin/serk-migrate ./cmd/serk-migrate
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o bin/ ./cmd/serk-api ./cmd/serk-migrate ./cmd/serk-relay
 
 fmt:
-	gofmt -l . | tee /dev/stderr | test -z "$$(cat)"
+	@test -z "$$(gofmt -l .)" || (gofmt -l . && false)
 
 vet:
-	$(GO) vet $(PKGS)
+	$(GO) vet ./...
 
 test-unit:
-	$(GO) test -race -count=1 ./pkg/...
+	$(GO) test -race -count=1 ./pkg/... ./internal/config/
 
-# Integration tests need PostgreSQL 16 (make db-up) and the two DSNs.
+# PostgreSQL integration, adversarial and concurrency suites. ADMIN_DSN must
+# be a disposable database whose role can CREATE ROLE (tests create and drop
+# per-tenant roles).
 test-integration:
-	SERK_TEST_ADMIN_DSN="$(ADMIN_DSN)" SERK_TEST_APP_DSN="$(APP_DSN)" $(GO) test -race -count=1 ./internal/...
+	SERK_TEST_ADMIN_DSN="$(ADMIN_DSN)" $(GO) test -race -count=1 ./...
 
-test: test-unit test-integration
+test: test-integration
 
 migrate:
 	SERK_ADMIN_DSN="$(ADMIN_DSN)" $(GO) run ./cmd/serk-migrate
 
-run:
-	SERK_APP_DSN="$(APP_DSN)" $(GO) run ./cmd/serk-api
+dev-up:
+	docker compose -f deploy/docker-compose.dev.yml up -d
 
-db-up:
-	docker compose -f deploy/docker-compose.yml up -d db
-	@echo "waiting for postgres..."; sleep 4
-	docker compose -f deploy/docker-compose.yml exec -T db psql -U postgres -d serk_construction -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/00-roles.sql
+dev-down:
+	docker compose -f deploy/docker-compose.dev.yml down -v
 
-db-down:
-	docker compose -f deploy/docker-compose.yml down -v
+# Validate a production environment file without starting the server.
+check-prod-config:
+	$(GO) run ./cmd/serk-api check-config
 
 clean:
 	rm -rf bin

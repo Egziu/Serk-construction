@@ -40,6 +40,10 @@ const (
 	// principal sees only the projects listed in its ProjectIDs (SC-05).
 	PermScopeTenantWide Permission = "scope.tenant_wide"
 
+	// Project controls.
+	PermWBSManage  Permission = "wbs.manage"  // propose WBS / cost-code versions
+	PermWBSApprove Permission = "wbs.approve" // approve them (different person)
+
 	// Workflow engine.
 	PermWorkflowDefine  Permission = "workflow.define"  // propose a workflow definition
 	PermWorkflowPublish Permission = "workflow.publish" // approve a definition (different person)
@@ -61,13 +65,13 @@ var DefaultRoles = map[string]Role{
 	"accountant":       {Name: "accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead}},
 	"treasury_officer": {Name: "treasury_officer", Permissions: []Permission{PermFXManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead}},
 	"finance_manager": {Name: "finance_manager", Permissions: []Permission{PermJournalApprove, PermJournalRead, PermFXRead, PermFXApprove,
-		PermFXPolicyApprove, PermScopeTenantWide, PermWorkflowRead}},
+		PermFXPolicyApprove, PermWBSApprove, PermScopeTenantWide, PermWorkflowRead}},
 	"controller": {Name: "controller", Permissions: []Permission{PermJournalPost, PermJournalReverse, PermJournalRead, PermPeriodClose,
 		PermAccountManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead}},
 	"cfo": {Name: "cfo", Permissions: []Permission{PermJournalRead, PermFXRead, PermFXApprove, PermFXApproveExcept, PermFXPolicyApprove,
 		PermPeriodReopen, PermAuditRead, PermScopeTenantWide, PermWorkflowRead, PermWorkflowPublish}},
 	"auditor":            {Name: "auditor", Permissions: []Permission{PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead}},
-	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWorkflowRead}},
+	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead}},
 	"project_accountant": {Name: "project_accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermWorkflowRead}},
 	"process_owner":      {Name: "process_owner", Permissions: []Permission{PermWorkflowDefine, PermWorkflowRead}},
 	"workflow_admin":     {Name: "workflow_admin", Permissions: []Permission{PermWorkflowAdmin, PermWorkflowRead}},

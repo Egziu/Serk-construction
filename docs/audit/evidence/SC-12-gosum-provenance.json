@@ -1,0 +1,135 @@
+[
+ {
+  "module": "github.com/jackc/pgx/v5",
+  "version": "v5.7.2",
+  "mirror": "https://github.com/jackc/pgx",
+  "commit": "24fbe353ed5c3f53d379b3ae370229a5638a2868",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "github.com/google/uuid",
+  "version": "v1.6.0",
+  "mirror": "https://github.com/google/uuid",
+  "commit": "0f11ee6918f41a04c201eceeadf612a377bc7fbc",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "github.com/shopspring/decimal",
+  "version": "v1.4.0",
+  "mirror": "https://github.com/shopspring/decimal",
+  "commit": "a1bdfc355e9c71119322b748c95f7d6b82566e30",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "github.com/jackc/puddle/v2",
+  "version": "v2.2.2",
+  "mirror": "https://github.com/jackc/puddle",
+  "commit": "bd09d14bd4018b6d65a9d7770e2f3ddf8b00af1c",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "github.com/jackc/pgpassfile",
+  "version": "v1.0.0",
+  "mirror": "https://github.com/jackc/pgpassfile",
+  "commit": "99d8e8e28945ffceaf75b0299fcb2bb656b8a683",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "github.com/stretchr/testify",
+  "version": "v1.3.0",
+  "mirror": "https://github.com/stretchr/testify",
+  "commit": "ffdc059bfe9ce6a4e144ba849dbedead332c6053",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "github.com/pmezard/go-difflib",
+  "version": "v1.0.0",
+  "mirror": "https://github.com/pmezard/go-difflib",
+  "commit": "792786c7400a136282c1664665ae0a8db921c6c2",
+  "synthesized_go_mod": true
+ },
+ {
+  "module": "github.com/davecgh/go-spew",
+  "version": "v1.1.0",
+  "mirror": "https://github.com/davecgh/go-spew",
+  "commit": "346938d642f2ec3594ed81d874461961cd0faa76",
+  "synthesized_go_mod": true
+ },
+ {
+  "module": "github.com/stretchr/objx",
+  "version": "v0.1.0",
+  "mirror": "https://github.com/stretchr/objx",
+  "commit": "facf9a85c22f48d2f52f2380e4efce1768749a89",
+  "synthesized_go_mod": true
+ },
+ {
+  "module": "github.com/jackc/pgservicefile",
+  "version": "v0.0.0-20240606120523-5a60cdf6a761",
+  "mirror": "https://github.com/jackc/pgservicefile",
+  "commit": "5a60cdf6a76120dc3d5152b95f3b5fd8aa7cc9eb",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "github.com/stretchr/testify",
+  "version": "v1.7.0",
+  "mirror": "https://github.com/stretchr/testify",
+  "commit": "acba37e5db06f0093b465a7d47822bf13644b66c",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "gopkg.in/yaml.v3",
+  "version": "v3.0.0-20200313102051-9f266ea9e77c",
+  "mirror": "https://github.com/go-yaml/yaml",
+  "commit": "9f266ea9e77c4c7aab4cf02650570e7c7b3031a5",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "gopkg.in/check.v1",
+  "version": "v0.0.0-20161208181325-20d25e280405",
+  "mirror": "https://github.com/go-check/check",
+  "commit": "20d25e2804050c1cd24a7eea1e7a6447dd0e74ec",
+  "synthesized_go_mod": true
+ },
+ {
+  "module": "golang.org/x/crypto",
+  "version": "v0.31.0",
+  "mirror": "https://github.com/golang/crypto",
+  "commit": "b4f1988a35dee11ec3e05d6bf3e90b695fbd8909",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "golang.org/x/text",
+  "version": "v0.21.0",
+  "mirror": "https://github.com/golang/text",
+  "commit": "d42948e5579eb996bedb7df76c7ad57fae4e83c7",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "golang.org/x/sync",
+  "version": "v0.10.0",
+  "mirror": "https://github.com/golang/sync",
+  "commit": "913fb63af28f446cd10c684ee847b5606cf328f7",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "github.com/stretchr/testify",
+  "version": "v1.8.1",
+  "mirror": "https://github.com/stretchr/testify",
+  "commit": "b747d7c5f853d017ddbc5e623d026d7fc2770a58",
+  "synthesized_go_mod": false
+ },
+ {
+  "module": "github.com/davecgh/go-spew",
+  "version": "v1.1.1",
+  "mirror": "https://github.com/davecgh/go-spew",
+  "commit": "8991bc29aa16c548c550c7ff78260e27b9ab7c73",
+  "synthesized_go_mod": true
+ },
+ {
+  "module": "gopkg.in/yaml.v3",
+  "version": "v3.0.1",
+  "mirror": "https://github.com/go-yaml/yaml",
+  "commit": "f6f7691b1fdeb513f56608cd2c32c51f8194bf51",
+  "synthesized_go_mod": false
+ }
+]

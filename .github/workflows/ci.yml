@@ -1,28 +1,55 @@
 name: ci
 on: [push, pull_request]
 permissions: { contents: read }
+
 jobs:
+  supply-chain:
+    runs-on: ubuntu-24.04
+    steps:
+      # Actions pinned to immutable commits (resolved with git ls-remote 2026-10-21).
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        with: { go-version: "1.24.7", cache: false }
+      # SC-12 gate: go.sum was computed from official source mirrors in an
+      # environment without access to sum.golang.org. Re-derive it here with
+      # the public checksum database and fail on any difference.
+      - name: Verify go.sum against sum.golang.org
+        run: |
+          cp go.sum /tmp/go.sum.committed
+          rm go.sum
+          GOFLAGS=-mod=mod GONOSUMDB= GOSUMDB=sum.golang.org go mod tidy
+          diff -u /tmp/go.sum.committed go.sum
+          go mod verify
+      - name: Vulnerability scan (fails on reachable vulnerabilities)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - name: SBOM (CycloneDX)
+        run: go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.8.0 mod -licenses -json -output sbom.cdx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: sbom, path: sbom.cdx.json }
+
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:16
-        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: serk_construction }
+        image: postgres:16.4
+        env: { POSTGRES_PASSWORD: ci-only-throwaway-password, POSTGRES_DB: serk_ci }
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      GOFLAGS: -mod=readonly
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with: { go-version: "1.24" }
-      - name: Create application roles
-        run: PGPASSWORD=postgres psql -h localhost -U postgres -d serk_construction -v ON_ERROR_STOP=1 -f deploy/00-roles.sql
-      - run: make fmt vet
-      - run: make test-unit
-      - run: make test-integration
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        with: { go-version: "1.24.7" }
+      - name: Cluster roles
+        run: PGPASSWORD=ci-only-throwaway-password psql -h localhost -U postgres -d serk_ci -v ON_ERROR_STOP=1 -f deploy/00-roles.sql
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - name: Unit + PostgreSQL integration/adversarial/concurrency tests (race detector)
         env:
-          ADMIN_DSN: postgres://postgres:postgres@localhost:5432/serk_construction?sslmode=disable
-          APP_DSN: postgres://serk_api:serk_api@localhost:5432/serk_construction?sslmode=disable
-      - name: Vulnerability scan
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-      - run: make build
+          SERK_TEST_ADMIN_DSN: postgres://postgres:ci-only-throwaway-password@localhost:5432/serk_ci?sslmode=disable
+        run: go test -race -count=1 ./...
+      - name: Production configuration refuses demo defaults
+        run: go test -count=1 -run 'Manifest|Demo|ProductionRules' ./internal/config/
+      - run: CGO_ENABLED=0 go build -trimpath ./cmd/...

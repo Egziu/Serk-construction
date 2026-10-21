@@ -1,0 +1,17 @@
+# TLS termination and edge controls for the production profile.
+# Replace the site address with your domain; Caddy obtains certificates.
+api.example.serk {
+	encode zstd gzip
+	request_body {
+		max_size 1MB
+	}
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		-Server
+	}
+	reverse_proxy api:8080 {
+		header_up X-Forwarded-For {remote_host}
+	}
+	# Distributed/edge rate limiting needs a WAF or the caddy-ratelimit
+	# module; the API's in-process pre-auth limits (SC-13) are the second line.
+}

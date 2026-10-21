@@ -253,6 +253,9 @@ func (j Journal) Validate() error {
 				return fmt.Errorf("%w: line %d foreign amount without fx snapshot (LAW 06)", ErrBadLine, l.LineNo)
 			}
 		}
+		if l.CostCodeID != "" && j.ProjectID == "" {
+			return fmt.Errorf("%w: line %d has a cost code but the journal has no project", ErrBadLine, l.LineNo)
+		}
 		// A line's project dimension must equal the journal's project: project
 		// authorisation is decided once, on the header, and cannot be
 		// bypassed by tagging lines with another project.

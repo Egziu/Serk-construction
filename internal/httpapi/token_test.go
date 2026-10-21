@@ -2,6 +2,9 @@ package httpapi
 
 import (
 	"encoding/base64"
+	"net/http"
+	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -110,5 +113,51 @@ func TestTokenTimeClaims(t *testing.T) {
 	tok, _ = testVerifier.Sign(c)
 	if _, err := testVerifier.Verify(tok, now); err == nil {
 		t.Fatal("future auth_time accepted")
+	}
+}
+
+func TestClientIPAndLimiter(t *testing.T) {
+	trusted := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}
+	mk := func(remote, xff string) *http.Request {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = remote
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		return r
+	}
+	cases := []struct{ remote, xff, want string }{
+		{"203.0.113.9:4000", "1.2.3.4", "203.0.113.9"},             // untrusted peer: header ignored (spoof)
+		{"10.0.0.5:4000", "198.51.100.7", "198.51.100.7"},          // trusted proxy
+		{"10.0.0.5:4000", "6.6.6.6, 198.51.100.7", "198.51.100.7"}, // right-most untrusted hop
+		{"10.0.0.5:4000", "198.51.100.7, 10.0.0.9", "198.51.100.7"},
+		{"10.0.0.5:4000", "garbage", "10.0.0.5"},
+	}
+	for _, c := range cases {
+		if got := clientIP(mk(c.remote, c.xff), trusted).String(); got != c.want {
+			t.Errorf("clientIP(%s, %q)=%s want %s", c.remote, c.xff, got, c.want)
+		}
+	}
+	now := time.Unix(1_700_000_000, 0)
+	l := newWindowLimiter(3, time.Minute, 5*time.Minute)
+	l.now = func() time.Time { return now }
+	for i := 0; i < 3; i++ {
+		if !l.hit("ip") {
+			t.Fatal("under limit refused")
+		}
+	}
+	if l.hit("ip") || !l.blocked("ip") {
+		t.Fatal("lockout not started")
+	}
+	now = now.Add(2 * time.Minute) // new window, still locked
+	if l.hit("ip") {
+		t.Fatal("lockout ignored in next window")
+	}
+	now = now.Add(5 * time.Minute)
+	if !l.hit("ip") {
+		t.Fatal("lockout never expired")
+	}
+	if !l.hit("other") {
+		t.Fatal("keys not independent")
 	}
 }

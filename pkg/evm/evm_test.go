@@ -104,3 +104,54 @@ func TestCostToCost(t *testing.T) {
 		t.Fatal("currency mismatch accepted")
 	}
 }
+
+// SC-09: under 50% inflation a project exactly on budget in real terms must
+// show CPI = 1 and CV = 0 whichever correct conversion is used, and the
+// mixed-basis computation that would report CPI = 0.67 is refused.
+func TestSC09_InflationDoesNotMasqueradeAsOverrun(t *testing.T) {
+	p0, pt := IndexPoint{d("100")}, IndexPoint{d("150")}
+	wps := []WorkPackage{{ID: "STRUCTURE", BAC: money.MustNew("1000000.00", "ETB"), PlannedCompletion: d("0.5"), VerifiedCompletion: d("0.5")}}
+	// Half the work done; it cost 500,000 at baseline prices = 750,000 nominal at Pt=150.
+	nominalAC := money.MustNew("750000.00", "ETB")
+
+	_, err := Compute(Input{Currency: "ETB", BudgetBasis: ConstantBaseline, Basis: Nominal, Packages: wps, ActualCost: nominalAC})
+	if !errors.Is(err, ErrBasisMismatch) {
+		t.Fatalf("mixed-basis CPI computed: %v", err)
+	}
+
+	realAC, err := DeflateToBaseline([]CostItem{{Amount: nominalAC, Index: pt}}, p0, "ETB", money.RoundHalfEven)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := Compute(Input{Currency: "ETB", BudgetBasis: ConstantBaseline, Basis: ConstantBaseline, Packages: wps, ActualCost: realAC,
+		Provenance: Provenance{BaselineVersion: "BL-1", BaselineIndex: p0.Value, Method: "DEFLATE_ACTUALS"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restated, err := RestateBudget(wps, p0, pt, money.RoundHalfEven)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Compute(Input{Currency: "ETB", BudgetBasis: Nominal, Basis: Nominal, Packages: restated, ActualCost: nominalAC,
+		Provenance: Provenance{BaselineVersion: "BL-1", BaselineIndex: p0.Value, CurrentIndex: pt.Value, Method: "RESTATE_BUDGET"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, r := range map[string]Result{"deflated actuals": a, "restated budget": b} {
+		if r.CPI == nil || !r.CPI.Equal(d("1")) || !r.CV.IsZero() {
+			t.Errorf("%s: CPI %v CV %s (want 1 and 0)", name, r.CPI, r.CV)
+		}
+	}
+	if a.Provenance.Method != "DEFLATE_ACTUALS" || b.Provenance.CurrentIndex.String() != "150" || a.AlgorithmVersion != "evm-v2" {
+		t.Fatalf("provenance not carried: %+v %+v", a.Provenance, b.Provenance)
+	}
+	// A genuine overrun stays visible after conversion: 900,000 nominal = 600,000 real.
+	over, _ := DeflateToBaseline([]CostItem{{Amount: money.MustNew("900000.00", "ETB"), Index: pt}}, p0, "ETB", money.RoundHalfEven)
+	r, _ := Compute(Input{Currency: "ETB", BudgetBasis: ConstantBaseline, Basis: ConstantBaseline, Packages: wps, ActualCost: over})
+	if r.CPI.String() != "0.833333" || r.CV.AmountString() != "-100000.00" {
+		t.Fatalf("real overrun hidden: CPI %v CV %s", r.CPI, r.CV)
+	}
+	if _, err := RestateBudget(wps, IndexPoint{d("0")}, pt, money.RoundHalfEven); !errors.Is(err, ErrBadIndex) {
+		t.Fatal("zero index accepted")
+	}
+}

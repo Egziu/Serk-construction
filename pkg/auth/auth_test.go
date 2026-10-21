@@ -14,6 +14,7 @@ func TestDefaultRolesSeparateDuties(t *testing.T) {
 		{PermFXManage, PermFXPolicyApprove},
 		{PermWorkflowDefine, PermWorkflowPublish},
 		{PermPeriodClose, PermPeriodReopen},
+		{PermWBSManage, PermWBSApprove},
 	}
 	for name := range DefaultRoles {
 		p := Principal{UserID: "u", TenantID: "t", Roles: []string{name}}

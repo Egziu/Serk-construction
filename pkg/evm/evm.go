@@ -16,7 +16,7 @@ import (
 )
 
 // AlgorithmVersion is recorded on every result.
-const AlgorithmVersion = "evm-v1"
+const AlgorithmVersion = "evm-v2"
 
 // PriceBasis labels the measurement basis of an amount.
 type PriceBasis string
@@ -75,13 +75,28 @@ type WorkPackage struct {
 	VerifiedCompletion decimal.Decimal // 0..1 at date t, from verified measurement
 }
 
+// Provenance records how amounts were brought to a common price basis.
+type Provenance struct {
+	BaselineVersion string          // approved budget baseline the BAC comes from
+	BaselineIndex   decimal.Decimal // P0
+	CurrentIndex    decimal.Decimal // Pt (for current-price restatement)
+	IndexSeries     string          // e.g. "ET-CSA-CONSTRUCTION-INPUT"
+	Method          string          // "DEFLATE_ACTUALS" | "RESTATE_BUDGET" | "NONE"
+}
+
 // Input bundles everything needed for one EVM computation.
 type Input struct {
-	Currency   money.Currency
-	Basis      PriceBasis    // basis of ActualCost
-	Packages   []WorkPackage // BAC is always baseline-priced
-	ActualCost money.Money   // AC in the stated basis
+	Currency money.Currency
+	// BudgetBasis is the price basis of every BAC (normally ConstantBaseline).
+	BudgetBasis PriceBasis
+	// Basis is the price basis of ActualCost. It must equal BudgetBasis
+	// (SC-09): bring actuals to baseline prices with DeflateToBaseline, or
+	// restate the budget at current prices with RestateBudget.
+	Basis      PriceBasis
+	Packages   []WorkPackage
+	ActualCost money.Money
 	Rounding   money.RoundingPolicy
+	Provenance Provenance
 }
 
 // Result is the EVM output. Indices are nil when undefined by policy.
@@ -89,20 +104,31 @@ type Result struct {
 	Basis              PriceBasis
 	PV, EV, AC, CV, SV money.Money
 	CPI, SPI           *decimal.Decimal
+	Provenance         Provenance
 	AlgorithmVersion   string
 }
 
 // Compute evaluates PV, EV, CV, SV, CPI and SPI.
 //
-// Basis policy: BAC is baseline-priced, so EV and PV are baseline-priced.
-// CV = EV − AC is only meaningful when AC is ConstantBaseline; a Nominal AC is
-// accepted only when explicitly declared, and the result is labelled Nominal
-// so downstream reports cannot silently compare it to constant-price figures.
+// Basis policy (SC-09): PV and EV inherit the budget's price basis and AC
+// must be expressed in that same basis; mixed inputs are refused rather than
+// producing a precise but economically meaningless CPI. In an inflationary
+// economy, comparing a baseline-priced EV with nominal actual cost would make
+// an on-budget project look over budget.
 //
 // Zero-denominator policy: CPI is nil when AC = 0; SPI is nil when PV = 0.
 func Compute(in Input) (Result, error) {
-	if in.Basis != Nominal && in.Basis != ConstantBaseline {
-		return Result{}, fmt.Errorf("%w: unknown basis %q", ErrBasisMismatch, in.Basis)
+	if in.BudgetBasis == "" {
+		in.BudgetBasis = ConstantBaseline
+	}
+	for _, b := range []PriceBasis{in.Basis, in.BudgetBasis} {
+		if b != Nominal && b != ConstantBaseline {
+			return Result{}, fmt.Errorf("%w: unknown basis %q", ErrBasisMismatch, b)
+		}
+	}
+	if in.Basis != in.BudgetBasis {
+		return Result{}, fmt.Errorf("%w: actual cost is %s but the budget is %s; deflate actuals (DeflateToBaseline) or restate the budget (RestateBudget) first",
+			ErrBasisMismatch, in.Basis, in.BudgetBasis)
 	}
 	if in.ActualCost.Currency() != in.Currency {
 		return Result{}, fmt.Errorf("%w: AC currency", ErrBasisMismatch)
@@ -137,7 +163,7 @@ func Compute(in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	res := Result{Basis: in.Basis, PV: PV, EV: EV, AC: in.ActualCost, CV: CV, SV: SV, AlgorithmVersion: AlgorithmVersion}
+	res := Result{Basis: in.Basis, PV: PV, EV: EV, AC: in.ActualCost, CV: CV, SV: SV, Provenance: in.Provenance, AlgorithmVersion: AlgorithmVersion}
 	if !in.ActualCost.IsZero() {
 		cpi := EV.Amount().DivRound(in.ActualCost.Amount(), 6)
 		res.CPI = &cpi
@@ -176,4 +202,24 @@ func CostToCostProgress(eligibleCostToDate, latestEAC money.Money) (decimal.Deci
 		p = decimal.NewFromInt(1) // capped: cost overrun does not create >100% progress
 	}
 	return p, nil
+}
+
+// RestateBudget restates baseline-priced BACs at the current price level:
+// BAC_t = BAC_0 × Pt / P0, rounded once per package. Completion percentages
+// are unchanged. The result is a Nominal (current-price) budget suitable for
+// comparison with nominal actual cost, with the indices recorded.
+func RestateBudget(pkgs []WorkPackage, baseline, current IndexPoint, rounding money.RoundingPolicy) ([]WorkPackage, error) {
+	if !baseline.Value.IsPositive() || !current.Value.IsPositive() {
+		return nil, ErrBadIndex
+	}
+	out := make([]WorkPackage, len(pkgs))
+	for i, wp := range pkgs {
+		bac, err := money.New(wp.BAC.Amount().Mul(current.Value).DivRound(baseline.Value, 20), wp.BAC.Currency(), rounding)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = wp
+		out[i].BAC = bac
+	}
+	return out, nil
 }
