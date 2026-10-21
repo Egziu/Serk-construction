@@ -1,0 +1,55 @@
+### commit 1371d63 (+ uncommitted drill script, committed with this evidence)
+### command: DRILL_FORCE=1 DRILL_DIR=/var/lib/postgresql/drill LOAD_BIN=<go test -c ./internal/kernel> deploy/drills/pitr_drill.sh
+### SERK PITR drill 2026-10-21T20:27:29Z
+### postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1); archive_timeout=10s; host Linux 6.18.44-fc-v140
+[20:27:29] initdb primary (data checksums on)
+[20:27:30] base backup (before any schema exists)
+    backup successfully verified
+[20:27:31] base backup took 0.62 s, size 53M
+[20:27:31] workload phase 1 (migrations 0001-0008 + kernel flows: posting, approvals, FX, workflow, outbox)
+    load: PASS
+[20:27:32] restore point 'serk_drill_target' at LSN 0/33A8B80; fingerprint:
+    tenants|14|2b185debe9fba352168a4dcb7d03b35c
+    legal_entities|14|9be02669fc874e5575c1213e3d7d2fb8
+    accounts|70|a1abfb0dbfa958d33eaaff7cf42e4a86
+    fiscal_periods|14|6a95bf642ba968186cf63b63b21964e4
+    journals|7|21b4ffa40e1726dfdfb634dc788a09d0
+    journal_lines|19|bea7b967455d25e468dacba482efa1b2
+    fx_sources|3|c85928a66e4d731fea5362055ab7e7ff
+    fx_policies|4|07175da656b10ea9dd14d48f4137b258
+    fx_snapshots|9|95d952aec8c4b5b4caf923d14e76d9a6
+    approval_attestations|29|a8ff031bc1a692728108cf5db5cb80d9
+    audit_log|52|260b0adf0f1db49f95dcc3bde76404ef
+    audit_heads|7|da44a089255c98f9dead6d9172f5dde4
+    outbox|58|a89bb82f2dc5ed1d7f72b40f880396a8
+    workflow_definitions|1|0c1fb5647bc2a5d9364bbbc944264cdd
+    workflow_instances|2|01e5fb9448e38a99301b1fcd70797658
+    workflow_decisions|2|60542a10d55d625716f4b2a64e8c5431
+[20:27:32] ledger_integrity_scan() at target: UNBALANCED_POSTED:392501ef-3b9c-44ec-834e-c8e875e0c2ae
+[20:27:32] workload phase 2 (after the target) + simulated operator error: superuser TRUNCATE of the ledger
+    load: PASS
+[20:27:32] after the error: posted journals on primary = 0 (were 3 at target)
+[20:27:33] archive: 4 WAL files, failed_count=0
+[20:27:33] scenario B: 1 Hz committed heartbeat for 25 s, then the primary is killed and pg_wal lost
+[20:27:59] primary killed; last committed heartbeat on it: 25 at 2026-10-21 23:27:58.326903+03
+[20:27:59] scenario A: restore a fresh instance to 'serk_drill_target'
+
+== Scenario A result
+fingerprint (16 tables) restored vs target : IDENTICAL
+posted journals at target / restored        : 3 / 3
+ledger_integrity_scan() at target          : UNBALANCED_POSTED:392501ef-3b9c-44ec-834e-c8e875e0c2ae
+ledger_integrity_scan() restored            : UNBALANCED_POSTED:392501ef-3b9c-44ec-834e-c8e875e0c2ae
+tenants / audit chains failing verification : 14 / 0
+schema_migrations on restored instance      : 1,2,3,4,5,6,7,8
+data-checksum failures                      : 0
+RTO: restore start -> promoted              : 0.75 s
+RTO: restore start -> verified              : 0.90 s
+[20:28:00] scenario B: restore a fresh instance to the end of the archive
+
+== Scenario B result (archive-only recovery, archive_timeout=10s)
+last committed heartbeat on lost primary    : 25 at 2026-10-21 23:27:58.326903+03
+last heartbeat on restored instance         : 19 at 2026-10-21 23:27:52.130653+03
+measured RPO                                : 6 committed transactions = ~6 s of 1 Hz writes
+RTO: restore start -> promoted              : 1.15 s
+
+DRILL VERDICT: PASS (scenario A exact; scenario B RPO measured above)
