@@ -1,0 +1,23 @@
+{
+  "key": "journal.posting",
+  "title": "Journal approval and posting",
+  "subject": "journal",
+  "mandatory": true,
+  "start_permission": "journal.create",
+  "steps": [
+    {"id": "review", "title": "Finance review", "permission": "journal.approve",
+     "distinct_from": ["initiator", "subject.creator"],
+     "sla": "24h", "escalate_to": "approval.high_value", "expire_after": "168h",
+     "effect": "journal.approve"},
+    {"id": "executive", "title": "Executive sign-off (material amounts)", "permission": "approval.high_value",
+     "approvals": 2, "require_mfa": true,
+     "when": [{"amount_gte": "1000000.00", "currency": "ETB"}, {"amount_gte": "20000.00", "currency": "USD"}],
+     "distinct_from": ["initiator", "subject.creator", "step:review"],
+     "sla": "48h", "escalate_to": "approval.high_value"},
+    {"id": "post", "title": "Controller posts", "permission": "journal.post",
+     "distinct_from": ["initiator", "subject.creator", "step:review", "step:executive"],
+     "sla": "24h", "escalate_to": "period.close",
+     "effect": "journal.post"}
+  ],
+  "on_reject": "journal.cancel"
+}

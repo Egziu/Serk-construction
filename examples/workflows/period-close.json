@@ -1,0 +1,14 @@
+{
+  "key": "period.close",
+  "title": "Fiscal period close",
+  "subject": "fiscal_period",
+  "mandatory": true,
+  "start_permission": "journal.read",
+  "steps": [
+    {"id": "readiness", "title": "Finance manager confirms reconciliations", "permission": "journal.approve",
+     "distinct_from": ["initiator"]},
+    {"id": "close", "title": "Controller closes the period", "permission": "period.close",
+     "distinct_from": ["initiator", "subject.creator", "step:readiness"],
+     "effect": "period.close"}
+  ]
+}

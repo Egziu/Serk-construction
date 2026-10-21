@@ -1,0 +1,14 @@
+{
+  "key": "fx.rate",
+  "title": "FX rate approval",
+  "subject": "fx_snapshot",
+  "mandatory": true,
+  "start_permission": "fx.manage",
+  "steps": [
+    {"id": "check", "title": "Independent rate check against the source document", "permission": "fx.approve",
+     "distinct_from": ["initiator", "subject.creator"],
+     "sla": "4h", "escalate_to": "fx.approve_exception", "expire_after": "72h",
+     "effect": "fx.approve"}
+  ],
+  "on_reject": "fx.reject"
+}
