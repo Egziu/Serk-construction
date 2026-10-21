@@ -26,6 +26,8 @@ jobs:
         run: go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.8.0 mod -licenses -json -output sbom.cdx.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: sbom, path: sbom.cdx.json }
+      - name: Local supply-chain checks (go mod verify, build-list SBOM, licenses, secret scan)
+        run: OUT=supply-chain-out scripts/supply_chain_local.sh
 
   test:
     runs-on: ubuntu-24.04

@@ -1,0 +1,21 @@
+### scripts/supply_chain_local.sh at bae7eeb + working tree, 2026-10-21T20:54:17Z, offline (GOPROXY=file:// pinned cache, GOSUMDB=off)
+## summary
+go mod verify                PASS (all modules verified)
+sbom (CycloneDX 1.5)         PASS (9 components)
+license review               PASS (permissive only, for modules in the build)
+secret scan                  PASS (no findings outside allow-listed test/dev fixtures)
+cold-cache / sumdb / govulncheck BLOCKED here (no network); run .github/workflows/ci.yml
+## go mod verify
+all modules verified
+## licenses
+github.com/google/uuid@v1.6.0  LICENSE: BSD-3-Clause, BSD-2-Clause
+github.com/jackc/pgpassfile@v1.0.0  LICENSE: MIT
+github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761  LICENSE: MIT
+github.com/jackc/pgx/v5@v5.7.2  LICENSE: MIT
+github.com/jackc/puddle/v2@v2.2.2  LICENSE: MIT
+github.com/shopspring/decimal@v1.4.0  LICENSE: MIT
+golang.org/x/crypto@v0.31.0  LICENSE: BSD-3-Clause, BSD-2-Clause
+golang.org/x/sync@v0.10.0  LICENSE: BSD-3-Clause, BSD-2-Clause
+golang.org/x/text@v0.21.0  LICENSE: BSD-3-Clause, BSD-2-Clause
+## secret scan findings
+(none)
