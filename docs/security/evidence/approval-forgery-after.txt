@@ -1,0 +1,67 @@
+### GATEA-APPROVAL-01 after the fix: commit eb8094d, 2026-10-21T20:15:31Z
+### go version go1.24.7 linux/amd64; PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu
+### migrations: 0001_kernel.sql 0002_gate_a_integrity.sql 0003_tenant_identity.sql 0004_outbox_delivery.sql 0005_wbs_cost_codes.sql 0006_workflow.sql 0007_approval_attestation.sql 
+### 0007 sha256: a1ad3fd966a9dc2359bb1089e62fec69ca7f53871d0ef675795ddcbe96259d19
+### principal: per-tenant login serk_t_<tenant> (member of serk_app), raw SQL; seed: synthetic fixtures (newFixture)
+### command: SERK_TEST_ADMIN_DSN=postgres://postgres@/serk_after?host=/tmp&port=5433 go test -count=1 ./internal/kernel -run "ApprovalProvenance|Attestation" -v
+=== RUN   TestAttestation_ReplaySubstitutionExpiryAndTampering
+    approval_attestation_test.go:75: denied attestation for journal A used on journal B:            store: database invariant violated: privilege: journal.approve of journal 0445f43d-724e-4f20-895f-1c7af5e51f65 requires a verified approval attestation for u-approver
+    approval_attestation_test.go:77: denied attestation for u-approver recorded as someone else:    store: database invariant violated: privilege: journal.approve of journal 6097dcf4-7a95-4408-8489-84d73b22fc48 requires a verified approval attestation for u-somebody-else
+    approval_attestation_test.go:89: denied tampered attestation: mfa flipped:                      store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:89: denied tampered attestation: expiry extended:                  store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:89: denied tampered attestation: signature junk:                   store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:89: denied tampered attestation: actor changed:                    store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:89: denied tampered attestation: perms widened:                    store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:93: denied attestation signed with another secret:                 store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:95: denied tenant-1 attestation presented in a tenant-2 session:   store: database invariant violated: privilege: approval attestation: malformed or for another tenant
+    approval_attestation_test.go:98: denied expired attestation:                                    store: database invariant violated: privilege: approval attestation: expired or not yet valid
+    approval_attestation_test.go:105: denied attestation for content that has since changed:         store: database invariant violated: privilege: approval attestation: subject changed or unknown
+    approval_attestation_test.go:110: denied attestation of a person without journal.approve:        store: database invariant violated: privilege: journal.approve requires permission journal.approve; the attested person holds none of them
+    approval_attestation_test.go:120: denied replay of a used attestation:                           store: database invariant violated: privilege: approval attestation: already used (replay)
+    approval_attestation_test.go:131: denied rewrite attestation evidence:                           store: database invariant violated: privilege: permission denied for table approval_attestations
+    approval_attestation_test.go:132: denied insert attestation evidence directly:                   store: database invariant violated: privilege: permission denied for table approval_attestations
+--- PASS: TestAttestation_ReplaySubstitutionExpiryAndTampering (0.28s)
+=== RUN   TestAttestation_MFAFreshnessIsVerifiedInSQL
+    approval_attestation_test.go:156: denied reopen with mfa=true but a login 2 hours old:           store: database invariant violated: privilege: period.reopen requires a recent multi-factor authentication in the attestation
+    approval_attestation_test.go:157: denied reopen without MFA:                                     store: database invariant violated: privilege: period.reopen requires a recent multi-factor authentication in the attestation
+--- PASS: TestAttestation_MFAFreshnessIsVerifiedInSQL (0.05s)
+=== RUN   TestAttestation_TenantLoginCannotReachKeysOrEscalate
+    approval_attestation_test.go:188: denied create a temporary object:                              store: database invariant violated: privilege: permission denied to create temporary tables in database "serk_after"
+    approval_attestation_test.go:188: denied install a key:                                          store: database invariant violated: privilege: permission denied for function approval_key_install
+    approval_attestation_test.go:188: denied read verification keys:                                 store: database invariant violated: privilege: permission denied for table approval_keys
+    approval_attestation_test.go:188: denied become the schema owner:                                store: database invariant violated: privilege: permission denied to set role "postgres"
+    approval_attestation_test.go:188: denied create an object in public:                             store: database invariant violated: privilege: permission denied for schema public
+--- PASS: TestAttestation_TenantLoginCannotReachKeysOrEscalate (0.03s)
+=== RUN   TestAttestation_LegitimateTwoPersonFlowLeavesEvidence
+--- PASS: TestAttestation_LegitimateTwoPersonFlowLeavesEvidence (0.06s)
+=== RUN   TestAttestation_DecisionBoundToStepAndOutcome
+    approval_attestation_test.go:241: denied APPROVE attestation used to record a REJECT:            store: database invariant violated: privilege: the attestation authorises a different step or decision
+    approval_attestation_test.go:244: denied step-1 attestation used for step 0:                     store: database invariant violated: privilege: the attestation authorises a different step or decision
+--- PASS: TestAttestation_DecisionBoundToStepAndOutcome (0.06s)
+=== RUN   TestApprovalProvenance_DirectJournalApprovalAndPosting
+    approval_provenance_test.go:69: denied approve a journal as an invented approver:              store: database invariant violated: privilege: journal.approve of journal bc331146-e7e6-487e-9b06-a608041d97a7 requires a verified approval attestation for invented-approver
+    approval_provenance_test.go:78: denied post a journal as an invented poster:                   store: database invariant violated: privilege: journal.post of journal bc331146-e7e6-487e-9b06-a608041d97a7 requires a verified approval attestation for invented-poster
+    approval_provenance_test.go:80: denied insert a journal that is already APPROVED:              store: database invariant violated: journals are created DRAFT without approval fields
+--- PASS: TestApprovalProvenance_DirectJournalApprovalAndPosting (0.06s)
+=== RUN   TestApprovalProvenance_ForgedWorkflowTrail
+    approval_provenance_test.go:94: denied fabricated review decision + effect + approval:         store: database invariant violated: privilege: workflow.decide of workflow_instance d50e8b25-ad7a-40a6-a5d5-342b8fb79d9d requires a verified approval attestation for invented-1
+    approval_provenance_test.go:103: denied single fabricated decision with mfa=true:               store: database invariant violated: privilege: workflow.decide of workflow_instance d50e8b25-ad7a-40a6-a5d5-342b8fb79d9d requires a verified approval attestation for invented-3
+    approval_provenance_test.go:105: denied start an instance as an invented initiator:             store: database invariant violated: privilege: workflow.start of journal 62bc2c09-a7d3-4894-8f8d-7455f5833d0e requires a verified approval attestation for invented-initiator
+    approval_provenance_test.go:108: denied cancel an instance as an invented administrator:        store: database invariant violated: privilege: workflow.cancel of workflow_instance d50e8b25-ad7a-40a6-a5d5-342b8fb79d9d requires a verified approval attestation for invented-admin
+--- PASS: TestApprovalProvenance_ForgedWorkflowTrail (0.07s)
+=== RUN   TestApprovalProvenance_WorkflowDefinitionPublication
+    approval_provenance_test.go:121: denied insert a definition draft as an invented author:        store: database invariant violated: privilege: workflow.define of workflow_definition_body sha256:0000000000000000000000000000000000000000000000000000000000000000 requires a verified approval attestation for invented-author
+    approval_provenance_test.go:130: denied publish through workflow_decide_definition as an invented checker: store: database invariant violated: privilege: workflow.decide_definition of workflow_definition 2ceba008-00e4-40d0-9f53-23b9d82a6cf4 requires a verified approval attestation for invented-checker
+--- PASS: TestApprovalProvenance_WorkflowDefinitionPublication (0.04s)
+=== RUN   TestApprovalProvenance_FXApprovals
+    approval_provenance_test.go:142: denied approve an FX source as an invented checker:            store: database invariant violated: privilege: fx.source.approve of fx_source NBE requires a verified approval attestation for invented-checker
+    approval_provenance_test.go:151: denied approve an FX policy as an invented checker:            store: database invariant violated: privilege: fx.policy.decide of fx_policy 208b0ea5-583f-4d58-9204-6f60aa94c603 requires a verified approval attestation for invented-checker
+    approval_provenance_test.go:157: denied approve an FX rate as an invented checker:              store: database invariant violated: privilege: fx.snapshot.approve of fx_snapshot f0c6605b-7a65-4db8-998f-6728e17d5b52 requires a verified approval attestation for invented-checker
+    approval_provenance_test.go:163: denied approve an out-of-tolerance rate with approver_mfa=true: store: database invariant violated: privilege: fx.snapshot.approve of fx_snapshot 39849413-9b4c-4479-86b0-90543284c6c8 requires a verified approval attestation for invented-cfo
+--- PASS: TestApprovalProvenance_FXApprovals (0.06s)
+=== RUN   TestApprovalProvenance_PeriodsAndWBS
+    approval_provenance_test.go:174: denied close a period as an invented controller:               store: database invariant violated: privilege: period.close of fiscal_period d11012d2-89d2-4870-b5ce-d726d75836c8 requires a verified approval attestation for invented-controller
+    approval_provenance_test.go:179: denied reopen a period as an invented CFO:                     store: database invariant violated: privilege: period.reopen of fiscal_period d11012d2-89d2-4870-b5ce-d726d75836c8 requires a verified approval attestation for invented-cfo
+    approval_provenance_test.go:187: denied approve a WBS version as an invented checker:           store: database invariant violated: privilege: wbs.decide of wbs_version 0285e851-c3d5-410e-a813-ac8598ddefc8 requires a verified approval attestation for invented-checker
+--- PASS: TestApprovalProvenance_PeriodsAndWBS (0.05s)
+ok  	github.com/serk-group/serk-construction/internal/kernel	0.778s
