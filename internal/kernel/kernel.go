@@ -188,15 +188,21 @@ func (s *Service) postJournalTx(ctx context.Context, tx pgx.Tx, p auth.Principal
 
 // cancelJournalTx cancels a DRAFT or APPROVED journal. It is the
 // compensation a rejected journal workflow may run; it never moves value.
+// Either journal.approve or journal.post suffices: both finance checkers may
+// stop a journal they decline to approve or post.
 func (s *Service) cancelJournalTx(ctx context.Context, tx pgx.Tx, p auth.Principal, id, reason string) error {
-	if err := s.authz.Require(p, auth.PermJournalApprove, p.TenantID); err != nil {
+	perm := auth.PermJournalApprove
+	if !s.authz.Has(p, perm) {
+		perm = auth.PermJournalPost
+	}
+	if err := s.authz.Require(p, perm, p.TenantID); err != nil {
 		return err
 	}
 	rec, err := postgres.GetJournal(ctx, tx, id, true)
 	if err != nil {
 		return err
 	}
-	if err := s.authz.RequireProject(p, auth.PermJournalApprove, rec.TenantID, rec.ProjectID); err != nil {
+	if err := s.authz.RequireProject(p, perm, rec.TenantID, rec.ProjectID); err != nil {
 		return err
 	}
 	if !ledger.CanTransition(rec.Status, ledger.StatusCancelled) {

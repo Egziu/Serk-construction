@@ -44,8 +44,10 @@ type Definition struct {
 	// StartPermission is required to start an instance.
 	StartPermission auth.Permission `json:"start_permission"`
 	Steps           []Step          `json:"steps"`
-	// OnReject runs (with the rejecting approver's authority) when any step
-	// rejects or the instance expires. Optional; must be non-sensitive.
+	// OnReject runs (with the rejecting approver's authority) when a step is
+	// rejected. Optional; must be non-sensitive. It does not run on expiry or
+	// cancellation (no person decided those); the subject is then released
+	// and can be routed again.
 	OnReject string `json:"on_reject,omitempty"`
 }
 
@@ -59,8 +61,10 @@ type Step struct {
 	Approvals    int      `json:"approvals,omitempty"`
 	DistinctFrom []string `json:"distinct_from,omitempty"`
 	RequireMFA   bool     `json:"require_mfa,omitempty"`
-	// When restricts the step to subjects at or above an amount.
-	When *Condition `json:"when,omitempty"`
+	// When restricts the step to subjects at or above an amount. One
+	// threshold per currency; a subject in a currency without a threshold
+	// cannot be routed (fail closed — never a silent FX conversion).
+	When []Condition `json:"when,omitempty"`
 	// SLA: after this long the task escalates to EscalateTo holders.
 	SLA        string          `json:"sla,omitempty"`
 	EscalateTo auth.Permission `json:"escalate_to,omitempty"`
@@ -100,6 +104,7 @@ var ErrInvalid = errors.New("workflow: invalid definition")
 
 var idRe = regexp.MustCompile(`^[a-z][a-z0-9_]{1,40}$`)
 var keyRe = regexp.MustCompile(`^[a-z][a-z0-9_.]{2,60}$`)
+var durRe = regexp.MustCompile(`^([0-9]{1,4}h)?([0-9]{1,6}m)?([0-9]{1,8}s)?$`)
 
 // Parse decodes and validates a definition strictly (unknown fields refused).
 func Parse(b []byte, cat Catalog) (Definition, error) {
@@ -133,6 +138,7 @@ func (d Definition) Validate(cat Catalog) error {
 	}
 	seen := map[string]bool{}
 	effects := map[string]bool{}
+	var sensitiveSteps []string
 	for i, s := range d.Steps {
 		where := fmt.Sprintf("step %d (%s)", i+1, s.ID)
 		if !idRe.MatchString(s.ID) {
@@ -145,7 +151,7 @@ func (d Definition) Validate(cat Catalog) error {
 			bad("%s: unknown permission %q", where, s.Permission)
 		}
 		if s.Approvals < 0 || s.Approvals > 5 {
-			bad("%s: approvals must be 1..5", where)
+			bad("%s: approvals must be between 1 and 5 (omit for 1)", where)
 		}
 		for _, ref := range s.DistinctFrom {
 			switch {
@@ -156,11 +162,27 @@ func (d Definition) Validate(cat Catalog) error {
 			}
 		}
 		if s.When != nil {
-			if v, err := decimal.NewFromString(s.When.AmountGTE); err != nil || v.IsNegative() {
-				bad("%s: when.amount_gte must be a non-negative decimal", where)
+			if d.Subject != "journal" {
+				bad("%s: amount thresholds apply only to subjects with an amount (journal)", where)
 			}
-			if !money.IsKnown(s.When.Currency) {
-				bad("%s: when.currency %q unknown", where, s.When.Currency)
+			if len(s.When) == 0 || len(s.When) > 20 {
+				bad("%s: when needs 1..20 thresholds", where)
+			}
+			curSeen := map[money.Currency]bool{}
+			for _, c := range s.When {
+				if !money.IsKnown(c.Currency) {
+					bad("%s: when currency %q unknown", where, c.Currency)
+					continue
+				}
+				if curSeen[c.Currency] {
+					bad("%s: two thresholds for %s", where, c.Currency)
+				}
+				curSeen[c.Currency] = true
+				// Bounded, exact, in the currency's minor units (also caps
+				// the cost of every later comparison).
+				if m, err := money.ParseStrict(c.AmountGTE, c.Currency); err != nil || m.IsNegative() {
+					bad("%s: when amount_gte %q must be a plain non-negative amount in %s minor units", where, c.AmountGTE, c.Currency)
+				}
 			}
 		}
 		for name, v := range map[string]string{"sla": s.SLA, "expire_after": s.ExpireAfter} {
@@ -168,8 +190,10 @@ func (d Definition) Validate(cat Catalog) error {
 				continue
 			}
 			dur, err := time.ParseDuration(v)
-			if err != nil || dur < time.Minute || dur > 90*24*time.Hour {
-				bad("%s: %s must be a duration between 1m and 2160h", where, name)
+			// Whole h/m/s units only: the database recomputes deadlines from
+			// the same string, so both sides must read it identically.
+			if !durRe.MatchString(v) || err != nil || dur < time.Minute || dur > 90*24*time.Hour {
+				bad("%s: %s must be a duration like 90m or 24h between 1m and 2160h", where, name)
 			}
 		}
 		if s.SLA != "" && !cat.Permissions[s.EscalateTo] {
@@ -201,6 +225,18 @@ func (d Definition) Validate(cat Catalog) error {
 				bad("%s: effect %q already runs at an earlier step", where, s.Effect)
 			}
 			effects[s.Effect] = true
+			if ok && a.Sensitive {
+				// Every approver counted for a sensitive effect must be
+				// independent of the maker and of earlier sensitive steps;
+				// otherwise "two approvals" may mean one independent person.
+				need := append([]string{RefSubjectCreator}, sensitiveSteps...)
+				for _, n := range need {
+					if !contains(s.DistinctFrom, n) {
+						bad("%s: a step with sensitive effect %q must list %q in distinct_from", where, s.Effect, n)
+					}
+				}
+				sensitiveSteps = append(sensitiveSteps, RefStepPrefix+s.ID)
+			}
 		}
 		seen[s.ID] = true
 	}
@@ -237,6 +273,15 @@ func (d Definition) Validate(cat Catalog) error {
 	return nil
 }
 
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
 // Facts are server-derived attributes of the subject used for routing.
 type Facts struct {
 	Amount    *money.Money // nil when the subject has no amount
@@ -250,9 +295,9 @@ type RouteStep struct {
 	Index int // position in the definition
 }
 
-// ErrConditionCurrency is returned when a threshold cannot be evaluated
-// because the subject is in another currency (no silent FX conversion).
-var ErrConditionCurrency = errors.New("workflow: threshold currency differs from the subject currency")
+// ErrConditionCurrency is returned when a threshold step has no threshold in
+// the subject's currency (no silent FX conversion; add a threshold).
+var ErrConditionCurrency = errors.New("workflow: no threshold for the subject currency")
 
 // Route returns the steps that apply to the subject, in order. A threshold
 // step applies when the subject amount is at or above it; a subject without
@@ -267,16 +312,26 @@ func (d Definition) Route(f Facts) ([]RouteStep, error) {
 			if f.Amount == nil {
 				continue
 			}
-			if f.Amount.Currency() != s.When.Currency {
-				return nil, fmt.Errorf("%w: step %s threshold in %s, subject in %s", ErrConditionCurrency, s.ID, s.When.Currency, f.Amount.Currency())
+			c, ok := s.threshold(f.Amount.Currency())
+			if !ok {
+				return nil, fmt.Errorf("%w: step %s has no threshold for %s", ErrConditionCurrency, s.ID, f.Amount.Currency())
 			}
-			if f.Amount.Amount().LessThan(decimal.RequireFromString(s.When.AmountGTE)) {
+			if f.Amount.Amount().LessThan(decimal.RequireFromString(c.AmountGTE)) {
 				continue
 			}
 		}
 		out = append(out, RouteStep{Step: s, Index: i})
 	}
 	return out, nil
+}
+
+func (s Step) threshold(cur money.Currency) (Condition, bool) {
+	for _, c := range s.When {
+		if c.Currency == cur {
+			return c, true
+		}
+	}
+	return Condition{}, false
 }
 
 // SimulationStep explains one routed step for a dry run.
@@ -303,7 +358,8 @@ func (d Definition) Simulate(f Facts) ([]SimulationStep, error) {
 	for _, r := range route {
 		reason := "always required"
 		if r.When != nil {
-			reason = fmt.Sprintf("amount %s ≥ threshold %s %s", f.Amount, r.When.AmountGTE, r.When.Currency)
+			c, _ := r.threshold(f.Amount.Currency())
+			reason = fmt.Sprintf("amount %s ≥ threshold %s %s", f.Amount, c.AmountGTE, c.Currency)
 		}
 		out = append(out, SimulationStep{ID: r.ID, Title: r.Title, Permission: r.Permission, Approvals: r.Approvals,
 			RequireMFA: r.RequireMFA, DistinctFrom: r.DistinctFrom, SLA: r.SLA, Effect: r.Effect, Reason: reason})

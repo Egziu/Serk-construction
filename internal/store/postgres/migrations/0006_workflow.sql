@@ -67,6 +67,10 @@ BEGIN
     END IF;
     RETURN NEW;
   END IF;
+  -- Publishing and retiring serialize with the subject gates (which take
+  -- the same lock in shared mode), so a gate never runs between a retire and
+  -- the publish that replaces it.
+  PERFORM pg_advisory_xact_lock(hashtextextended('serk.wfgate:' || OLD.tenant_id::text || ':' || OLD.subject, 0));
   IF OLD.status = 'DRAFT' AND NEW.status IN ('PUBLISHED', 'REJECTED') THEN
     IF NEW.decided_by IS NULL OR NEW.decided_by = OLD.proposed_by THEN
       RAISE EXCEPTION 'a workflow definition is published or rejected by someone other than its author' USING ERRCODE = 'check_violation';
@@ -83,6 +87,12 @@ BEGIN
     RETURN NEW;
   END IF;
   IF OLD.status = 'PUBLISHED' AND NEW.status = 'RETIRED' THEN
+    -- Only as part of publishing the next version (the UPDATE issued by this
+    -- trigger runs at depth 2); a direct retirement would silently remove a
+    -- control without maker/checker.
+    IF pg_trigger_depth() < 2 THEN
+      RAISE EXCEPTION 'a published workflow is retired only by publishing its next version' USING ERRCODE = 'check_violation';
+    END IF;
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'illegal workflow definition transition % -> %', OLD.status, NEW.status USING ERRCODE = 'check_violation';
@@ -185,10 +195,36 @@ BEGIN
       IF prior IS NOT NULL THEN
         out := out || ARRAY(SELECT decided_by FROM workflow_decisions
                              WHERE instance_id = i.id AND step_index = prior AND decision = 'APPROVE');
+      ELSIF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(i.route) r WHERE r->>'id' = substr(ref, 6)) THEN
+        -- The referenced step was skipped because it already happened before
+        -- this instance (journal started while APPROVED): exclude whoever
+        -- performed it.
+        out := out || COALESCE(NULLIF(i.facts->>'approved_by', ''), '');
       END IF;
     END IF;
   END LOOP;
   RETURN out;
+END$$;
+
+-- An instance may act only while its definition version is the published
+-- one and, when a mandatory definition governs the subject type, only if it
+-- is that definition (an optional or superseded definition never satisfies
+-- or bypasses a mandatory one).
+-- VOLATILE on purpose: after waiting for the lock, the reads below must take
+-- a fresh snapshot (a STABLE function would reuse the caller's).
+CREATE OR REPLACE FUNCTION workflow_assert_governing(i workflow_instances) RETURNS void LANGUAGE plpgsql VOLATILE AS $$
+DECLARE st text; mand uuid;
+BEGIN
+  PERFORM pg_advisory_xact_lock_shared(hashtextextended('serk.wfgate:' || i.tenant_id::text || ':' || i.subject_type, 0));
+  SELECT status INTO st FROM workflow_definitions WHERE id = i.definition_id;
+  IF st IS DISTINCT FROM 'PUBLISHED' THEN
+    RAISE EXCEPTION 'workflow definition version is %; cancel this instance and start the current version', st USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT id INTO mand FROM workflow_definitions
+   WHERE tenant_id = i.tenant_id AND subject = i.subject_type AND status = 'PUBLISHED' AND mandatory;
+  IF mand IS NOT NULL AND mand <> i.definition_id THEN
+    RAISE EXCEPTION 'a mandatory workflow governs %; this instance belongs to another definition', i.subject_type USING ERRCODE = 'check_violation';
+  END IF;
 END$$;
 
 CREATE OR REPLACE FUNCTION workflow_approvals(iid uuid, idx integer) RETURNS integer LANGUAGE sql STABLE AS $$
@@ -208,6 +244,10 @@ BEGIN
   IF NEW.step_index <> i.current_step OR (i.route->NEW.step_index->>'id') IS DISTINCT FROM NEW.step_id THEN
     RAISE EXCEPTION 'decision must target the open step (%)', i.route->i.current_step->>'id' USING ERRCODE = 'check_violation';
   END IF;
+  IF i.expires_at IS NOT NULL AND i.expires_at <= now() THEN
+    RAISE EXCEPTION 'the open step expired at %', i.expires_at USING ERRCODE = 'check_violation';
+  END IF;
+  PERFORM workflow_assert_governing(i);
   IF NEW.decided_by = ANY (workflow_excluded(i, NEW.step_index)) THEN
     RAISE EXCEPTION 'segregation of duties: % may not decide step %', NEW.decided_by, NEW.step_id USING ERRCODE = 'check_violation';
   END IF;
@@ -226,6 +266,7 @@ BEGIN
   IF NOT FOUND OR i.tenant_id <> NEW.tenant_id OR i.status <> 'ACTIVE' THEN
     RAISE EXCEPTION 'effects run only for an ACTIVE workflow instance' USING ERRCODE = 'check_violation';
   END IF;
+  PERFORM workflow_assert_governing(i);
   IF NEW.step_index <> i.current_step OR (i.route->NEW.step_index->>'effect') IS DISTINCT FROM NEW.action
      OR NEW.subject_type <> i.subject_type OR NEW.subject_id <> i.subject_id THEN
     RAISE EXCEPTION 'effect % is not the effect of the open step', NEW.action USING ERRCODE = 'check_violation';
@@ -244,6 +285,100 @@ BEGIN
 END$$;
 CREATE TRIGGER workflow_effects_guard BEFORE INSERT ON workflow_effects FOR EACH ROW EXECUTE FUNCTION workflow_effects_guard();
 
+-- The route and facts of a new instance are recomputed from the published
+-- definition and the stored subject, so application code (even compromised)
+-- cannot start an instance with a weakened route: fewer approvers, missing
+-- SoD rules, a skipped threshold step, a different effect, longer deadlines,
+-- or facts that do not match the subject.
+CREATE OR REPLACE FUNCTION workflow_check_start(d workflow_definitions, i workflow_instances) RETURNS void
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+  s jsonb; r jsonb; c jsonb; k integer := 0; amt numeric; cur text; want jsonb := '[]'::jsonb;
+  skipping boolean := false; matched boolean;
+  j record; f record; p record;
+BEGIN
+  -- Facts must be the subject's own.
+  IF i.subject_type = 'journal' THEN
+    SELECT jn.status, jn.created_by, COALESCE(jn.approved_by, '') AS approved_by, COALESCE(jn.project_id::text, '') AS project_id,
+           jn.functional_currency AS cur,
+           (SELECT COALESCE(SUM(l.amount), 0) FROM journal_lines l WHERE l.journal_id = jn.id AND l.side = 'DEBIT') AS debits
+      INTO j FROM journals jn WHERE jn.id = i.subject_id AND jn.tenant_id = i.tenant_id;
+    IF NOT FOUND OR j.status NOT IN ('DRAFT', 'APPROVED') THEN
+      RAISE EXCEPTION 'a journal workflow starts on an existing DRAFT or APPROVED journal' USING ERRCODE = 'check_violation';
+    END IF;
+    IF (i.facts->>'created_by') IS DISTINCT FROM j.created_by OR COALESCE(i.facts->>'project_id', '') <> j.project_id
+       OR COALESCE(i.facts->>'approved_by', '') <> j.approved_by
+       OR (i.facts->>'currency') IS DISTINCT FROM j.cur OR NULLIF(i.facts->>'amount', '')::numeric IS DISTINCT FROM j.debits THEN
+      RAISE EXCEPTION 'workflow facts do not match the journal' USING ERRCODE = 'check_violation';
+    END IF;
+    -- An APPROVED journal resumes after the step that approves journals.
+    skipping := j.status = 'APPROVED'
+                AND EXISTS (SELECT 1 FROM jsonb_array_elements(d.body->'steps') x WHERE x->>'effect' = 'journal.approve');
+  ELSIF i.subject_type = 'fx_snapshot' THEN
+    SELECT approval_status, created_by INTO f FROM fx_snapshots WHERE snapshot_id = i.subject_id AND tenant_id = i.tenant_id;
+    IF NOT FOUND OR f.approval_status <> 'PENDING' THEN
+      RAISE EXCEPTION 'an FX workflow starts on an existing PENDING rate' USING ERRCODE = 'check_violation';
+    END IF;
+    IF (i.facts->>'created_by') IS DISTINCT FROM f.created_by OR COALESCE(i.facts->>'amount', '') <> ''
+       OR COALESCE(i.facts->>'approved_by', '') <> '' OR COALESCE(i.facts->>'project_id', '') <> '' THEN
+      RAISE EXCEPTION 'workflow facts do not match the rate' USING ERRCODE = 'check_violation';
+    END IF;
+  ELSE
+    SELECT status INTO p FROM fiscal_periods WHERE id = i.subject_id AND tenant_id = i.tenant_id;
+    IF NOT FOUND OR p.status <> 'OPEN' THEN
+      RAISE EXCEPTION 'a period workflow starts on an existing OPEN period' USING ERRCODE = 'check_violation';
+    END IF;
+    IF COALESCE(i.facts->>'created_by', '') <> '' OR COALESCE(i.facts->>'amount', '') <> ''
+       OR COALESCE(i.facts->>'approved_by', '') <> '' OR COALESCE(i.facts->>'project_id', '') <> '' THEN
+      RAISE EXCEPTION 'workflow facts do not match the period' USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+
+  -- Expected route: the definition's steps (after the approval step when
+  -- resuming an APPROVED journal) whose threshold the amount meets.
+  amt := NULLIF(i.facts->>'amount', '')::numeric;
+  cur := i.facts->>'currency';
+  FOR s IN SELECT x FROM jsonb_array_elements(d.body->'steps') AS x LOOP
+    IF skipping THEN
+      skipping := (s->>'effect') IS DISTINCT FROM 'journal.approve';
+      CONTINUE;
+    END IF;
+    IF jsonb_typeof(s->'when') = 'array' THEN
+      CONTINUE WHEN amt IS NULL;
+      matched := false;
+      FOR c IN SELECT y FROM jsonb_array_elements(s->'when') AS y LOOP
+        IF c->>'currency' = cur THEN
+          matched := true;
+          EXIT;
+        END IF;
+      END LOOP;
+      IF NOT matched THEN
+        RAISE EXCEPTION 'step % has no threshold for %', s->>'id', cur USING ERRCODE = 'check_violation';
+      END IF;
+      CONTINUE WHEN amt < (c->>'amount_gte')::numeric;
+    END IF;
+    want := want || jsonb_build_array(s);
+  END LOOP;
+  IF jsonb_array_length(want) <> jsonb_array_length(i.route) THEN
+    RAISE EXCEPTION 'workflow route does not match definition % v% for this subject', d.key, d.version USING ERRCODE = 'check_violation';
+  END IF;
+  FOR s IN SELECT x FROM jsonb_array_elements(want) AS x LOOP
+    r := i.route->k;
+    IF (r->>'id') IS DISTINCT FROM (s->>'id')
+       OR (r->>'permission') IS DISTINCT FROM (s->>'permission')
+       OR NULLIF(r->>'approvals', '')::integer IS DISTINCT FROM GREATEST(COALESCE(NULLIF(s->>'approvals', '')::integer, 0), 1)
+       OR COALESCE(r->'distinct_from', '[]'::jsonb) <> COALESCE(s->'distinct_from', '[]'::jsonb)
+       OR COALESCE((r->>'require_mfa')::boolean, false) <> COALESCE((s->>'require_mfa')::boolean, false)
+       OR COALESCE(r->>'effect', '') <> COALESCE(s->>'effect', '')
+       OR COALESCE(r->>'escalate_to', '') <> COALESCE(s->>'escalate_to', '')
+       OR COALESCE(NULLIF(r->>'sla_seconds', '')::bigint, 0) <> COALESCE(EXTRACT(EPOCH FROM (NULLIF(s->>'sla', ''))::interval)::bigint, 0)
+       OR COALESCE(NULLIF(r->>'expire_seconds', '')::bigint, 0) <> COALESCE(EXTRACT(EPOCH FROM (NULLIF(s->>'expire_after', ''))::interval)::bigint, 0) THEN
+      RAISE EXCEPTION 'workflow route step % does not match definition % v%', k, d.key, d.version USING ERRCODE = 'check_violation';
+    END IF;
+    k := k + 1;
+  END LOOP;
+END$$;
+
 CREATE OR REPLACE FUNCTION workflow_instances_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE d workflow_definitions%ROWTYPE; n integer; need integer;
 BEGIN
@@ -259,6 +394,8 @@ BEGIN
        OR NEW.escalated_at IS NOT NULL OR NEW.effect_failures <> 0 THEN
       RAISE EXCEPTION 'an instance starts ACTIVE at its first step' USING ERRCODE = 'check_violation';
     END IF;
+    PERFORM workflow_assert_governing(NEW);
+    PERFORM workflow_check_start(d, NEW);
     NEW.started_at := clock_timestamp();
     NEW.step_started_at := NEW.started_at;
     NEW.sla_due_at := NEW.started_at + make_interval(secs => NULLIF(NEW.route->0->>'sla_seconds', '')::bigint);
@@ -271,9 +408,10 @@ BEGIN
     RAISE EXCEPTION 'workflow instance identity, facts and route are immutable' USING ERRCODE = 'integrity_constraint_violation';
   END IF;
   IF OLD.status <> 'ACTIVE' THEN
-    IF NEW.status <> OLD.status OR NEW.current_step <> OLD.current_step OR NEW.ended_at IS DISTINCT FROM OLD.ended_at THEN
-      RAISE EXCEPTION 'workflow instance is % and final', OLD.status USING ERRCODE = 'integrity_constraint_violation';
-    END IF;
+    RAISE EXCEPTION 'workflow instance is % and final', OLD.status USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+  IF NEW.status = OLD.status AND row(NEW.ended_at, NEW.ended_by, NEW.end_reason) IS DISTINCT FROM row(OLD.ended_at, OLD.ended_by, OLD.end_reason) THEN
+    RAISE EXCEPTION 'end details are recorded only when the instance ends' USING ERRCODE = 'check_violation';
   END IF;
   n := jsonb_array_length(OLD.route);
   IF NEW.current_step <> OLD.current_step THEN
@@ -345,16 +483,19 @@ CREATE TRIGGER workflow_instances_guard BEFORE INSERT OR UPDATE OR DELETE ON wor
 -- The gate on the subjects' sensitive transitions.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION workflow_require_effect(t uuid, stype text, sid uuid, act text, actor text) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE mand uuid;
 BEGIN
-  -- FOR SHARE: a concurrent publish/retire of the mandatory definition
-  -- serializes with this check.
-  PERFORM 1 FROM workflow_definitions WHERE tenant_id = t AND subject = stype AND status = 'PUBLISHED' AND mandatory FOR SHARE;
-  IF NOT FOUND THEN
+  -- Shared lock first, then a fresh read: a concurrent publish/retire holds
+  -- the lock exclusively, so this read sees either the old or the new
+  -- mandatory version, never neither.
+  PERFORM pg_advisory_xact_lock_shared(hashtextextended('serk.wfgate:' || t::text || ':' || stype, 0));
+  SELECT id INTO mand FROM workflow_definitions WHERE tenant_id = t AND subject = stype AND status = 'PUBLISHED' AND mandatory;
+  IF mand IS NULL THEN
     RETURN;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM workflow_effects
-                  WHERE tenant_id = t AND subject_type = stype AND subject_id = sid AND action = act
-                    AND txid = txid_current() AND executed_by = actor) THEN
+  IF NOT EXISTS (SELECT 1 FROM workflow_effects e JOIN workflow_instances i ON i.id = e.instance_id
+                  WHERE e.tenant_id = t AND e.subject_type = stype AND e.subject_id = sid AND e.action = act
+                    AND e.txid = txid_current() AND e.executed_by = actor AND i.definition_id = mand) THEN
     RAISE EXCEPTION '% of % % requires its mandatory approval workflow', act, stype, sid USING ERRCODE = 'check_violation';
   END IF;
 END$$;

@@ -30,7 +30,7 @@ const journalPostingDef = `{
      "distinct_from": ["initiator", "subject.creator"], "sla": "24h", "escalate_to": "approval.high_value",
      "expire_after": "168h", "effect": "journal.approve"},
     {"id": "executive", "title": "Executive sign-off", "permission": "approval.high_value", "approvals": 2,
-     "require_mfa": true, "when": {"amount_gte": "1000000", "currency": "ETB"},
+     "require_mfa": true, "when": [{"amount_gte": "1000000.00", "currency": "ETB"}],
      "distinct_from": ["initiator", "subject.creator", "step:review"]},
     {"id": "post", "title": "Controller posts", "permission": "journal.post",
      "distinct_from": ["initiator", "subject.creator", "step:review", "step:executive"], "effect": "journal.post"}
@@ -42,7 +42,7 @@ const periodCloseDef = `{
   "key": "period.close", "title": "Fiscal period close", "subject": "fiscal_period", "mandatory": true,
   "start_permission": "journal.read",
   "steps": [
-    {"id": "close", "title": "Controller closes", "permission": "period.close", "distinct_from": ["initiator"], "effect": "period.close"}
+    {"id": "close", "title": "Controller closes", "permission": "period.close", "distinct_from": ["initiator", "subject.creator"], "effect": "period.close"}
   ]
 }`
 
@@ -195,7 +195,7 @@ func TestWorkflow_HighValueNeedsQuorumOfDistinctExecutivesWithMFA(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(w.Route) != 3 || w.Route[1].ID != "executive" || w.Route[1].Approvals != 2 || !strings.Contains(w.Route[1].Reason, "≥ threshold 1000000 ETB") {
+	if len(w.Route) != 3 || w.Route[1].ID != "executive" || w.Route[1].Approvals != 2 || !strings.Contains(w.Route[1].Reason, "≥ threshold 1000000.00 ETB") {
 		t.Fatalf("big journal route %+v", w.Route)
 	}
 	if _, err := f.svc.DecideWorkflow(f.ctx, f.appr, w.ID, true, ""); err != nil {
@@ -298,13 +298,11 @@ func TestWorkflow_DatabaseRefusesForgedTrail(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "mandatory approval workflow") {
 		t.Fatalf("approval without its own effect: %v", err)
 	}
-	// Even the schema owner cannot publish their own definition.
-	_, err = f.admin.Exec(f.ctx, `UPDATE workflow_definitions SET status='RETIRED' WHERE id=$1::uuid`, def.ID)
-	if err != nil {
-		t.Fatalf("retire: %v", err)
+	// Even the schema owner cannot retire a published definition directly or
+	// insert a self-published one.
+	if _, err := f.admin.Exec(f.ctx, `UPDATE workflow_definitions SET status='RETIRED' WHERE id=$1::uuid`, def.ID); err == nil {
+		t.Fatal("schema owner retired a published definition directly")
 	}
-	var proposer string
-	_ = f.admin.QueryRow(f.ctx, `SELECT proposed_by FROM workflow_definitions WHERE id=$1::uuid`, def.ID).Scan(&proposer)
 	_, err = f.admin.Exec(f.ctx, `INSERT INTO workflow_definitions(tenant_id,key,version,subject,mandatory,body,body_hash,proposed_by,status,decided_by)
 		SELECT tenant_id,key,99,subject,mandatory,body,body_hash,proposed_by,'PUBLISHED',proposed_by FROM workflow_definitions WHERE id=$1::uuid`, def.ID)
 	if err == nil {
@@ -457,7 +455,15 @@ func TestWorkflow_TimersEscalateOnceAndExpire(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sched.Close(f.ctx)
-	lister := func(ctx context.Context) ([]string, error) { return postgres.DueWorkflowTenants(ctx, sched, 1000) }
+	// Other tests' tenants may also have due work in a shared test database;
+	// this test drives only its own tenant through the scheduler's list.
+	lister := func(ctx context.Context) ([]string, error) {
+		due, err := postgres.DueWorkflowTenants(ctx, sched, 10000)
+		if err != nil || !slices.Contains(due, f.tenant) {
+			return nil, err
+		}
+		return []string{f.tenant}, nil
+	}
 	if _, err := sched.Exec(f.ctx, `SELECT count(*) FROM workflow_instances`); err == nil || !strings.Contains(err.Error(), "permission denied") {
 		t.Fatalf("scheduler login read workflow instances: %v", err)
 	}
@@ -465,7 +471,7 @@ func TestWorkflow_TimersEscalateOnceAndExpire(t *testing.T) {
 		t.Fatalf("nothing due yet: %+v %v", res, err)
 	}
 	f.backdate(t, w.ID, "sla_due_at")
-	if due, err := lister(f.ctx); err != nil || !slices.Contains(due, f.tenant) {
+	if due, err := postgres.DueWorkflowTenants(f.ctx, sched, 10000); err != nil || !slices.Contains(due, f.tenant) {
 		t.Fatalf("due tenants %v %v", due, err)
 	}
 	if res, err := restarted.RunDueWorkflowTimers(f.ctx, lister); err != nil || res.Escalated != 1 {
@@ -546,7 +552,7 @@ func TestWorkflow_DefinitionGovernance(t *testing.T) {
 	}
 	// v2 lowers nothing silently: it is a new reviewed version, and the
 	// running instance keeps the route frozen at its start.
-	v2body := strings.Replace(journalPostingDef, `"amount_gte": "1000000"`, `"amount_gte": "5000000"`, 1)
+	v2body := strings.Replace(journalPostingDef, `"amount_gte": "1000000.00"`, `"amount_gte": "5000000.00"`, 1)
 	v2, err := f.svc.ProposeWorkflowDefinition(f.ctx, a.owner, []byte(v2body))
 	if err != nil || v2.Version != 2 {
 		t.Fatalf("v2 %+v %v", v2, err)
@@ -562,12 +568,22 @@ func TestWorkflow_DefinitionGovernance(t *testing.T) {
 	if status[1] != "RETIRED" || status[2] != "PUBLISHED" {
 		t.Fatalf("versions %+v", status)
 	}
-	if _, err := f.svc.DecideWorkflow(f.ctx, f.appr, w1.ID, true, ""); err != nil {
+	// An instance of the superseded version can no longer act (it might be
+	// weaker than the version now in force): cancel and restart under v2,
+	// whose route is computed afresh.
+	if _, err := f.svc.DecideWorkflow(f.ctx, f.appr, w1.ID, true, ""); !errors.Is(err, ErrWorkflowState) {
+		t.Fatalf("superseded instance acted: %v", err)
+	}
+	if err := f.svc.CancelWorkflow(f.ctx, a.admin, w1.ID, "definition superseded by v2"); err != nil {
 		t.Fatal(err)
 	}
+	w2, err := f.svc.StartWorkflow(f.ctx, f.prep, "journal.posting", jid)
+	if err != nil || w2.DefinitionVersion != 2 || len(w2.Route) != 2 {
+		t.Fatalf("restart under v2: %+v %v", w2, err)
+	}
 	d, _ := f.svc.GetWorkflowInstance(f.ctx, f.cfo, w1.ID)
-	if d.Instance.DefinitionVersion != 1 || len(d.Instance.Route) != 3 || d.Instance.Route[d.Instance.CurrentStep].ID != "executive" {
-		t.Fatalf("in-flight instance changed route: v%d step %d", d.Instance.DefinitionVersion, d.Instance.CurrentStep)
+	if d.Instance.DefinitionVersion != 1 || len(d.Instance.Route) != 3 || d.Instance.Status != "CANCELLED" {
+		t.Fatalf("history of the superseded instance changed: v%d %s", d.Instance.DefinitionVersion, d.Instance.Status)
 	}
 	// A second mandatory definition for the same subject is refused.
 	other := strings.Replace(journalPostingDef, `"key": "journal.posting"`, `"key": "journal.posting_alt"`, 1)

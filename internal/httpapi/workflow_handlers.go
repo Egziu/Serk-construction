@@ -14,6 +14,17 @@ import (
 // authenticated person; there is no endpoint through which automation can
 // approve anything.
 
+// pathID validates a path identifier; malformed ids are simply not found,
+// as for every other resource.
+func pathID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id := r.PathValue("id")
+	if _, err := uuid.Parse(id); err != nil {
+		writeErr(w, http.StatusNotFound, "not_found", "not found")
+		return "", false
+	}
+	return id, true
+}
+
 func validUUID(w http.ResponseWriter, v, name string) bool {
 	if _, err := uuid.Parse(v); err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, "validation", name+" must be a UUID")
@@ -46,8 +57,8 @@ func (s *Server) listWorkflowDefinitions(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) decideWorkflowDefinition(publish bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if !validUUID(w, id, "id") {
+		id, ok := pathID(w, r)
+		if !ok {
 			return
 		}
 		var body reasonBody
@@ -67,11 +78,11 @@ func (s *Server) decideWorkflowDefinition(publish bool) http.HandlerFunc {
 }
 
 func (s *Server) simulateWorkflow(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id, ok := pathID(w, r)
 	var body struct {
 		SubjectID string `json:"subject_id"`
 	}
-	if !validUUID(w, id, "id") || !decode(w, r, &body) || !validUUID(w, body.SubjectID, "subject_id") {
+	if !ok || !decode(w, r, &body) || !validUUID(w, body.SubjectID, "subject_id") {
 		return
 	}
 	route, err := s.cfg.Kernel.SimulateWorkflow(r.Context(), principalFrom(r.Context()), id, body.SubjectID)
@@ -113,8 +124,8 @@ func (s *Server) listWorkflowInstances(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getWorkflowInstance(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !validUUID(w, id, "id") {
+	id, ok := pathID(w, r)
+	if !ok {
 		return
 	}
 	d, err := s.cfg.Kernel.GetWorkflowInstance(r.Context(), principalFrom(r.Context()), id)
@@ -127,8 +138,8 @@ func (s *Server) getWorkflowInstance(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) decideWorkflow(approve bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if !validUUID(w, id, "id") {
+		id, ok := pathID(w, r)
+		if !ok {
 			return
 		}
 		var body reasonBody
@@ -146,9 +157,9 @@ func (s *Server) decideWorkflow(approve bool) http.HandlerFunc {
 }
 
 func (s *Server) cancelWorkflow(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id, ok := pathID(w, r)
 	var body reasonBody
-	if !validUUID(w, id, "id") || !decode(w, r, &body) {
+	if !ok || !decode(w, r, &body) {
 		return
 	}
 	if err := s.cfg.Kernel.CancelWorkflow(r.Context(), principalFrom(r.Context()), id, body.Reason); err != nil {

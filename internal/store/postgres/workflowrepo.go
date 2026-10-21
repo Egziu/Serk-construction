@@ -123,10 +123,14 @@ type RouteStepRow struct {
 
 // InstanceFacts are the routing inputs and subject fingerprint.
 type InstanceFacts struct {
-	Amount      string `json:"amount,omitempty"`
-	Currency    string `json:"currency,omitempty"`
-	ProjectID   string `json:"project_id,omitempty"`
-	CreatedBy   string `json:"created_by"`
+	Amount    string `json:"amount,omitempty"`
+	Currency  string `json:"currency,omitempty"`
+	ProjectID string `json:"project_id,omitempty"`
+	CreatedBy string `json:"created_by"`
+	// ApprovedBy is set when a journal workflow resumes an APPROVED journal:
+	// the approver is then excluded wherever the route refers to the skipped
+	// approval step.
+	ApprovedBy  string `json:"approved_by,omitempty"`
 	Fingerprint string `json:"fingerprint"`
 	Label       string `json:"label,omitempty"`
 }
@@ -235,6 +239,30 @@ func ListWorkflowInstances(ctx context.Context, tx pgx.Tx, f InstanceFilter) ([]
 		WHERE ($1='' OR i.status=$1) AND ($2='' OR i.subject_type=$2) AND ($3='' OR i.subject_id::text=$3)
 		  AND (NOT $4 OR (i.status='ACTIVE' AND i.sla_due_at <= now()))
 		ORDER BY i.started_at DESC LIMIT $5`, f.Status, f.SubjectType, f.SubjectID, f.Overdue, f.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WorkflowInstance
+	for rows.Next() {
+		w, err := scanWFInst(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+// ActiveInstancesAwaiting lists ACTIVE instances whose open step requires one
+// of the given permissions, oldest waiting first.
+func ActiveInstancesAwaiting(ctx context.Context, tx pgx.Tx, perms []string, limit int) ([]WorkflowInstance, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+	rows, err := tx.Query(ctx, `SELECT `+wfInstCols+` FROM workflow_instances i JOIN workflow_definitions d ON d.id=i.definition_id
+		WHERE i.status='ACTIVE' AND i.route->i.current_step->>'permission' = ANY($1::text[])
+		ORDER BY i.step_started_at LIMIT $2`, perms, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -420,7 +420,7 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeErr(w, http.StatusConflict, "idempotency_conflict", "idempotency key already used with a different command")
 	case errors.Is(err, postgres.ErrVersionConflict):
-		writeErr(w, http.StatusConflict, "version_conflict", "journal was modified concurrently; reload and retry")
+		writeErr(w, http.StatusConflict, "version_conflict", "the record was modified concurrently; reload and retry")
 	case errors.Is(err, ledger.ErrBadTransition), errors.Is(err, ledger.ErrNotPosted), errors.Is(err, ledger.ErrAlreadyReversed),
 		errors.Is(err, fx.ErrSnapshotState), errors.Is(err, kernel.ErrClosePrerequisite):
 		writeErr(w, http.StatusConflict, "invalid_state", uuidRe.ReplaceAllString(err.Error(), "<id>"))

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -48,6 +49,25 @@ func (s *Service) WorkflowCatalog() workflow.Catalog {
 		Permissions: s.authz.KnownPermissions(),
 		Subjects:    map[string]bool{"journal": true, "fx_snapshot": true, "fiscal_period": true},
 	}
+}
+
+// parseStored re-validates a stored definition and checks its body hash.
+// The hash covers the canonical encoding of the parsed definition (jsonb
+// does not preserve byte layout), so it detects any change of content.
+func (s *Service) parseStored(d postgres.WorkflowDefinitionRow) (workflow.Definition, error) {
+	def, err := workflow.Parse(d.Body, s.WorkflowCatalog())
+	if err != nil {
+		return workflow.Definition{}, err
+	}
+	canonical, err := json.Marshal(def)
+	if err != nil {
+		return workflow.Definition{}, err
+	}
+	sum := sha256.Sum256(canonical)
+	if "sha256:"+hex.EncodeToString(sum[:]) != d.BodyHash {
+		return workflow.Definition{}, fmt.Errorf("%w: stored definition does not match its hash", workflow.ErrInvalid)
+	}
+	return def, nil
 }
 
 func refuseIfMandatory(ctx context.Context, tx pgx.Tx, subject string) error {
@@ -120,7 +140,7 @@ func (s *Service) DecideWorkflowDefinition(ctx context.Context, p auth.Principal
 		}
 		// Re-validate against today's catalog: a permission or effect may
 		// have been withdrawn since the draft was proposed.
-		if _, err := workflow.Parse(d.Body, s.WorkflowCatalog()); err != nil {
+		if _, err := s.parseStored(d); err != nil {
 			return err
 		}
 		status, ev := "REJECTED", "workflow.definition.rejected"
@@ -157,6 +177,16 @@ func (s *Service) ListWorkflowDefinitions(ctx context.Context, p auth.Principal)
 type subjectFacts struct {
 	facts  postgres.InstanceFacts
 	amount *money.Money
+	// resume: a journal that is already APPROVED; its route starts after the
+	// step that approves journals.
+	resume bool
+}
+
+// sameFacts compares routing facts. ApprovedBy is excluded: it legitimately
+// changes when the instance's own approval step runs.
+func sameFacts(a, b postgres.InstanceFacts) bool {
+	a.ApprovedBy, b.ApprovedBy = "", ""
+	return a == b
 }
 
 func fingerprint(parts ...string) string {
@@ -179,9 +209,9 @@ func loadSubjectFacts(ctx context.Context, tx pgx.Tx, subjectType, subjectID str
 		if err != nil {
 			return subjectFacts{}, err
 		}
-		return subjectFacts{amount: &debits, facts: postgres.InstanceFacts{Amount: debits.AmountString(), Currency: string(debits.Currency()),
-			ProjectID: rec.ProjectID, CreatedBy: rec.CreatedBy, Fingerprint: fingerprint("journal", rec.ID, hash),
-			Label: rec.Description}}, nil
+		return subjectFacts{amount: &debits, resume: rec.Status == "APPROVED", facts: postgres.InstanceFacts{Amount: debits.AmountString(),
+			Currency: string(debits.Currency()), ProjectID: rec.ProjectID, CreatedBy: rec.CreatedBy, ApprovedBy: rec.ApprovedBy,
+			Fingerprint: fingerprint("journal", rec.ID, hash), Label: rec.Description}}, nil
 	case "fx_snapshot":
 		snap, err := postgres.GetFXSnapshot(ctx, tx, subjectID, false)
 		if err != nil {
@@ -211,7 +241,7 @@ func subjectReady(ctx context.Context, tx pgx.Tx, subjectType, subjectID string)
 		if err != nil {
 			return err
 		}
-		if rec.Status != "DRAFT" {
+		if rec.Status != "DRAFT" && rec.Status != "APPROVED" {
 			return fmt.Errorf("%w: journal is %s", ErrWorkflowState, rec.Status)
 		}
 	case "fx_snapshot":
@@ -242,6 +272,17 @@ func freezeRoute(def workflow.Definition, sf subjectFacts) ([]postgres.RouteStep
 	route, err := def.Route(workflow.Facts{Amount: sf.amount})
 	if err != nil {
 		return nil, err
+	}
+	if sf.resume { // APPROVED journal: continue after the approval step
+		for i, r := range route {
+			if r.Effect == "journal.approve" {
+				route, sim = route[i+1:], sim[i+1:]
+				break
+			}
+		}
+		if len(route) == 0 {
+			return nil, fmt.Errorf("%w: nothing left to route for an approved journal", ErrWorkflowState)
+		}
 	}
 	out := make([]postgres.RouteStepRow, len(route))
 	for i, r := range route {
@@ -283,7 +324,7 @@ func (s *Service) SimulateWorkflow(ctx context.Context, p auth.Principal, defini
 		if err != nil {
 			return err
 		}
-		def, err := workflow.Parse(d.Body, s.WorkflowCatalog())
+		def, err := s.parseStored(d)
 		if err != nil {
 			return err
 		}
@@ -291,8 +332,8 @@ func (s *Service) SimulateWorkflow(ctx context.Context, p auth.Principal, defini
 		if err != nil {
 			return err
 		}
-		if err := s.requireSubjectAccess(p, auth.PermWorkflowRead, sf.facts); err != nil {
-			return err
+		if s.requireSubjectAccess(p, auth.PermWorkflowRead, sf.facts) != nil {
+			return ErrNotFound // out-of-scope subjects are indistinguishable from absent ones
 		}
 		out, err = freezeRoute(def, sf)
 		return err
@@ -312,21 +353,26 @@ func (s *Service) StartWorkflow(ctx context.Context, p auth.Principal, key, subj
 		if err != nil {
 			return err
 		}
-		def, err := workflow.Parse(d.Body, s.WorkflowCatalog())
+		def, err := s.parseStored(d)
 		if err != nil {
 			return err
 		}
 		if err := s.authz.Require(p, def.StartPermission, p.TenantID); err != nil {
 			return err
 		}
-		if err := subjectReady(ctx, tx, def.Subject, subjectID); err != nil {
+		if m, ok, err := postgres.MandatoryWorkflowFor(ctx, tx, def.Subject); err != nil {
 			return err
+		} else if ok && m.ID != d.ID {
+			return fmt.Errorf("%w: %s is governed by %q", ErrWorkflowRequired, def.Subject, m.Key)
 		}
 		sf, err := loadSubjectFacts(ctx, tx, def.Subject, subjectID)
 		if err != nil {
 			return err
 		}
-		if err := s.requireSubjectAccess(p, def.StartPermission, sf.facts); err != nil {
+		if s.requireSubjectAccess(p, def.StartPermission, sf.facts) != nil {
+			return ErrNotFound
+		}
+		if err := subjectReady(ctx, tx, def.Subject, subjectID); err != nil {
 			return err
 		}
 		route, err := freezeRoute(def, sf)
@@ -380,6 +426,14 @@ func excludedFor(w postgres.WorkflowInstance, decisions []postgres.WorkflowDecis
 			out[w.Facts.CreatedBy] = "created the subject"
 		case strings.HasPrefix(ref, workflow.RefStepPrefix):
 			id := strings.TrimPrefix(ref, workflow.RefStepPrefix)
+			inRoute := false
+			for _, r := range w.Route {
+				inRoute = inRoute || r.ID == id
+			}
+			if !inRoute && w.Facts.ApprovedBy != "" {
+				// The step ran before this instance (resumed APPROVED journal).
+				out[w.Facts.ApprovedBy] = "approved this journal before the workflow resumed"
+			}
 			for i := 0; i < w.CurrentStep; i++ {
 				if w.Route[i].ID != id {
 					continue
@@ -393,6 +447,27 @@ func excludedFor(w postgres.WorkflowInstance, decisions []postgres.WorkflowDecis
 		}
 	}
 	return out
+}
+
+// assertGoverning: an instance acts only while its definition version is the
+// published one and no other mandatory definition governs the subject type
+// (the database enforces the same rule under an advisory lock).
+func (s *Service) assertGoverning(ctx context.Context, tx pgx.Tx, w postgres.WorkflowInstance) error {
+	d, err := postgres.GetWorkflowDefinition(ctx, tx, w.DefinitionID, false)
+	if err != nil {
+		return err
+	}
+	if d.Status != "PUBLISHED" {
+		return fmt.Errorf("%w: definition %s v%d is %s; cancel this instance and start the current version", ErrWorkflowState, d.Key, d.Version, d.Status)
+	}
+	m, ok, err := postgres.MandatoryWorkflowFor(ctx, tx, w.SubjectType)
+	if err != nil {
+		return err
+	}
+	if ok && m.ID != d.ID {
+		return fmt.Errorf("%w: %s is governed by %q; cancel this instance", ErrWorkflowRequired, w.SubjectType, m.Key)
+	}
+	return nil
 }
 
 // DecisionResult reports the outcome of a decision.
@@ -422,6 +497,9 @@ func (s *Service) DecideWorkflow(ctx context.Context, p auth.Principal, instance
 		if err != nil {
 			return err
 		}
+		if !s.authz.ScopeOf(p).Allows(w.Facts.ProjectID) {
+			return ErrNotFound // never reveal the state of out-of-scope instances
+		}
 		step, ok := w.OpenStep()
 		if !ok {
 			return fmt.Errorf("%w: instance is %s", ErrWorkflowState, w.Status)
@@ -432,6 +510,16 @@ func (s *Service) DecideWorkflow(ctx context.Context, p auth.Principal, instance
 		}
 		if err := s.requireSubjectAccess(p, perm, w.Facts); err != nil {
 			return err
+		}
+		if err := s.assertGoverning(ctx, tx, w); err != nil {
+			return err
+		}
+		now, err := postgres.DBNow(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if w.ExpiresAt != nil && !w.ExpiresAt.After(now) {
+			return fmt.Errorf("%w: the open step expired at %s", ErrWorkflowState, w.ExpiresAt.UTC().Format(time.RFC3339))
 		}
 		stepUp := s.authz.RequireStepUp(p)
 		if step.RequireMFA && stepUp != nil {
@@ -461,7 +549,7 @@ func (s *Service) DecideWorkflow(ctx context.Context, p auth.Principal, instance
 		if err != nil {
 			return err
 		}
-		if sf.facts != w.Facts {
+		if !sameFacts(sf.facts, w.Facts) {
 			return ErrSubjectChanged
 		}
 		decision := "REJECT"
@@ -534,24 +622,42 @@ func (s *Service) DecideWorkflow(ctx context.Context, p auth.Principal, instance
 	return res, err
 }
 
+var uuidPattern = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+
+// consoleError is the failure text shown to approvers: no SQLSTATE, no
+// identifiers, bounded length.
+func consoleError(err error) string {
+	msg := err.Error()
+	if i := strings.Index(msg, " (SQLSTATE"); i > 0 {
+		msg = msg[:i]
+	}
+	msg = strings.TrimPrefix(msg, postgres.ErrInvariant.Error()+": ")
+	msg = uuidPattern.ReplaceAllString(msg, "<id>")
+	if len(msg) > 300 {
+		msg = msg[:300]
+	}
+	return msg
+}
+
 // recordEffectFailure logs a refused effect in its own transaction so the
 // console can show it (the decision itself was rolled back).
 func (s *Service) recordEffectFailure(ctx context.Context, p auth.Principal, instanceID string, cause error) {
+	msg := consoleError(cause)
 	_ = s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
 		w, err := postgres.GetWorkflowInstance(ctx, tx, instanceID, true)
 		if err != nil || w.Status != "ACTIVE" {
 			return err
 		}
-		if err := postgres.RecordWorkflowEffectFailure(ctx, tx, instanceID, cause.Error()); err != nil {
+		if err := postgres.RecordWorkflowEffectFailure(ctx, tx, instanceID, msg); err != nil {
 			return err
 		}
 		idx := w.CurrentStep
 		if err := postgres.AppendWorkflowHistory(ctx, tx, p.TenantID, instanceID, postgres.WorkflowHistoryEntry{Kind: "EFFECT_FAILED", Actor: p.UserID,
-			StepIndex: &idx, Detail: map[string]any{"error": cause.Error()}}); err != nil {
+			StepIndex: &idx, Detail: map[string]any{"error": msg}}); err != nil {
 			return err
 		}
 		return postgres.Outbox(ctx, tx, postgres.OutboxEvent{TenantID: p.TenantID, AggregateType: "workflow_instance", AggregateID: instanceID,
-			EventType: "workflow.effect_failed", Payload: map[string]any{"instance_id": instanceID, "step_index": idx, "by": p.UserID, "error": cause.Error()}})
+			EventType: "workflow.effect_failed", Payload: map[string]any{"instance_id": instanceID, "step_index": idx, "by": p.UserID, "error": msg}})
 	})
 }
 
@@ -560,7 +666,7 @@ func (s *Service) rejectInstance(ctx context.Context, tx pgx.Tx, p auth.Principa
 	if err != nil {
 		return err
 	}
-	def, err := workflow.Parse(d.Body, s.WorkflowCatalog())
+	def, err := s.parseStored(d)
 	if err != nil {
 		return err
 	}
@@ -575,7 +681,7 @@ func (s *Service) rejectInstance(ctx context.Context, tx pgx.Tx, p auth.Principa
 		if cerr := s.executeEffect(ctx, sp, p, def.OnReject, w.SubjectID, reason); cerr != nil {
 			_ = sp.Rollback(ctx)
 			if err := postgres.AppendWorkflowHistory(ctx, tx, p.TenantID, w.ID, postgres.WorkflowHistoryEntry{Kind: "EFFECT_FAILED", Actor: p.UserID,
-				StepIndex: &idx, Detail: map[string]any{"effect": def.OnReject, "error": cerr.Error(), "compensation": true}}); err != nil {
+				StepIndex: &idx, Detail: map[string]any{"effect": def.OnReject, "error": consoleError(cerr), "compensation": true}}); err != nil {
 				return err
 			}
 		} else {
@@ -678,6 +784,7 @@ func (s *Service) RunWorkflowTimers(ctx context.Context, tenantID string, limit 
 	}
 	sys := auth.Principal{UserID: SystemTimerActor, TenantID: tenantID}
 	var res TimerResult
+	var first error
 	err := s.store.WithTenant(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
 		now, err := postgres.DBNow(ctx, tx) // same now() the database guards use
 		if err != nil {
@@ -688,6 +795,39 @@ func (s *Service) RunWorkflowTimers(ctx context.Context, tenantID string, limit 
 			return err
 		}
 		for _, w := range due {
+			// One savepoint per instance: a failing instance is skipped (and
+			// retried next pass) without undoing the others.
+			sp, err := tx.Begin(ctx)
+			if err != nil {
+				return err
+			}
+			r, err := s.timerOne(ctx, sp, sys, tenantID, w, now)
+			if err != nil {
+				_ = sp.Rollback(ctx)
+				if first == nil {
+					first = fmt.Errorf("instance %s: %w", w.ID, err)
+				}
+				continue
+			}
+			if err := sp.Commit(ctx); err != nil {
+				return err
+			}
+			res.Escalated += r.Escalated
+			res.Expired += r.Expired
+		}
+		return nil
+	})
+	if err == nil {
+		err = first
+	}
+	return res, err
+}
+
+// timerOne escalates or expires one due instance.
+func (s *Service) timerOne(ctx context.Context, tx pgx.Tx, sys auth.Principal, tenantID string, w postgres.WorkflowInstance, now time.Time) (TimerResult, error) {
+	var res TimerResult
+	err := func() error {
+		{
 			idx := w.CurrentStep
 			step, _ := w.OpenStep()
 			if w.ExpiresAt != nil && !w.ExpiresAt.After(now) {
@@ -703,7 +843,7 @@ func (s *Service) RunWorkflowTimers(ctx context.Context, tenantID string, limit 
 					return err
 				}
 				res.Expired++
-				continue
+				return nil
 			}
 			if w.SLADueAt != nil && !w.SLADueAt.After(now) && w.EscalatedAt == nil {
 				if err := postgres.MarkWorkflowEscalated(ctx, tx, w); err != nil {
@@ -722,7 +862,7 @@ func (s *Service) RunWorkflowTimers(ctx context.Context, tenantID string, limit 
 			}
 		}
 		return nil
-	})
+	}()
 	return res, err
 }
 
@@ -766,7 +906,11 @@ func (s *Service) ListWorkflowTasks(ctx context.Context, p auth.Principal) ([]Wo
 		if err != nil {
 			return err
 		}
-		active, err := postgres.ListWorkflowInstances(ctx, tx, postgres.InstanceFilter{Status: "ACTIVE", Limit: 500})
+		var perms []string
+		for _, perm := range s.authz.Permissions(p) {
+			perms = append(perms, string(perm))
+		}
+		active, err := postgres.ActiveInstancesAwaiting(ctx, tx, perms, 2000)
 		if err != nil {
 			return err
 		}

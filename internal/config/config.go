@@ -199,6 +199,9 @@ func (c Config) Validate() error {
 	} else if prod {
 		checkDSN(c.HealthDSN, "SERK_HEALTH_DSN", bad)
 	}
+	if c.WorkflowTimerInterval > 3600 {
+		bad("SERK_WORKFLOW_TIMER_INTERVAL_SECONDS must be at most 3600")
+	}
 	if c.SchedulerDSN != "" && prod {
 		checkDSN(c.SchedulerDSN, "SERK_SCHEDULER_DSN", bad)
 	}
