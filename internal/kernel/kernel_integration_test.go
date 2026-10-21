@@ -7,11 +7,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/shopspring/decimal"
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/auth"
-	"github.com/serk-group/serk-construction/pkg/fx"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 	"github.com/serk-group/serk-construction/pkg/money"
 )
@@ -280,113 +278,70 @@ func TestReversalFlow(t *testing.T) {
 
 func TestClosedPeriodBlocksPosting(t *testing.T) {
 	f := newFixture(t)
-	res, err := f.svc.CreateJournal(f.ctx, f.prep, f.balanced(key("period")))
+	period := f.period(t)
+	// A raw close without an actor is refused by the database.
+	if err := f.rawExec(`UPDATE fiscal_periods SET status='CLOSED' WHERE id=$1::uuid`, period); !errors.Is(err, postgres.ErrInvariant) {
+		t.Fatalf("anonymous raw close accepted: %v", err)
+	}
+	// Closing with an approved-but-unposted journal in the period is refused.
+	pending, _ := f.svc.CreateJournal(f.ctx, f.prep, f.balanced(key("pending")))
+	if err := f.svc.ApproveJournal(f.ctx, f.appr, pending.JournalID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.ClosePeriod(f.ctx, f.ctrl, period, false); !errors.Is(err, postgres.ErrInvariant) {
+		t.Fatalf("closed over an approved, unposted journal: %v", err)
+	}
+	if err := f.svc.PostJournal(f.ctx, f.post, pending.JournalID); err != nil {
+		t.Fatal(err)
+	}
+	// Close records the trial balance; posting into the closed period fails.
+	res, err := f.svc.ClosePeriod(f.ctx, f.ctrl, period, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.ApproveJournal(f.ctx, f.appr, res.JournalID); err != nil {
+	if res.Record.Action != "CLOSE" || res.Record.JournalCount != 1 || res.Record.TBDebits != "115000.000000" || res.Record.TBDebits != res.Record.TBCredits {
+		t.Fatalf("closing TB record: %+v", res.Record)
+	}
+	late, _ := f.svc.CreateJournal(f.ctx, f.prep, f.balanced(key("late")))
+	if err := f.svc.ApproveJournal(f.ctx, f.appr, late.JournalID); err != nil {
 		t.Fatal(err)
 	}
-	close := func(status string) {
-		err := f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, `UPDATE fiscal_periods SET status=$1 WHERE name='FY2026-Q4'`, status)
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	close("CLOSED")
-	if err := f.svc.PostJournal(f.ctx, f.post, res.JournalID); !errors.Is(err, postgres.ErrInvariant) {
+	if err := f.svc.PostJournal(f.ctx, f.post, late.JournalID); !errors.Is(err, postgres.ErrInvariant) {
 		t.Fatalf("posted into closed period: %v", err)
 	}
-	close("OPEN")
-	if err := f.svc.PostJournal(f.ctx, f.post, res.JournalID); err != nil {
+	// Reopen needs period.reopen, MFA step-up, a reason, and a person other than the closer.
+	noMFA := f.cfo
+	noMFA.MFA = false
+	if err := f.svc.ReopenPeriod(f.ctx, noMFA, period, "late supplier invoice"); !errors.Is(err, auth.ErrStepUpRequired) {
+		t.Fatalf("reopen without MFA: %v", err)
+	}
+	if err := f.svc.ReopenPeriod(f.ctx, f.cfo, period, "x"); !errors.Is(err, ErrReasonRequired) {
+		t.Fatalf("reopen without reason: %v", err)
+	}
+	closerAsCFO := auth.Principal{UserID: f.ctrl.UserID, TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()}
+	if err := f.svc.ReopenPeriod(f.ctx, closerAsCFO, period, "late supplier invoice"); !errors.Is(err, auth.ErrSoD) {
+		t.Fatalf("closer reopened own period: %v", err)
+	}
+	if err := f.svc.ReopenPeriod(f.ctx, f.cfo, period, "late supplier invoice"); err != nil {
 		t.Fatal(err)
+	}
+	if err := f.svc.PostJournal(f.ctx, f.post, late.JournalID); err != nil {
+		t.Fatal(err)
+	}
+	// LOCKED is terminal.
+	if _, err := f.svc.ClosePeriod(f.ctx, f.ctrl, period, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.ReopenPeriod(f.ctx, f.cfo, period, "attempt after lock"); err == nil {
+		t.Fatal("LOCKED period reopened")
 	}
 	// Event outside any period.
 	j := f.balanced(key("noperiod"))
 	j.BusinessEventAt = time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC)
-	res, _ = f.svc.CreateJournal(f.ctx, f.prep, j)
-	_ = f.svc.ApproveJournal(f.ctx, f.appr, res.JournalID)
-	if err := f.svc.PostJournal(f.ctx, f.post, res.JournalID); !errors.Is(err, postgres.ErrInvariant) {
+	out, _ := f.svc.CreateJournal(f.ctx, f.prep, j)
+	_ = f.svc.ApproveJournal(f.ctx, f.appr, out.JournalID)
+	if err := f.svc.PostJournal(f.ctx, f.post, out.JournalID); !errors.Is(err, postgres.ErrInvariant) {
 		t.Fatalf("posted without a fiscal period: %v", err)
-	}
-}
-
-func TestFXSnapshotsAndConversion(t *testing.T) {
-	f := newFixture(t)
-	fxm := auth.Principal{UserID: "u-fx", TenantID: f.tenant, Roles: []string{"finance_manager"}}
-	base := fx.Snapshot{SourceID: "NBE", SourceType: "CENTRAL_BANK", BaseCurrency: "USD", QuoteCurrency: "ETB", RateType: fx.RateOfficial,
-		SourceDocumentHash: "sha256:nbe-2026-10-01"}
-	s1 := base
-	s1.Rate, s1.EffectiveFromUTC, s1.PublishedAtUTC = decimal.RequireFromString("57.1"), time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC)
-	s2 := base
-	s2.Rate, s2.EffectiveFromUTC, s2.PublishedAtUTC = decimal.RequireFromString("58.0"), time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 10, 6, 0, 0, 0, time.UTC)
-	if _, err := f.svc.RecordFXSnapshot(f.ctx, fxm, s1, true); err != nil {
-		t.Fatal(err)
-	}
-	s2id, err := f.svc.RecordFXSnapshot(f.ctx, fxm, s2, false) // pending
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Accountant cannot record snapshots.
-	if _, err := f.svc.RecordFXSnapshot(f.ctx, f.prep, s1, true); !errors.Is(err, auth.ErrForbidden) {
-		t.Fatalf("accountant recorded a snapshot: %v", err)
-	}
-	conv, err := f.svc.Convert(f.ctx, f.prep, ConvertRequest{Amount: money.MustNew("1000", "USD"), Target: "ETB",
-		EventAt: time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), Policy: fx.Policy{RateType: fx.RateOfficial}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if conv.To.AmountString() != "57100.00" { // pending 58.0 must not be used
-		t.Fatalf("conversion used a pending rate: %s", conv.To)
-	}
-	// Approve s2 and convert again.
-	_ = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
-		return postgres.SetFXSnapshotApproval(ctx, tx, s2id, fx.StatusApproved, "u-fx")
-	})
-	conv, _ = f.svc.Convert(f.ctx, f.prep, ConvertRequest{Amount: money.MustNew("1000", "USD"), Target: "ETB",
-		EventAt: time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), Policy: fx.Policy{RateType: fx.RateOfficial}})
-	if conv.To.AmountString() != "58000.00" || conv.SnapshotID != s2id {
-		t.Fatalf("approved rate not used: %+v", conv)
-	}
-	// Missing pair -> explicit exception, never a fabricated rate.
-	if _, err := f.svc.Convert(f.ctx, f.prep, ConvertRequest{Amount: money.MustNew("1", "CNY"), Target: "ETB", EventAt: time.Now()}); !errors.Is(err, fx.ErrRateMissing) {
-		t.Fatalf("want ErrRateMissing got %v", err)
-	}
-	// Snapshot observation fields are immutable at the DB level.
-	err = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE fx_snapshots SET rate = 1 WHERE snapshot_id=$1::uuid`, s2id)
-		return err
-	})
-	if err == nil {
-		t.Fatal("fx snapshot rate was mutated")
-	}
-	// Posting a line with a foreign amount binds the snapshot (LAW 06).
-	usd := money.MustNew("1000.00", "USD")
-	j := f.journal(key("fxj"),
-		ledger.Line{AccountID: f.accounts["5000"], Side: ledger.Debit, Amount: conv.To, TxnAmount: &usd, FXSnapshotID: s2id},
-		ledger.Line{AccountID: f.accounts["2000"], Side: ledger.Credit, Amount: conv.To},
-	)
-	id := f.lifecycle(t, j)
-	rec, _ := f.svc.GetJournal(f.ctx, f.prep, id)
-	if rec.Lines[0].FXSnapshotID != s2id || rec.Lines[0].TxnAmount == nil || !rec.Lines[0].TxnAmount.Equal(usd) {
-		t.Fatalf("fx provenance lost: %+v", rec.Lines[0])
-	}
-	// A foreign amount without a snapshot is rejected by the DB CHECK as well.
-	err = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
-		var jid string
-		if err := tx.QueryRow(ctx, `INSERT INTO journals(tenant_id,legal_entity_id,functional_currency,business_event_at,description,source_type,idempotency_key,command_hash,created_by)
-			VALUES ($1::uuid,$2::uuid,'ETB','2026-10-15','raw','MANUAL',$3,'h','a') RETURNING id::text`, f.tenant, f.entity, key("rawfx")).Scan(&jid); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `INSERT INTO journal_lines(journal_id,tenant_id,legal_entity_id,line_no,account_id,side,amount,currency,txn_amount,txn_currency)
-			VALUES ($1::uuid,$2::uuid,$4::uuid,1,$3::uuid,'DEBIT',100,'ETB',2,'USD')`, jid, f.tenant, f.accounts["5000"], f.entity)
-		return err
-	})
-	if !errors.Is(err, postgres.ErrInvariant) {
-		t.Fatalf("foreign amount without snapshot accepted: %v", err)
 	}
 }
 

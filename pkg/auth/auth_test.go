@@ -3,20 +3,30 @@ package auth
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestDefaultRolesSeparateDuties(t *testing.T) {
 	a := NewAuthorizer(nil, true)
+	conflicts := [][]Permission{
+		{PermJournalCreate, PermJournalApprove, PermJournalPost},
+		{PermFXManage, PermFXApprove},
+		{PermFXManage, PermFXPolicyApprove},
+		{PermWorkflowDefine, PermWorkflowPublish},
+		{PermPeriodClose, PermPeriodReopen},
+	}
 	for name := range DefaultRoles {
 		p := Principal{UserID: "u", TenantID: "t", Roles: []string{name}}
-		n := 0
-		for _, perm := range []Permission{PermJournalCreate, PermJournalApprove, PermJournalPost} {
-			if a.Has(p, perm) {
-				n++
+		for _, set := range conflicts {
+			n := 0
+			for _, perm := range set {
+				if a.Has(p, perm) {
+					n++
+				}
 			}
-		}
-		if n > 1 {
-			t.Fatalf("role %s holds %d of create/approve/post", name, n)
+			if n > 1 {
+				t.Fatalf("role %s holds %d of %v", name, n, set)
+			}
 		}
 	}
 }
@@ -42,18 +52,61 @@ func TestRequire(t *testing.T) {
 	}
 }
 
-func TestProjectABAC(t *testing.T) {
+// SC-05: tenant-wide access is an explicit entitlement, never implied by an
+// empty project list, and a project-limited session never reaches
+// unassigned (tenant-wide) records.
+func TestScopeSC05(t *testing.T) {
 	a := NewAuthorizer(nil, true)
+	cases := []struct {
+		name    string
+		p       Principal
+		project string
+		allowed bool
+	}{
+		{"tenant-wide accountant, unassigned", Principal{Roles: []string{"accountant"}}, "", true},
+		{"tenant-wide accountant, any project", Principal{Roles: []string{"accountant"}}, "p9", true},
+		{"accountant limited to p1, unassigned", Principal{Roles: []string{"accountant"}, ProjectIDs: []string{"p1"}}, "", false},
+		{"accountant limited to p1, p1", Principal{Roles: []string{"accountant"}, ProjectIDs: []string{"p1"}}, "p1", true},
+		{"accountant limited to p1, p2", Principal{Roles: []string{"accountant"}, ProjectIDs: []string{"p1"}}, "p2", false},
+		{"project accountant, no projects, unassigned", Principal{Roles: []string{"project_accountant"}}, "", false},
+		{"project accountant, no projects, p1", Principal{Roles: []string{"project_accountant"}}, "p1", false},
+		{"project accountant, p1+p2 mixed, p2", Principal{Roles: []string{"project_accountant"}, ProjectIDs: []string{"p1", "p2"}}, "p2", true},
+		{"project accountant, p1+p2 mixed, unassigned", Principal{Roles: []string{"project_accountant"}, ProjectIDs: []string{"p1", "p2"}}, "", false},
+		{"inherited roles: PM + accountant limited to p1, unassigned", Principal{Roles: []string{"project_manager", "accountant"}, ProjectIDs: []string{"p1"}}, "", false},
+	}
+	for _, c := range cases {
+		c.p.UserID, c.p.TenantID = "u", "t"
+		perm := PermJournalCreate
+		err := a.RequireProject(c.p, perm, "t", c.project)
+		if c.allowed && err != nil {
+			t.Errorf("%s: denied: %v", c.name, err)
+		}
+		if !c.allowed && !errors.Is(err, ErrForbidden) {
+			t.Errorf("%s: allowed (err=%v)", c.name, err)
+		}
+	}
+	// Read access follows the same scope rule.
 	pm := Principal{UserID: "u", TenantID: "t", Roles: []string{"project_manager"}, ProjectIDs: []string{"p1"}}
-	if err := a.RequireProject(pm, PermJournalRead, "t", "p1"); err != nil {
+	if err := a.RequireProject(pm, PermJournalRead, "t", ""); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("scoped PM read an unassigned journal: %v", err)
+	}
+}
+
+func TestStepUp(t *testing.T) {
+	a := NewAuthorizer(nil, true)
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	a.now = func() time.Time { return now }
+	if err := a.RequireStepUp(Principal{MFA: false, AuthTime: now}); !errors.Is(err, ErrStepUpRequired) {
+		t.Fatal("no-MFA session passed step-up")
+	}
+	if err := a.RequireStepUp(Principal{MFA: true, AuthTime: now.Add(-11 * time.Minute)}); !errors.Is(err, ErrStepUpRequired) {
+		t.Fatal("stale MFA passed step-up")
+	}
+	if err := a.RequireStepUp(Principal{MFA: true}); !errors.Is(err, ErrStepUpRequired) {
+		t.Fatal("MFA without auth_time passed step-up")
+	}
+	if err := a.RequireStepUp(Principal{MFA: true, AuthTime: now.Add(-2 * time.Minute)}); err != nil {
 		t.Fatal(err)
-	}
-	if err := a.RequireProject(pm, PermJournalRead, "t", "p2"); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("project restriction bypassed: %v", err)
-	}
-	all := Principal{UserID: "u", TenantID: "t", Roles: []string{"project_manager"}}
-	if err := a.RequireProject(all, PermJournalRead, "t", "p2"); err != nil {
-		t.Fatal("unrestricted principal denied")
 	}
 }
 
@@ -84,5 +137,8 @@ func TestSoD(t *testing.T) {
 	relaxed := NewAuthorizer(nil, false)
 	if err := relaxed.CheckSoDPost(appr, JournalActors{CreatedBy: "prep", ApprovedBy: "appr"}); err != nil {
 		t.Fatal("two-person rule should permit approver to post")
+	}
+	if err := CheckMakerChecker(Principal{UserID: "m"}, "m", "rate"); !errors.Is(err, ErrSoD) {
+		t.Fatal("maker approved own record")
 	}
 }

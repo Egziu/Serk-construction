@@ -130,9 +130,13 @@ type Line struct {
 	// kernel from the referenced snapshot, never by the client; it is stored
 	// with the line so the amount is reproducible (LAW 06).
 	AppliedRate decimal.Decimal
-	ProjectID   string // project dimension (required for project-scoped journals)
-	CostCodeID  string // WBS / cost code dimension, optional
-	Memo        string
+	// FXPolicyID / FXPolicyVersion identify the approved entity FX policy
+	// under which the snapshot was selected (SC-02); set by the kernel.
+	FXPolicyID      string
+	FXPolicyVersion int
+	ProjectID       string // project dimension (required for project-scoped journals)
+	CostCodeID      string // WBS / cost code dimension, optional
+	Memo            string
 }
 
 // Journal is a set of lines that must balance.

@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 
-	"github.com/serk-group/serk-construction/pkg/fx"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 	"github.com/serk-group/serk-construction/pkg/money"
 )
@@ -84,104 +83,6 @@ func CreateFiscalPeriod(ctx context.Context, tx pgx.Tx, tenantID, legalEntityID,
 	return id, err
 }
 
-// SetFiscalPeriodStatus moves a period between OPEN/CLOSED/LOCKED.
-func SetFiscalPeriodStatus(ctx context.Context, tx pgx.Tx, id, status, by string) error {
-	tag, err := tx.Exec(ctx, `UPDATE fiscal_periods SET status=$2, closed_by=CASE WHEN $2='OPEN' THEN NULL ELSE $3 END,
-		closed_at=CASE WHEN $2='OPEN' THEN NULL ELSE now() END WHERE id=$1::uuid`, id, status, by)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// ---------------------------------------------------------------------------
-// FX snapshots
-// ---------------------------------------------------------------------------
-
-// InsertFXSnapshot stores an observation. ID is generated when empty.
-func InsertFXSnapshot(ctx context.Context, tx pgx.Tx, s fx.Snapshot) (string, error) {
-	if s.SnapshotID == "" {
-		s.SnapshotID = newID()
-	}
-	if s.CapturedAtUTC.IsZero() {
-		s.CapturedAtUTC = time.Now().UTC()
-	}
-	if s.AlgorithmVersion == "" {
-		s.AlgorithmVersion = fx.AlgorithmVersion
-	}
-	if s.ApprovalStatus == "" {
-		s.ApprovalStatus = fx.StatusPending
-	}
-	if err := s.Validate(); err != nil {
-		return "", err
-	}
-	var be *time.Time
-	if !s.BusinessEventAtUTC.IsZero() {
-		t := s.BusinessEventAtUTC
-		be = &t
-	}
-	var approvedBy *string
-	if s.ApprovalStatus == fx.StatusApproved {
-		approvedBy = &s.CreatedBy
-	}
-	_, err := tx.Exec(ctx, `INSERT INTO fx_snapshots(snapshot_id,tenant_id,source_id,source_type,base_currency,quote_currency,rate,rate_type,
-		effective_from_utc,published_at_utc,captured_at_utc,business_event_at_utc,source_document_hash,algorithm_version,approval_status,approved_by,created_by)
-		VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7::numeric,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-		s.SnapshotID, s.TenantID, s.SourceID, s.SourceType, string(s.BaseCurrency), string(s.QuoteCurrency), s.Rate.String(), string(s.RateType),
-		s.EffectiveFromUTC, s.PublishedAtUTC, s.CapturedAtUTC, be, s.SourceDocumentHash, s.AlgorithmVersion, string(s.ApprovalStatus), approvedBy, s.CreatedBy)
-	return s.SnapshotID, err
-}
-
-// SetFXSnapshotApproval changes only the approval state of a snapshot.
-func SetFXSnapshotApproval(ctx context.Context, tx pgx.Tx, id string, status fx.ApprovalStatus, by string) error {
-	tag, err := tx.Exec(ctx, `UPDATE fx_snapshots SET approval_status=$2, approved_by=CASE WHEN $2='APPROVED' THEN $3 ELSE approved_by END WHERE snapshot_id=$1::uuid`, id, string(status), by)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// ListFXSnapshots returns all snapshots for a pair in either orientation,
-// effective on or before `until`. Selection policy is applied by pkg/fx.
-func ListFXSnapshots(ctx context.Context, tx pgx.Tx, base, quote money.Currency, until time.Time) ([]fx.Snapshot, error) {
-	rows, err := tx.Query(ctx, `SELECT snapshot_id::text, tenant_id::text, source_id, source_type, base_currency, quote_currency, rate::text, rate_type,
-		effective_from_utc, published_at_utc, captured_at_utc, business_event_at_utc, source_document_hash, algorithm_version, approval_status, created_by
-		FROM fx_snapshots
-		WHERE ((base_currency=$1 AND quote_currency=$2) OR (base_currency=$2 AND quote_currency=$1)) AND effective_from_utc <= $3
-		ORDER BY effective_from_utc DESC LIMIT 500`, string(base), string(quote), until)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []fx.Snapshot
-	for rows.Next() {
-		var s fx.Snapshot
-		var rate string
-		var be *time.Time
-		var b, q, rt, st string
-		if err := rows.Scan(&s.SnapshotID, &s.TenantID, &s.SourceID, &s.SourceType, &b, &q, &rate, &rt,
-			&s.EffectiveFromUTC, &s.PublishedAtUTC, &s.CapturedAtUTC, &be, &s.SourceDocumentHash, &s.AlgorithmVersion, &st, &s.CreatedBy); err != nil {
-			return nil, err
-		}
-		s.BaseCurrency, s.QuoteCurrency = money.Currency(b), money.Currency(q)
-		s.RateType, s.ApprovalStatus = fx.RateType(rt), fx.ApprovalStatus(st)
-		if s.Rate, err = decimal.NewFromString(rate); err != nil {
-			return nil, err
-		}
-		if be != nil {
-			s.BusinessEventAtUTC = *be
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
-}
-
 // ---------------------------------------------------------------------------
 // Journals
 // ---------------------------------------------------------------------------
@@ -213,32 +114,6 @@ func CommandHash(j ledger.Journal) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// GetFXSnapshot loads one snapshot by id.
-func GetFXSnapshot(ctx context.Context, tx pgx.Tx, id string) (fx.Snapshot, error) {
-	var s fx.Snapshot
-	var rate, b, q, rt, st string
-	var be *time.Time
-	err := tx.QueryRow(ctx, `SELECT snapshot_id::text, tenant_id::text, source_id, source_type, base_currency, quote_currency, rate::text, rate_type,
-		effective_from_utc, published_at_utc, captured_at_utc, business_event_at_utc, source_document_hash, algorithm_version, approval_status, created_by
-		FROM fx_snapshots WHERE snapshot_id=$1::uuid`, id).Scan(&s.SnapshotID, &s.TenantID, &s.SourceID, &s.SourceType, &b, &q, &rate, &rt,
-		&s.EffectiveFromUTC, &s.PublishedAtUTC, &s.CapturedAtUTC, &be, &s.SourceDocumentHash, &s.AlgorithmVersion, &st, &s.CreatedBy)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return fx.Snapshot{}, ErrNotFound
-	}
-	if err != nil {
-		return fx.Snapshot{}, err
-	}
-	s.BaseCurrency, s.QuoteCurrency = money.Currency(b), money.Currency(q)
-	s.RateType, s.ApprovalStatus = fx.RateType(rt), fx.ApprovalStatus(st)
-	if s.Rate, err = decimal.NewFromString(rate); err != nil {
-		return fx.Snapshot{}, err
-	}
-	if be != nil {
-		s.BusinessEventAtUTC = *be
-	}
-	return s, nil
-}
-
 // GetAccount loads an account.
 func GetAccount(ctx context.Context, tx pgx.Tx, id string) (ledger.Account, error) {
 	var a ledger.Account
@@ -263,12 +138,15 @@ func GetAccount(ctx context.Context, tx pgx.Tx, id string) (ledger.Account, erro
 // reference data (account, snapshot). It is a validation error, not a bug.
 var ErrLineRejected = errors.New("ledger: line rejected")
 
-// bindLines resolves every line against stored accounts and FX snapshots:
+// bindLines resolves every line against stored accounts and FX controls:
 // account exists in the journal's entity and is active, its currency
-// restriction holds, the snapshot is APPROVED and of the right pair, and the
-// functional amount equals round_half_even(txn_amount × rate). On success the
-// applied rate is written into the line (LAW 06 provenance).
+// restriction holds, and for a foreign-currency line the snapshot is exactly
+// the one the entity's approved FX policy selects for the business event
+// (SC-02) and the functional amount equals round_half_even(txn_amount × rate).
+// On success the applied rate and policy binding are written into the line
+// (LAW 06 provenance).
 func bindLines(ctx context.Context, tx pgx.Tx, j *ledger.Journal) error {
+	fx := &fxBinder{}
 	for i := range j.Lines {
 		l := &j.Lines[i]
 		acct, err := GetAccount(ctx, tx, l.AccountID)
@@ -293,34 +171,9 @@ func bindLines(ctx context.Context, tx pgx.Tx, j *ledger.Journal) error {
 			l.AppliedRate = decimal.Zero
 			continue
 		}
-		snap, err := GetFXSnapshot(ctx, tx, l.FXSnapshotID)
-		if err != nil {
-			if errors.Is(err, ErrNotFound) {
-				return fmt.Errorf("%w: line %d fx snapshot not found", ErrLineRejected, l.LineNo)
-			}
+		if err := fx.bindLine(ctx, tx, j, l); err != nil {
 			return err
 		}
-		if snap.ApprovalStatus != fx.StatusApproved {
-			return fmt.Errorf("%w: line %d fx snapshot %s is %s, not APPROVED", ErrLineRejected, l.LineNo, snap.SnapshotID, snap.ApprovalStatus)
-		}
-		var rate decimal.Decimal
-		switch {
-		case snap.BaseCurrency == l.TxnAmount.Currency() && snap.QuoteCurrency == j.FunctionalCurrency:
-			rate = snap.Rate
-		case snap.BaseCurrency == j.FunctionalCurrency && snap.QuoteCurrency == l.TxnAmount.Currency():
-			rate = decimal.NewFromInt(1).DivRound(snap.Rate, 12)
-		default:
-			return fmt.Errorf("%w: line %d snapshot pair %s/%s does not convert %s->%s", ErrLineRejected, l.LineNo,
-				snap.BaseCurrency, snap.QuoteCurrency, l.TxnAmount.Currency(), j.FunctionalCurrency)
-		}
-		expect, err := money.New(l.TxnAmount.Amount().Mul(rate), j.FunctionalCurrency, money.RoundHalfEven)
-		if err != nil {
-			return err
-		}
-		if !expect.Equal(l.Amount) {
-			return fmt.Errorf("%w: line %d amount %s does not reconcile to %s x %s = %s", ErrLineRejected, l.LineNo, l.Amount, l.TxnAmount, rate, expect)
-		}
-		l.AppliedRate = rate
 	}
 	return nil
 }
@@ -331,6 +184,10 @@ func bindLines(ctx context.Context, tx pgx.Tx, j *ledger.Journal) error {
 // different command under the same key is a conflict. The check is atomic
 // under the unique index, so concurrent identical retries never conflict.
 func CreateJournal(ctx context.Context, tx pgx.Tx, j ledger.Journal) (id string, replayed bool, err error) {
+	// Never mutate the caller's lines: binding writes server-derived fields
+	// (applied rate, policy) and callers may share the journal across
+	// goroutines (found by the race detector).
+	j.Lines = append([]ledger.Line(nil), j.Lines...)
 	j.Status = ledger.StatusDraft
 	if err = j.Validate(); err != nil {
 		return "", false, err
@@ -377,10 +234,13 @@ func CreateJournal(ctx context.Context, tx pgx.Tx, j ledger.Journal) (id string,
 	}
 	batch := &pgx.Batch{}
 	for _, l := range j.Lines {
-		var txnAmt, txnCur, snap, rate, lp, cc, memo *string
+		var txnAmt, txnCur, snap, rate, lp, cc, memo, pol *string
+		var polVer *int
 		if l.TxnAmount != nil {
 			a, c, r := l.TxnAmount.AmountString(), string(l.TxnAmount.Currency()), l.AppliedRate.String()
 			txnAmt, txnCur, rate = &a, &c, &r
+			pid, pv := l.FXPolicyID, l.FXPolicyVersion
+			pol, polVer = &pid, &pv
 		}
 		if l.FXSnapshotID != "" {
 			snap = &l.FXSnapshotID
@@ -394,9 +254,11 @@ func CreateJournal(ctx context.Context, tx pgx.Tx, j ledger.Journal) (id string,
 		if l.Memo != "" {
 			memo = &l.Memo
 		}
-		batch.Queue(`INSERT INTO journal_lines(journal_id,tenant_id,legal_entity_id,line_no,account_id,side,amount,currency,txn_amount,txn_currency,fx_snapshot_id,applied_rate,project_id,cost_code_id,memo)
-			VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::numeric,$8,$9::numeric,$10,$11::uuid,$12::numeric,$13::uuid,$14::uuid,$15)`,
-			id, j.TenantID, j.LegalEntityID, l.LineNo, l.AccountID, string(l.Side), l.Amount.AmountString(), string(l.Amount.Currency()), txnAmt, txnCur, snap, rate, lp, cc, memo)
+		batch.Queue(`INSERT INTO journal_lines(journal_id,tenant_id,legal_entity_id,line_no,account_id,side,amount,currency,txn_amount,txn_currency,
+			fx_snapshot_id,applied_rate,fx_policy_id,fx_policy_version,project_id,cost_code_id,memo)
+			VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5::uuid,$6,$7::numeric,$8,$9::numeric,$10,$11::uuid,$12::numeric,$13::uuid,$14,$15::uuid,$16::uuid,$17)`,
+			id, j.TenantID, j.LegalEntityID, l.LineNo, l.AccountID, string(l.Side), l.Amount.AmountString(), string(l.Amount.Currency()), txnAmt, txnCur,
+			snap, rate, pol, polVer, lp, cc, memo)
 	}
 	br := tx.SendBatch(ctx, batch)
 	for range j.Lines {
@@ -445,7 +307,8 @@ func GetJournal(ctx context.Context, tx pgx.Tx, id string, forUpdate bool) (Jour
 	r.FunctionalCurrency, r.Status = money.Currency(cur), ledger.Status(st)
 
 	rows, err := tx.Query(ctx, `SELECT line_no, account_id::text, side, amount::text, currency, txn_amount::text, txn_currency,
-		COALESCE(fx_snapshot_id::text,''), COALESCE(applied_rate::text,'0'), COALESCE(project_id::text,''), COALESCE(cost_code_id::text,''), COALESCE(memo,'')
+		COALESCE(fx_snapshot_id::text,''), COALESCE(applied_rate::text,'0'), COALESCE(fx_policy_id::text,''), COALESCE(fx_policy_version,0),
+		COALESCE(project_id::text,''), COALESCE(cost_code_id::text,''), COALESCE(memo,'')
 		FROM journal_lines WHERE journal_id=$1::uuid ORDER BY line_no`, id)
 	if err != nil {
 		return JournalRecord{}, err
@@ -455,7 +318,7 @@ func GetJournal(ctx context.Context, tx pgx.Tx, id string, forUpdate bool) (Jour
 		var l ledger.Line
 		var side, amt, lcur, rate string
 		var txnAmt, txnCur *string
-		if err := rows.Scan(&l.LineNo, &l.AccountID, &side, &amt, &lcur, &txnAmt, &txnCur, &l.FXSnapshotID, &rate, &l.ProjectID, &l.CostCodeID, &l.Memo); err != nil {
+		if err := rows.Scan(&l.LineNo, &l.AccountID, &side, &amt, &lcur, &txnAmt, &txnCur, &l.FXSnapshotID, &rate, &l.FXPolicyID, &l.FXPolicyVersion, &l.ProjectID, &l.CostCodeID, &l.Memo); err != nil {
 			return JournalRecord{}, err
 		}
 		if l.AppliedRate, err = decimal.NewFromString(rate); err != nil {

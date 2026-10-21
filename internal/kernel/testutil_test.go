@@ -9,9 +9,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/shopspring/decimal"
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/auth"
+	"github.com/serk-group/serk-construction/pkg/fx"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 	"github.com/serk-group/serk-construction/pkg/money"
 )
@@ -35,7 +37,10 @@ type fixture struct {
 	appr     auth.Principal
 	post     auth.Principal
 	ctrl     auth.Principal // controller: post + reverse
+	treasury auth.Principal // FX maker
+	cfo      auth.Principal // FX exception checker, period reopen (MFA)
 	outsider auth.Principal // tenant 2
+	fxPolicy string
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -109,8 +114,62 @@ func newFixture(t *testing.T) *fixture {
 	f.appr = auth.Principal{UserID: "u-approver", TenantID: f.tenant, Roles: []string{"finance_manager"}}
 	f.post = auth.Principal{UserID: "u-poster", TenantID: f.tenant, Roles: []string{"controller"}}
 	f.ctrl = f.post
-	f.outsider = auth.Principal{UserID: "u-outsider", TenantID: f.tenant2, Roles: []string{"accountant", "finance_manager", "controller", "auditor"}}
+	f.treasury = auth.Principal{UserID: "u-treasury", TenantID: f.tenant, Roles: []string{"treasury_officer"}}
+	f.cfo = auth.Principal{UserID: "u-cfo", TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()}
+	f.outsider = auth.Principal{UserID: "u-outsider", TenantID: f.tenant2, Roles: []string{"accountant", "finance_manager", "controller", "auditor", "cfo", "treasury_officer"}}
 	return f
+}
+
+// docHash is a well-formed source document hash.
+const docHash = "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+
+// setupFX registers and approves the NBE source and a TRANSACTION policy for
+// the fixture entity, each through the real maker/checker commands.
+func (f *fixture) setupFX(t *testing.T, pol fx.Policy) string {
+	t.Helper()
+	if err := f.svc.RegisterFXSource(f.ctx, f.treasury, postgres.FXSource{SourceID: "NBE", SourceType: "CENTRAL_BANK",
+		Description: "National Bank of Ethiopia reference rate", RequiresDocumentHash: true, MaxVariance: decimal.RequireFromString("0.05")}); err != nil {
+		t.Fatalf("register source: %v", err)
+	}
+	if err := f.svc.ApproveFXSource(f.ctx, f.appr, "NBE"); err != nil {
+		t.Fatalf("approve source: %v", err)
+	}
+	if pol.RateType == "" {
+		pol = fx.Policy{RateType: fx.RateOfficial, SourcePriority: []string{"NBE"}, MaxStaleness: 30 * 24 * time.Hour, AllowInverse: true}
+	}
+	p, err := f.svc.ProposeFXPolicy(f.ctx, f.treasury, f.entity, postgres.PurposeTransaction, pol)
+	if err != nil {
+		t.Fatalf("propose policy: %v", err)
+	}
+	if err := f.svc.DecideFXPolicy(f.ctx, f.appr, p.ID, true, "standard NBE official policy"); err != nil {
+		t.Fatalf("approve policy: %v", err)
+	}
+	f.fxPolicy = p.ID
+	return p.ID
+}
+
+// snapshot records a rate (maker = treasury) and optionally has it approved
+// (checker = finance manager).
+func (f *fixture) snapshot(t *testing.T, base, quote money.Currency, rate string, effective time.Time, approve bool) string {
+	t.Helper()
+	id, err := f.svc.RecordFXSnapshot(f.ctx, f.treasury, fx.Snapshot{SourceID: "NBE", SourceType: "CENTRAL_BANK", BaseCurrency: base, QuoteCurrency: quote,
+		Rate: decimal.RequireFromString(rate), RateType: fx.RateOfficial, EffectiveFromUTC: effective, PublishedAtUTC: effective.Add(6 * time.Hour),
+		SourceDocumentHash: docHash})
+	if err != nil {
+		t.Fatalf("record snapshot: %v", err)
+	}
+	if approve {
+		if _, err := f.svc.ApproveFXSnapshot(f.ctx, f.appr, id, ""); err != nil {
+			t.Fatalf("approve snapshot: %v", err)
+		}
+	}
+	return id
+}
+
+// fxLine builds a USD-denominated line converted at rate.
+func fxLine(account string, side ledger.Side, usd, etb, snap string) ledger.Line {
+	m := money.MustNew(usd, "USD")
+	return ledger.Line{AccountID: account, Side: side, Amount: money.MustNew(etb, "ETB"), TxnAmount: &m, FXSnapshotID: snap}
 }
 
 func adminStoreFor(t *testing.T, dsn string) *postgres.Store {

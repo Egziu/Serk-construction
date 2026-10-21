@@ -27,8 +27,48 @@ type Claims struct {
 	Projects  []string `json:"projects,omitempty"`
 	IssuedAt  int64    `json:"iat"`
 	ExpiresAt int64    `json:"exp"`
+	NotBefore int64    `json:"nbf,omitempty"`
 	Issuer    string   `json:"iss"`
 	Audience  string   `json:"aud"`
+	// AMR lists authentication methods (RFC 8176); AuthTime is when the user
+	// last actively authenticated (OIDC Core §2).
+	AMR      []string `json:"amr,omitempty"`
+	AuthTime int64    `json:"auth_time,omitempty"`
+	TokenID  string   `json:"jti,omitempty"`
+}
+
+// factorCategory maps RFC 8176 authentication method references to the
+// factor category they prove. Values that prove no factor (geo, wia, user,
+// mca, rba...) are absent.
+var factorCategory = map[string]string{
+	"pwd": "knowledge", "pin": "knowledge", "kba": "knowledge",
+	"otp": "possession", "hwk": "possession", "swk": "possession", "sms": "possession", "tel": "possession", "sc": "possession", "pop": "possession",
+	"fpt": "inherence", "face": "inherence", "iris": "inherence", "retina": "inherence", "vbm": "inherence",
+}
+
+// IsMFA reports whether the amr claim asserts multi-factor authentication:
+// the explicit "mfa" value, or methods from at least two different factor
+// categories (two knowledge methods such as pwd+pin are NOT multi-factor).
+func IsMFA(amr []string) bool {
+	cats := map[string]bool{}
+	for _, m := range amr {
+		if m == "mfa" {
+			return true
+		}
+		if c, ok := factorCategory[m]; ok {
+			cats[c] = true
+		}
+	}
+	return len(cats) >= 2
+}
+
+// principal maps verified claims to an auth.Principal.
+func (c Claims) principal() auth.Principal {
+	p := auth.Principal{UserID: c.Subject, TenantID: c.TenantID, Roles: c.Roles, ProjectIDs: c.Projects, MFA: IsMFA(c.AMR)}
+	if c.AuthTime > 0 {
+		p.AuthTime = time.Unix(c.AuthTime, 0)
+	}
+	return p
 }
 
 // TokenVerifier turns a bearer token into a principal.
@@ -86,14 +126,22 @@ func (v HS256Verifier) Verify(token string, now time.Time) (auth.Principal, erro
 	if err := json.Unmarshal(payload, &c); err != nil {
 		return auth.Principal{}, errMalformed
 	}
-	ts := now.Unix()
-	if c.ExpiresAt == 0 || ts >= c.ExpiresAt || c.IssuedAt > ts+60 {
-		return auth.Principal{}, errExpired
+	if err := c.validTimes(now); err != nil {
+		return auth.Principal{}, err
 	}
 	if c.Issuer != v.Issuer || c.Audience != v.Audience || c.Subject == "" || c.TenantID == "" {
 		return auth.Principal{}, errClaims
 	}
-	return auth.Principal{UserID: c.Subject, TenantID: c.TenantID, Roles: c.Roles, ProjectIDs: c.Projects}, nil
+	return c.principal(), nil
+}
+
+// validTimes checks exp/iat/nbf/auth_time with 60 s of clock skew.
+func (c Claims) validTimes(now time.Time) error {
+	ts := now.Unix()
+	if c.ExpiresAt == 0 || ts >= c.ExpiresAt || c.IssuedAt > ts+60 || (c.NotBefore != 0 && c.NotBefore > ts+60) || c.AuthTime > ts+60 {
+		return errExpired
+	}
+	return nil
 }
 
 // Sign issues a token; used by tests and the development issuer command.

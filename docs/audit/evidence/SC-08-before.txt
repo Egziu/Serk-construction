@@ -1,0 +1,52 @@
+### SC-08a period close vs post race (READ COMMITTED). B closes period (uncommitted, computes TB), A posts, B commits, A commits.
+[A post ] Time: 0.125 ms
+[A post ] Time: 2.523 ms
+[A post ] Time: 2.477 ms
+[B close]                     ?column?                    
+[B close] ------------------------------------------------
+[B close]  B: posted journals in period at close time = 0
+[B close] (1 row)
+[B close] 
+[B close]  pg_sleep 
+[B close] ----------
+[B close]  
+[B close] (1 row)
+[B close] 
+
+
+### SC-08b FX withdraw vs line insert race. B disputes snapshot (uncommitted), A inserts line using it, B commits, A commits.
+[B withdraw]  pg_sleep 
+[B withdraw] ----------
+[B withdraw]  
+[B withdraw] (1 row)
+[B withdraw] 
+FINAL: snapshot=DISPUTED, lines referencing it=1
+### SC-08a (corrected) period close vs post race, READ COMMITTED. B: BEGIN; close period; snapshot TB; sleep 2s; COMMIT.  A (starts 0.7s later): post J4; COMMIT.
+[A post ] ERROR:  posting record of journal eeeeeeee-0000-0000-0000-000000000004 is immutable
+[A post ] CONTEXT:  PL/pgSQL function journals_guard() line 30 at RAISE
+[A post ] Time: 2.157 ms
+[B close]                        ?column?                       
+[B close] ------------------------------------------------------
+[B close]  closing TB: posted journals = 3, debits = 107.000000
+[B close] (1 row)
+[B close] 
+[B close]  pg_sleep 
+[B close] ----------
+[B close]  
+[B close] (1 row)
+[B close] 
+FINAL: period=CLOSED closed_at=2026-10-21 19:39:52.702769+03 | J4=POSTED posted_at=2026-10-21 19:39:38.137095+03 | J4 committed into a period whose closing TB excluded it: true
+
+### SC-08a (clean run, fresh approved journal J6 = 1000 ETB)
+[A post ] Time: 4.417 ms
+[B close]             ?column?            
+[B close] --------------------------------
+[B close]  closing TB debits = 107.000000
+[B close] (1 row)
+[B close] 
+[B close]  pg_sleep 
+[B close] ----------
+[B close]  
+[B close] (1 row)
+[B close] 
+FINAL: period=CLOSED | J6=POSTED | TB of closed period now debits=1386857.000000 (closing TB above excluded J6)

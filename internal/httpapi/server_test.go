@@ -253,30 +253,88 @@ func TestAPIRateLimit(t *testing.T) {
 	}
 }
 
-func TestAPIFXConvert(t *testing.T) {
+func TestAPIFXMakerCheckerFlow(t *testing.T) {
 	e := newEnv(t)
-	fxm, prep := e.token("fxm", "finance_manager"), e.token("prep", "accountant")
-	st, out := e.do("POST", "/v1/fx/snapshots", fxm, map[string]any{
-		"source_id": "NBE", "source_type": "CENTRAL_BANK", "base_currency": "USD", "quote_currency": "ETB", "rate": "57.25", "rate_type": "OFFICIAL",
-		"effective_from_utc": "2026-10-01T00:00:00Z", "published_at_utc": "2026-10-01T06:00:00Z", "source_document_hash": "sha256:x", "approve": true})
+	treas, fm, prep := e.token("treas", "treasury_officer"), e.token("fm", "finance_manager"), e.token("prep", "accountant")
+	hash := "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+	code := func(out map[string]any) any { return out["error"].(map[string]any)["code"] }
+
+	if st, out := e.do("POST", "/v1/fx/sources", treas, map[string]any{"source_id": "NBE", "source_type": "CENTRAL_BANK", "description": "NBE"}); st != 201 {
+		t.Fatalf("register source: %d %v", st, out)
+	}
+	if st, out := e.do("POST", "/v1/fx/sources/NBE/approve", fm, map[string]any{}); st != 200 {
+		t.Fatalf("approve source: %d %v", st, out)
+	}
+	st, out := e.do("POST", "/v1/fx/policies", treas, map[string]any{"legal_entity_id": e.entity, "rate_type": "OFFICIAL",
+		"source_priority": []string{"NBE"}, "max_staleness_hours": 720})
 	if st != 201 {
-		t.Fatalf("snapshot: %d %v", st, out)
+		t.Fatalf("propose policy: %d %v", st, out)
 	}
-	st, out = e.do("POST", "/v1/fx/convert", prep, map[string]any{"amount": map[string]string{"amount": "100.00", "currency": "USD"}, "target_currency": "ETB",
-		"business_event_at": "2026-10-15T00:00:00Z", "rate_type": "OFFICIAL"})
-	if st != 200 {
-		t.Fatalf("convert: %d %v", st, out)
+	pol := out["policy_id"].(string)
+	if st, out := e.do("POST", "/v1/fx/policies/"+pol+"/approve", fm, map[string]any{"reason": "official NBE policy"}); st != 200 {
+		t.Fatalf("approve policy: %d %v", st, out)
 	}
-	if to := out["to"].(map[string]any); to["amount"] != "5725.00" {
-		t.Fatalf("converted %v", to)
+	// The 0.1.0 self-approval field is rejected outright.
+	snapBody := map[string]any{"source_id": "NBE", "source_type": "CENTRAL_BANK", "base_currency": "USD", "quote_currency": "ETB", "rate": "57.25",
+		"rate_type": "OFFICIAL", "effective_from_utc": "2026-10-01T00:00:00Z", "published_at_utc": "2026-10-01T06:00:00Z", "source_document_hash": hash, "approve": true}
+	if st, _ := e.do("POST", "/v1/fx/snapshots", treas, snapBody); st != 400 {
+		t.Fatalf("legacy approve flag accepted: %d", st)
 	}
-	st, out = e.do("POST", "/v1/fx/convert", prep, map[string]any{"amount": map[string]string{"amount": "100.00", "currency": "USD"}, "target_currency": "ETB",
-		"business_event_at": "2026-09-01T00:00:00Z"})
-	if st != 422 || out["error"].(map[string]any)["code"] != "fx_exception" {
-		t.Fatalf("missing rate must be an explicit exception: %d %v", st, out)
+	delete(snapBody, "approve")
+	st, out = e.do("POST", "/v1/fx/snapshots", treas, snapBody)
+	if st != 201 || out["status"] != "PENDING" {
+		t.Fatalf("record: %d %v", st, out)
 	}
-	if st, _ := e.do("POST", "/v1/fx/snapshots", prep, map[string]any{"source_id": "X", "source_type": "Y", "base_currency": "USD", "quote_currency": "ETB", "rate": "1",
-		"rate_type": "OFFICIAL", "effective_from_utc": "2026-10-01T00:00:00Z", "published_at_utc": "2026-10-01T00:00:00Z", "source_document_hash": "h"}); st != 403 {
-		t.Fatalf("accountant recorded snapshot: %d", st)
+	snap := out["snapshot_id"].(string)
+	if st, _ := e.do("POST", "/v1/fx/snapshots", prep, snapBody); st != 403 {
+		t.Fatalf("accountant recorded a rate: %d", st)
 	}
+	// Pending rate is not usable.
+	convBody := map[string]any{"amount": map[string]string{"amount": "100.00", "currency": "USD"}, "target_currency": "ETB",
+		"business_event_at": "2026-10-15T00:00:00Z", "legal_entity_id": e.entity}
+	if st, out := e.do("POST", "/v1/fx/convert", prep, convBody); st != 422 || code(out) != "fx_exception" {
+		t.Fatalf("pending rate used: %d %v", st, out)
+	}
+	if st, _ := e.do("POST", "/v1/fx/snapshots/"+snap+"/approve", treas, map[string]any{}); st != 403 {
+		t.Fatalf("maker approved: %d", st)
+	}
+	if st, out := e.do("POST", "/v1/fx/snapshots/"+snap+"/approve", fm, map[string]any{}); st != 200 {
+		t.Fatalf("checker approve: %d %v", st, out)
+	}
+	st, out = e.do("POST", "/v1/fx/convert", prep, convBody)
+	if st != 200 || out["binding"] != true || out["snapshot_id"] != snap || out["to"].(map[string]any)["amount"] != "5725.00" {
+		t.Fatalf("binding convert: %d %v", st, out)
+	}
+	// Out-of-tolerance rate: ordinary checker 403; CFO without MFA gets an RFC 9470 step-up challenge.
+	snapBody["rate"], snapBody["effective_from_utc"], snapBody["published_at_utc"] = "63.00", "2026-10-08T00:00:00Z", "2026-10-08T06:00:00Z"
+	_, out = e.do("POST", "/v1/fx/snapshots", treas, snapBody)
+	jump := out["snapshot_id"].(string)
+	if st, out := e.do("POST", "/v1/fx/snapshots/"+jump+"/approve", fm, map[string]any{"reason": "devaluation"}); st != 403 {
+		t.Fatalf("ordinary checker approved variance exception: %d %v", st, out)
+	}
+	req, _ := http.NewRequest("POST", e.srv.URL+"/v1/fx/snapshots/"+jump+"/approve", strings.NewReader(`{"reason":"devaluation notice"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+e.token("cfo", "cfo"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 || !strings.Contains(resp.Header.Get("WWW-Authenticate"), "insufficient_user_authentication") {
+		t.Fatalf("step-up challenge missing: %d %q", resp.StatusCode, resp.Header.Get("WWW-Authenticate"))
+	}
+	if st, out := e.do("POST", "/v1/fx/snapshots/"+jump+"/approve", e.mfaToken("cfo", "cfo"), map[string]any{"reason": "devaluation notice"}); st != 200 || out["variance_exception"] != true {
+		t.Fatalf("MFA exception approval: %d %v", st, out)
+	}
+}
+
+// mfaToken issues a token asserting a fresh multi-factor login.
+func (e *env) mfaToken(user string, roles ...string) string {
+	now := time.Now()
+	tok, err := testVerifier.Sign(Claims{Subject: user, TenantID: e.tenant, Roles: roles, IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(),
+		Issuer: "serk-id", Audience: "serk-construction", AMR: []string{"pwd", "otp"}, AuthTime: now.Unix()})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return tok
 }

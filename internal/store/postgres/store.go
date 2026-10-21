@@ -84,6 +84,28 @@ func (s *Store) WithTenant(ctx context.Context, tenantID string, fn func(ctx con
 	return nil
 }
 
+// BeginTenant opens a tenant-bound transaction the caller must commit or
+// roll back. Used by the workflow engine's workers and by concurrency tests
+// that need to hold a transaction open at a precise point.
+func (s *Store) BeginTenant(ctx context.Context, tenantID string) (pgx.Tx, error) {
+	if _, err := uuid.Parse(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: %q", ErrTenantContext, tenantID)
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.tenant_id', $1, true)`, tenantID); err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	return tx, nil
+}
+
+// Translate exposes the error translation for callers that manage their own
+// transactions (BeginTenant).
+func Translate(err error) error { return translate(err) }
+
 // translate maps PostgreSQL errors to store errors.
 func translate(err error) error {
 	var pgErr *pgconn.PgError

@@ -61,8 +61,18 @@ func New(cfg Config) *Server {
 	s.mux.Handle("POST /v1/journals/{id}/approve", s.authed(s.approveJournal))
 	s.mux.Handle("POST /v1/journals/{id}/post", s.authed(s.postJournal))
 	s.mux.Handle("POST /v1/journals/{id}/reverse", s.authed(s.reverseJournal))
+	s.mux.Handle("POST /v1/fx/sources", s.authed(s.registerSource))
+	s.mux.Handle("POST /v1/fx/sources/{id}/approve", s.authed(s.approveSource))
+	s.mux.Handle("POST /v1/fx/policies", s.authed(s.proposePolicy))
+	s.mux.Handle("POST /v1/fx/policies/{id}/approve", s.authed(s.decidePolicy(true)))
+	s.mux.Handle("POST /v1/fx/policies/{id}/reject", s.authed(s.decidePolicy(false)))
 	s.mux.Handle("POST /v1/fx/snapshots", s.authed(s.recordSnapshot))
+	s.mux.Handle("POST /v1/fx/snapshots/{id}/approve", s.authed(s.approveSnapshot))
+	s.mux.Handle("POST /v1/fx/snapshots/{id}/reject", s.authed(s.rejectSnapshot))
+	s.mux.Handle("POST /v1/fx/snapshots/{id}/withdraw", s.authed(s.withdrawSnapshot))
 	s.mux.Handle("POST /v1/fx/convert", s.authed(s.convert))
+	s.mux.Handle("POST /v1/periods/{id}/close", s.authed(s.closePeriod))
+	s.mux.Handle("POST /v1/periods/{id}/reopen", s.authed(s.reopenPeriod))
 	return s
 }
 
@@ -285,69 +295,6 @@ func (s *Server) reverseJournal(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, map[string]any{"id": res.JournalID, "replayed": res.Replayed, "reversal_of": id})
 }
 
-func (s *Server) recordSnapshot(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		SourceID           string    `json:"source_id"`
-		SourceType         string    `json:"source_type"`
-		BaseCurrency       string    `json:"base_currency"`
-		QuoteCurrency      string    `json:"quote_currency"`
-		Rate               string    `json:"rate"`
-		RateType           string    `json:"rate_type"`
-		EffectiveFromUTC   time.Time `json:"effective_from_utc"`
-		PublishedAtUTC     time.Time `json:"published_at_utc"`
-		SourceDocumentHash string    `json:"source_document_hash"`
-		Approve            bool      `json:"approve"`
-	}
-	if !decode(w, r, &body) {
-		return
-	}
-	rate, err := parseDecimal(body.Rate)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "validation", "rate must be a decimal string")
-		return
-	}
-	snap := fx.Snapshot{SourceID: body.SourceID, SourceType: body.SourceType, BaseCurrency: money.Currency(body.BaseCurrency), QuoteCurrency: money.Currency(body.QuoteCurrency),
-		Rate: rate, RateType: fx.RateType(body.RateType), EffectiveFromUTC: body.EffectiveFromUTC, PublishedAtUTC: body.PublishedAtUTC,
-		CapturedAtUTC: time.Now().UTC(), SourceDocumentHash: body.SourceDocumentHash}
-	id, err := s.cfg.Kernel.RecordFXSnapshot(r.Context(), principalFrom(r.Context()), snap, body.Approve)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{"snapshot_id": id})
-}
-
-func (s *Server) convert(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Amount          money.Money `json:"amount"`
-		Target          string      `json:"target_currency"`
-		EventAt         time.Time   `json:"business_event_at"`
-		KnowledgeCutoff time.Time   `json:"knowledge_cutoff"`
-		RateType        string      `json:"rate_type"`
-		SourcePriority  []string    `json:"source_priority"`
-		AllowInverse    bool        `json:"allow_inverse"`
-		MaxStalenessH   int         `json:"max_staleness_hours"`
-		Rounding        string      `json:"rounding"`
-	}
-	if !decode(w, r, &body) {
-		return
-	}
-	conv, err := s.cfg.Kernel.Convert(r.Context(), principalFrom(r.Context()), kernel.ConvertRequest{
-		Amount: body.Amount, Target: money.Currency(body.Target), EventAt: body.EventAt, KnowledgeCutoff: body.KnowledgeCutoff,
-		Policy: fx.Policy{RateType: fx.RateType(body.RateType), SourcePriority: body.SourcePriority, AllowInverse: body.AllowInverse,
-			MaxStaleness: time.Duration(body.MaxStalenessH) * time.Hour},
-		Rounding: money.RoundingPolicy(body.Rounding),
-	})
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	writeJSON(w, 200, map[string]any{
-		"from": conv.From, "to": conv.To, "snapshot_id": conv.SnapshotID, "applied_rate": conv.AppliedRate.String(),
-		"derived_inverse": conv.DerivedInverse, "rounding": conv.RoundingPolicy, "algorithm_version": conv.AlgorithmVersion,
-	})
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -405,7 +352,11 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 func (s *Server) fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, kernel.ErrNotFound), errors.Is(err, auth.ErrTenantMismatch):
-		writeErr(w, http.StatusNotFound, "not_found", "journal not found")
+		writeErr(w, http.StatusNotFound, "not_found", "not found")
+	case errors.Is(err, auth.ErrStepUpRequired):
+		// RFC 9470 step-up authentication challenge.
+		w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_user_authentication", error_description="recent multi-factor authentication required", max_age=600`)
+		writeErr(w, http.StatusUnauthorized, "step_up_required", "recent multi-factor authentication required")
 	case errors.Is(err, auth.ErrUnauthenticated):
 		writeErr(w, http.StatusUnauthorized, "unauthenticated", "authentication required")
 	case errors.Is(err, auth.ErrSoD):
@@ -416,10 +367,13 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusConflict, "idempotency_conflict", "idempotency key already used with a different command")
 	case errors.Is(err, postgres.ErrVersionConflict):
 		writeErr(w, http.StatusConflict, "version_conflict", "journal was modified concurrently; reload and retry")
-	case errors.Is(err, ledger.ErrBadTransition), errors.Is(err, ledger.ErrNotPosted), errors.Is(err, ledger.ErrAlreadyReversed):
-		writeErr(w, http.StatusConflict, "invalid_state", err.Error())
-	case errors.Is(err, fx.ErrRateMissing), errors.Is(err, fx.ErrRateStale), errors.Is(err, fx.ErrRateNotYetKnown):
+	case errors.Is(err, ledger.ErrBadTransition), errors.Is(err, ledger.ErrNotPosted), errors.Is(err, ledger.ErrAlreadyReversed),
+		errors.Is(err, fx.ErrSnapshotState), errors.Is(err, kernel.ErrClosePrerequisite):
+		writeErr(w, http.StatusConflict, "invalid_state", uuidRe.ReplaceAllString(err.Error(), "<id>"))
+	case errors.Is(err, fx.ErrRateMissing), errors.Is(err, fx.ErrRateStale), errors.Is(err, fx.ErrRateNotYetKnown), errors.Is(err, postgres.ErrNoFXPolicy):
 		writeErr(w, http.StatusUnprocessableEntity, "fx_exception", err.Error())
+	case errors.Is(err, kernel.ErrReasonRequired), errors.Is(err, fx.ErrPolicyInvalid):
+		writeErr(w, http.StatusUnprocessableEntity, "validation", err.Error())
 	case errors.Is(err, ledger.ErrUnbalanced), errors.Is(err, ledger.ErrBadLine), errors.Is(err, ledger.ErrTooFewLines), errors.Is(err, postgres.ErrLineRejected),
 		errors.Is(err, ledger.ErrMissingIdempotencyKey), errors.Is(err, money.ErrUnknownCurrency), errors.Is(err, money.ErrCurrencyMismatch),
 		errors.Is(err, fx.ErrSameCurrency), isValidation(err):

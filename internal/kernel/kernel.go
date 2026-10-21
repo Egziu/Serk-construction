@@ -15,9 +15,7 @@ import (
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/auth"
-	"github.com/serk-group/serk-construction/pkg/fx"
 	"github.com/serk-group/serk-construction/pkg/ledger"
-	"github.com/serk-group/serk-construction/pkg/money"
 )
 
 // Service executes kernel commands.
@@ -78,12 +76,8 @@ func (s *Service) CreateJournal(ctx context.Context, p auth.Principal, j ledger.
 			return nil // nothing changed; no audit/outbox for an idempotent replay
 		}
 		d, c, _ := j.Totals()
-		payload := map[string]any{"journal_id": id, "lines": len(j.Lines), "debits": d, "credits": c, "idempotency_key": j.IdempotencyKey}
-		if err := postgres.Audit(ctx, tx, postgres.AuditEntry{TenantID: p.TenantID, ActorID: p.UserID, Action: "journal.create",
-			AggregateType: "journal", AggregateID: id, RequestID: requestID(ctx), Payload: payload}); err != nil {
-			return err
-		}
-		return postgres.Outbox(ctx, tx, postgres.OutboxEvent{TenantID: p.TenantID, AggregateType: "journal", AggregateID: id, EventType: "journal.created", Payload: payload})
+		payload := map[string]any{"journal_id": id, "project_id": j.ProjectID, "lines": len(j.Lines), "debits": d, "credits": c, "idempotency_key": j.IdempotencyKey}
+		return s.record(ctx, tx, p, "journal.create", "journal", id, "journal.created", payload)
 	})
 	return res, err
 }
@@ -127,12 +121,8 @@ func (s *Service) ApproveJournal(ctx context.Context, p auth.Principal, id strin
 		if err := postgres.ApproveJournal(ctx, tx, id, p.UserID, rec.Version); err != nil {
 			return err
 		}
-		payload := map[string]any{"journal_id": id, "approved_by": p.UserID, "created_by": rec.CreatedBy}
-		if err := postgres.Audit(ctx, tx, postgres.AuditEntry{TenantID: p.TenantID, ActorID: p.UserID, Action: "journal.approve",
-			AggregateType: "journal", AggregateID: id, RequestID: requestID(ctx), Payload: payload}); err != nil {
-			return err
-		}
-		return postgres.Outbox(ctx, tx, postgres.OutboxEvent{TenantID: p.TenantID, AggregateType: "journal", AggregateID: id, EventType: "journal.approved", Payload: payload})
+		payload := map[string]any{"journal_id": id, "project_id": rec.ProjectID, "approved_by": p.UserID, "created_by": rec.CreatedBy}
+		return s.record(ctx, tx, p, "journal.approve", "journal", id, "journal.approved", payload)
 	})
 }
 
@@ -168,13 +158,9 @@ func (s *Service) PostJournal(ctx context.Context, p auth.Principal, id string) 
 			return err
 		}
 		d, c, _ := rec.Journal.Totals()
-		payload := map[string]any{"journal_id": id, "posted_by": p.UserID, "business_event_at": rec.BusinessEventAt,
+		payload := map[string]any{"journal_id": id, "project_id": rec.ProjectID, "posted_by": p.UserID, "business_event_at": rec.BusinessEventAt,
 			"debits": d, "credits": c, "reversal_of": rec.ReversalOf}
-		if err := postgres.Audit(ctx, tx, postgres.AuditEntry{TenantID: p.TenantID, ActorID: p.UserID, Action: "journal.post",
-			AggregateType: "journal", AggregateID: id, RequestID: requestID(ctx), Payload: payload}); err != nil {
-			return err
-		}
-		return postgres.Outbox(ctx, tx, postgres.OutboxEvent{TenantID: p.TenantID, AggregateType: "journal", AggregateID: id, EventType: "journal.posted", Payload: payload})
+		return s.record(ctx, tx, p, "journal.post", "journal", id, "journal.posted", payload)
 	})
 }
 
@@ -211,79 +197,26 @@ func (s *Service) ReverseJournal(ctx context.Context, p auth.Principal, original
 		if replayed {
 			return nil
 		}
-		payload := map[string]any{"journal_id": id, "reversal_of": originalID, "reason": reason}
-		if err := postgres.Audit(ctx, tx, postgres.AuditEntry{TenantID: p.TenantID, ActorID: p.UserID, Action: "journal.reverse",
-			AggregateType: "journal", AggregateID: id, RequestID: requestID(ctx), Payload: payload}); err != nil {
-			return err
-		}
-		return postgres.Outbox(ctx, tx, postgres.OutboxEvent{TenantID: p.TenantID, AggregateType: "journal", AggregateID: id, EventType: "journal.reversal_created", Payload: payload})
+		payload := map[string]any{"journal_id": id, "project_id": orig.ProjectID, "reversal_of": originalID, "reason": reason}
+		return s.record(ctx, tx, p, "journal.reverse", "journal", id, "journal.reversal_created", payload)
 	})
 	return res, err
 }
 
-// ConvertRequest describes an FX conversion query.
-type ConvertRequest struct {
-	Amount          money.Money
-	Target          money.Currency
-	EventAt         time.Time
-	KnowledgeCutoff time.Time
-	Policy          fx.Policy
-	Rounding        money.RoundingPolicy
-}
-
-// Convert selects the authoritative snapshot and converts. Read-only; the
-// result is advisory until bound to a posted journal line.
-func (s *Service) Convert(ctx context.Context, p auth.Principal, req ConvertRequest) (fx.Conversion, error) {
-	if err := s.authz.Require(p, auth.PermFXRead, p.TenantID); err != nil {
-		return fx.Conversion{}, err
-	}
-	if req.EventAt.IsZero() {
-		req.EventAt = s.now()
-	}
-	var conv fx.Conversion
-	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
-		cands, err := postgres.ListFXSnapshots(ctx, tx, req.Amount.Currency(), req.Target, req.EventAt)
-		if err != nil {
-			return err
-		}
-		sel, err := fx.Select(cands, req.Amount.Currency(), req.Target, req.EventAt, req.KnowledgeCutoff, req.Policy)
-		if err != nil {
-			return err
-		}
-		conv, err = fx.Convert(req.Amount, req.Target, sel, req.Rounding)
-		return err
-	})
-	return conv, err
-}
-
-// RecordFXSnapshot stores a new observation (PENDING unless the principal
-// may manage FX and asks for immediate approval).
-func (s *Service) RecordFXSnapshot(ctx context.Context, p auth.Principal, snap fx.Snapshot, approve bool) (string, error) {
-	if err := s.authz.Require(p, auth.PermFXManage, p.TenantID); err != nil {
-		return "", err
-	}
-	snap.TenantID = p.TenantID
-	snap.CreatedBy = p.UserID
-	if approve {
-		snap.ApprovalStatus = fx.StatusApproved
-	} else {
-		snap.ApprovalStatus = fx.StatusPending
-	}
-	var id string
-	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
-		var err error
-		id, err = postgres.InsertFXSnapshot(ctx, tx, snap)
-		if err != nil {
-			return err
-		}
-		payload := map[string]any{"snapshot_id": id, "pair": string(snap.BaseCurrency) + "/" + string(snap.QuoteCurrency), "rate": snap.Rate.String(), "status": snap.ApprovalStatus}
-		return postgres.Audit(ctx, tx, postgres.AuditEntry{TenantID: p.TenantID, ActorID: p.UserID, Action: "fx.snapshot.record",
-			AggregateType: "fx_snapshot", AggregateID: id, RequestID: requestID(ctx), Payload: payload})
-	})
-	return id, err
-}
-
 // IsAuthError reports whether err is an authorization failure.
 func IsAuthError(err error) bool {
-	return errors.Is(err, auth.ErrForbidden) || errors.Is(err, auth.ErrUnauthenticated) || errors.Is(err, auth.ErrTenantMismatch) || errors.Is(err, auth.ErrSoD)
+	return errors.Is(err, auth.ErrForbidden) || errors.Is(err, auth.ErrUnauthenticated) || errors.Is(err, auth.ErrTenantMismatch) ||
+		errors.Is(err, auth.ErrSoD) || errors.Is(err, auth.ErrStepUpRequired)
+}
+
+// record writes the audit entry and the outbox event of a command in the
+// caller's transaction. Every state-changing command uses it, so audit and
+// integration events can never diverge (SC-07).
+func (s *Service) record(ctx context.Context, tx pgx.Tx, p auth.Principal, action, aggType, aggID, eventType string, payload map[string]any) error {
+	if err := postgres.Audit(ctx, tx, postgres.AuditEntry{TenantID: p.TenantID, ActorID: p.UserID, Action: action,
+		AggregateType: aggType, AggregateID: aggID, RequestID: requestID(ctx), Payload: payload}); err != nil {
+		return err
+	}
+	return postgres.Outbox(ctx, tx, postgres.OutboxEvent{TenantID: p.TenantID, AggregateType: aggType, AggregateID: aggID,
+		EventType: eventType, SchemaVersion: 1, Payload: payload})
 }

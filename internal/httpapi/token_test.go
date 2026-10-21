@@ -69,3 +69,46 @@ func TestTokenRejections(t *testing.T) {
 		t.Fatal("malformed accepted")
 	}
 }
+
+func TestIsMFA(t *testing.T) {
+	cases := map[string]struct {
+		amr  []string
+		want bool
+	}{
+		"explicit mfa":               {[]string{"mfa"}, true},
+		"pwd+otp":                    {[]string{"pwd", "otp"}, true},
+		"pwd+hwk":                    {[]string{"pwd", "hwk"}, true},
+		"pwd+pin (both knowledge)":   {[]string{"pwd", "pin"}, false},
+		"otp+sms (both possession)":  {[]string{"otp", "sms"}, false},
+		"pwd only":                   {[]string{"pwd"}, false},
+		"pwd+geo (geo not a factor)": {[]string{"pwd", "geo"}, false},
+		"none":                       {nil, false},
+	}
+	for name, c := range cases {
+		if got := IsMFA(c.amr); got != c.want {
+			t.Errorf("%s: IsMFA(%v)=%v want %v", name, c.amr, got, c.want)
+		}
+	}
+}
+
+func TestTokenTimeClaims(t *testing.T) {
+	now := time.Now()
+	c := claims(now)
+	c.NotBefore = now.Add(10 * time.Minute).Unix()
+	tok, _ := testVerifier.Sign(c)
+	if _, err := testVerifier.Verify(tok, now); err == nil {
+		t.Fatal("token used before nbf")
+	}
+	c = claims(now)
+	c.AMR, c.AuthTime = []string{"pwd", "otp"}, now.Add(-time.Minute).Unix()
+	tok, _ = testVerifier.Sign(c)
+	p, err := testVerifier.Verify(tok, now)
+	if err != nil || !p.MFA || p.AuthTime.IsZero() {
+		t.Fatalf("mfa claims not mapped: %+v %v", p, err)
+	}
+	c.AuthTime = now.Add(time.Hour).Unix()
+	tok, _ = testVerifier.Sign(c)
+	if _, err := testVerifier.Verify(tok, now); err == nil {
+		t.Fatal("future auth_time accepted")
+	}
+}

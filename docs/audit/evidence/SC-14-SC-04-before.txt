@@ -1,0 +1,21 @@
+### SC-14 reproduction (raw SQL as serk_api): sub-minor-unit amounts
+INSERT 0 1
+INSERT 0 2
+ line_no |   amount   
+---------+------------
+       1 | 100.004900
+       2 | 100.004900
+(2 rows)
+
+
+### SC-04 reproduction: serk_api switches tenant context with set_config
+     ctx     | b_rows_visible 
+-------------+----------------
+ as tenant A |              0
+(1 row)
+
+              ctx               |      name       
+--------------------------------+-----------------
+ after attacker set_config to B | TENANT-B-SECRET
+(1 row)
+

@@ -1,0 +1,27 @@
+### SC-01 reproduction — PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), role serk_api, 2026-10-21T16:39:05Z
+ session_user | current_user 
+--------------+--------------
+ serk_api     | serk_api
+(1 row)
+
+              set_config              
+--------------------------------------
+ 11111111-1111-1111-1111-111111111111
+(1 row)
+
+BEFORE: per-journal totals
+ description | status |     dr     |     cr     
+-------------+--------+------------+------------
+ J1          | POSTED | 100.000000 | 100.000000
+ J2          | DRAFT  |            |           
+(2 rows)
+
+ATTACK: move POSTED J1 line 2 into DRAFT J2
+UPDATE 1
+AFTER:
+ description | status |     dr     |     cr     
+-------------+--------+------------+------------
+ J1          | POSTED | 100.000000 |           
+ J2          | DRAFT  |            | 100.000000
+(2 rows)
+

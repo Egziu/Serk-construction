@@ -111,6 +111,37 @@ type Policy struct {
 	InverseScale int32
 }
 
+// ErrSnapshotState is returned when a decision does not fit the snapshot's
+// current approval state.
+var ErrSnapshotState = errors.New("fx: snapshot is not in a state that allows this decision")
+
+// ErrPolicyInvalid is returned for a policy that would not fail closed.
+var ErrPolicyInvalid = errors.New("fx: invalid policy")
+
+// Validate requires a policy that cannot silently accept arbitrary rates:
+// an explicit rate type, at least one admissible source and a finite
+// maximum age (SC-02).
+func (p Policy) Validate() error {
+	switch {
+	case p.RateType == "":
+		return fmt.Errorf("%w: rate type required", ErrPolicyInvalid)
+	case len(p.SourcePriority) == 0:
+		return fmt.Errorf("%w: at least one admissible source required", ErrPolicyInvalid)
+	case p.MaxStaleness <= 0:
+		return fmt.Errorf("%w: a positive maximum staleness is required", ErrPolicyInvalid)
+	case p.MaxStaleness > 400*24*time.Hour:
+		return fmt.Errorf("%w: maximum staleness above 400 days", ErrPolicyInvalid)
+	}
+	seen := map[string]bool{}
+	for _, s := range p.SourcePriority {
+		if s == "" || seen[s] {
+			return fmt.Errorf("%w: empty or duplicate source %q", ErrPolicyInvalid, s)
+		}
+		seen[s] = true
+	}
+	return nil
+}
+
 // Exception errors. These are the explicit, auditable outcomes required by
 // the specification instead of fabricated rates.
 var (

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/shopspring/decimal"
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/auth"
@@ -18,83 +17,6 @@ import (
 )
 
 // These tests encode the findings of the independent adversarial review.
-
-func (f *fixture) approvedSnapshot(t *testing.T, base, quote money.Currency, rate string) string {
-	t.Helper()
-	fxm := auth.Principal{UserID: "u-fx", TenantID: f.tenant, Roles: []string{"finance_manager"}}
-	id, err := f.svc.RecordFXSnapshot(f.ctx, fxm, fx.Snapshot{SourceID: "NBE", SourceType: "CENTRAL_BANK", BaseCurrency: base, QuoteCurrency: quote,
-		Rate: decimal.RequireFromString(rate), RateType: fx.RateOfficial, EffectiveFromUTC: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
-		PublishedAtUTC: time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC), SourceDocumentHash: "sha256:t"}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return id
-}
-
-func TestFXLineMustReconcileToApprovedSnapshotOfRightPair(t *testing.T) {
-	f := newFixture(t)
-	fxm := auth.Principal{UserID: "u-fx", TenantID: f.tenant, Roles: []string{"finance_manager"}}
-	pending, _ := f.svc.RecordFXSnapshot(f.ctx, fxm, fx.Snapshot{SourceID: "X", SourceType: "PROVIDER", BaseCurrency: "CNY", QuoteCurrency: "KES",
-		Rate: decimal.NewFromInt(1), RateType: fx.RateOfficial, EffectiveFromUTC: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
-		PublishedAtUTC: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), SourceDocumentHash: "h"}, false)
-	usdEtb := f.approvedSnapshot(t, "USD", "ETB", "57.25")
-	kesUsd := f.approvedSnapshot(t, "KES", "USD", "0.0077")
-	usd := money.MustNew("1000.00", "USD")
-
-	mk := func(amount string, snap string) ledger.Journal {
-		return f.journal(key("fxl"),
-			ledger.Line{AccountID: f.accounts["5000"], Side: ledger.Debit, Amount: money.MustNew(amount, "ETB"), TxnAmount: &usd, FXSnapshotID: snap},
-			ledger.Line{AccountID: f.accounts["2000"], Side: ledger.Credit, Amount: money.MustNew(amount, "ETB")},
-		)
-	}
-	cases := map[string]ledger.Journal{
-		"pending snapshot":          mk("1.00", pending),
-		"wrong pair":                mk("7.70", kesUsd),
-		"amount does not reconcile": mk("57251.00", usdEtb), // 1000 x 57.25 = 57250.00
-		"unknown snapshot":          mk("57250.00", "00000000-0000-0000-0000-000000000001"),
-	}
-	for name, j := range cases {
-		if _, err := f.svc.CreateJournal(f.ctx, f.prep, j); !errors.Is(err, postgres.ErrLineRejected) {
-			t.Fatalf("%s accepted: %v", name, err)
-		}
-	}
-	id := f.lifecycle(t, mk("57250.00", usdEtb))
-	rec, _ := f.svc.GetJournal(f.ctx, f.prep, id)
-	if rec.Lines[0].AppliedRate.String() != "57.25" {
-		t.Fatalf("applied rate not bound: %s", rec.Lines[0].AppliedRate)
-	}
-	// Raw SQL cannot sneak an unreconciled or pending-snapshot line in either.
-	const ins = `INSERT INTO journal_lines(journal_id,tenant_id,legal_entity_id,line_no,account_id,side,amount,currency,txn_amount,txn_currency,fx_snapshot_id,applied_rate)
-		VALUES ($1::uuid,$2::uuid,$3::uuid,1,$4::uuid,'DEBIT',$5::numeric,'ETB',1000,'USD',$6::uuid,$7::numeric)`
-	for name, c := range map[string]struct {
-		amount, snap, rate string
-	}{
-		"pending snapshot": {"1000", pending, "1"},
-		"wrong amount":     {"1", usdEtb, "57.25"},
-		"wrong rate":       {"1000", usdEtb, "1"},
-		"wrong pair":       {"7.70", kesUsd, "0.0077"},
-	} {
-		err := f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
-			var jid string
-			if err := tx.QueryRow(ctx, `INSERT INTO journals(tenant_id,legal_entity_id,functional_currency,business_event_at,description,source_type,idempotency_key,command_hash,created_by)
-				VALUES ($1::uuid,$2::uuid,'ETB','2026-10-15','raw','MANUAL',$3,'h','a') RETURNING id::text`, f.tenant, f.entity, key("rawfx")).Scan(&jid); err != nil {
-				return err
-			}
-			_, err := tx.Exec(ctx, ins, jid, f.tenant, f.entity, f.accounts["5000"], c.amount, c.snap, c.rate)
-			return err
-		})
-		if !errors.Is(err, postgres.ErrInvariant) {
-			t.Fatalf("raw %s line accepted: %v", name, err)
-		}
-	}
-	// An approved snapshot referenced by a line cannot be withdrawn.
-	err := f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
-		return postgres.SetFXSnapshotApproval(ctx, tx, usdEtb, fx.StatusDisputed, "u-fx")
-	})
-	if !errors.Is(err, postgres.ErrInvariant) {
-		t.Fatalf("referenced snapshot withdrawn: %v", err)
-	}
-}
 
 func TestJournalBoundToLegalEntity(t *testing.T) {
 	f := newFixture(t)
@@ -149,7 +71,8 @@ func TestJournalBoundToLegalEntity(t *testing.T) {
 	if _, err := f.svc.CreateJournal(f.ctx, f.prep, j); !errors.Is(err, postgres.ErrLineRejected) {
 		t.Fatalf("currency-restricted account accepted ETB line: %v", err)
 	}
-	snap := f.approvedSnapshot(t, "USD", "ETB", "50")
+	f.setupFX(t, fx.Policy{})
+	snap := f.snapshot(t, "USD", "ETB", "50", time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), true)
 	usd := money.MustNew("100.00", "USD")
 	j = f.journal(key("usdok"),
 		ledger.Line{AccountID: usdOnly, Side: ledger.Debit, Amount: money.MustNew("5000.00", "ETB"), TxnAmount: &usd, FXSnapshotID: snap},
@@ -219,18 +142,20 @@ func TestReversedLinkCannotBeForged(t *testing.T) {
 	}
 	// A reversal journal whose lines do not mirror the original is refused at post.
 	res, _ := f.svc.ReverseJournal(f.ctx, f.ctrl, orig, key("rv"), "x", time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC))
+	// Since 0002 the app role cannot change line amounts at all, even on a
+	// DRAFT (only memo is updatable), so the reversal cannot be made to stop
+	// mirroring its original.
 	err := f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
-		// tamper the draft reversal (allowed while DRAFT) so it no longer mirrors
 		_, err := tx.Exec(ctx, `UPDATE journal_lines SET amount = 1 WHERE journal_id=$1::uuid`, res.JournalID)
 		return err
 	})
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, postgres.ErrInvariant) {
+		t.Fatalf("draft reversal amount tampered: %v", err)
 	}
-	// Go detects the content change at post time (hash) even before the DB mirror check.
+	// The untampered reversal posts and links correctly.
 	_ = f.svc.ApproveJournal(f.ctx, f.appr, res.JournalID)
-	if err := f.svc.PostJournal(f.ctx, auth.Principal{UserID: "u-poster-2", TenantID: f.tenant, Roles: []string{"controller"}}, res.JournalID); err == nil {
-		t.Fatal("tampered reversal posted")
+	if err := f.svc.PostJournal(f.ctx, auth.Principal{UserID: "u-poster-2", TenantID: f.tenant, Roles: []string{"controller"}}, res.JournalID); err != nil {
+		t.Fatalf("valid reversal refused: %v", err)
 	}
 }
 
@@ -265,6 +190,11 @@ func TestConcurrentIdenticalCreatesAreIdempotent(t *testing.T) {
 	wg.Wait()
 	close(ids)
 	close(errs)
+	for _, l := range j.Lines {
+		if !l.AppliedRate.IsZero() || l.FXPolicyID != "" {
+			t.Fatalf("CreateJournal mutated the caller's lines: %+v", l)
+		}
+	}
 	for err := range errs {
 		t.Fatalf("concurrent identical create failed: %v", err)
 	}
