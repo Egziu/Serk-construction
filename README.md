@@ -1,107 +1,115 @@
-# SERK Construction — Financial Kernel (release 0.1.0)
+# SERK Construction — Financial Kernel + Controlled-Approval Workflow (0.2.0-gate-a)
 
 Africa-first construction ERP, built on a **deterministic financial core**:
-exact-decimal money, policy-selected FX snapshots, balanced and immutable
-journals, tenant isolation enforced by PostgreSQL row-level security, a
-hash-chained audit log and a transactional outbox. No AI component sits in the
-transaction path (LAW 01/02 of SERK-CONSTRUCTION-MASTER-2026).
+exact-decimal money, policy-bound FX, balanced and immutable journals,
+database-enforced tenant identity, a hash-chained audit log, a transactional
+outbox with a relay, and a **workflow engine in which automation routes and
+escalates but only people authorize**. No AI component sits in the
+transaction path.
 
-This release is the **first vertical slice**: the kernel every later module
-(BOQ, procurement, payroll, logistics, BIM cost allocation) posts through.
-`docs/STATUS.md` states precisely what is implemented, tested and still open;
-`docs/NEXT.md` is the ordered implementation sequence.
+This branch is the Gate A remediation of release 0.1.0: every audit finding
+SC-01…SC-14 was reproduced, fixed and covered by regression tests before any
+new ERP module (BOQ, procurement, inventory, contracts) was started, so those
+modules inherit a sound financial and security foundation.
+
+Start with: `docs/release/READINESS.md` (gate results — what passed, what is
+not tested), `docs/audit/ISSUE_REGISTER.md` (every finding, fix, test,
+residual risk), `docs/architecture/THREAT_MODEL.md`, ADRs in `docs/adr/`.
 
 ## Layout
 
 ```
-cmd/serk-api          HTTP API binary (+ `token` dev sub-command)
-cmd/serk-migrate      checksum-locked SQL migrator
+cmd/serk-api          HTTP API; runs workflow timers when SERK_SCHEDULER_DSN is set
+cmd/serk-migrate      checksum-locked migrator; `provision-tenant` creates a tenant + its DB role
+cmd/serk-relay        outbox → signed webhook relay (ordering, retries, dead-letter, `replay`)
+cmd/serk-devtoken     HS256 tokens for development/staging only (refuses production)
 pkg/money             exact decimal money, ISO 4217 registry, rounding, allocation
-pkg/fx                FX snapshot model, selection policy, conversion, IAS 21 remeasurement
-pkg/ledger            accounts, journals, invariants, posting state machine, reversals
-pkg/auth              RBAC, project ABAC, segregation of duties
-pkg/evm               nominal / constant-price EVM, cost-to-cost progress
-pkg/tax               effective-dated jurisdiction tax rules (VAT, WHT, …) — data, not code
-internal/store/postgres   migrations (RLS, triggers, audit chain, outbox), repository
-internal/kernel       command service: authorise → validate → ACID commit → audit → outbox
-internal/httpapi      hardened REST API, token verification, rate limiting
-api/openapi.yaml      v1 contract
-deploy/               Dockerfile (distroless), docker-compose, DB roles
-docs/                 STATUS (LAW 08 register), NEXT, SECURITY (ASVS map), ADRs
+pkg/fx                FX snapshots, policies, selection, conversion, IAS 21 remeasurement
+pkg/ledger            accounts, journals, invariants, state machine, reversals
+pkg/auth              RBAC, explicit project scope, SoD, step-up MFA
+pkg/workflow          workflow definitions: strict parser, control-invariant validator, routing, dry run
+pkg/evm               EVM with price-basis rules (nominal / constant), provenance
+pkg/tax               effective-dated jurisdiction tax rules — data, not code
+internal/store/postgres   migrations 0001–0006, repositories, tenant Router
+internal/kernel       commands: authorise → validate → ACID commit → audit → outbox; workflow engine
+internal/httpapi      hardened REST API, OIDC/JWKS + HS256 verifiers, abuse controls
+internal/relay        relay and webhook signing/verification
+internal/config       fail-closed runtime configuration
+api/openapi.yaml      v1 contract (0.2.0)
+deploy/               Dockerfile, dev and production compose, cluster roles, Caddy TLS proxy
+docs/                 audit register, baseline, implementation log, readiness, threat model, ADRs
 ```
 
-## Run locally
+## Run the tests (the only claims this README makes are those the tests prove)
 
 ```bash
-make db-up                      # PostgreSQL 16 + application roles
-make migrate                    # apply migrations as the schema owner
-export SERK_TOKEN_SECRET=$(openssl rand -hex 32)
-make run                        # API on :8080 as the RLS-constrained serk_api role
+# A disposable PostgreSQL 16 database whose login can CREATE ROLE:
+export SERK_TEST_ADMIN_DSN='postgres://postgres@/serk_test?host=/tmp&port=5432'
+go vet ./...
+go test -race -count=1 -p 1 ./...
 ```
 
-Mint a token and post a journal (see `api/openapi.yaml` for the full contract):
+The integration suites attack the database directly with raw SQL as a
+tenant's own login and as the schema owner, race concurrent transactions at
+controlled points, and drive the API over HTTP. `docs/audit/evidence/` holds
+before/after transcripts of the audit's attacks.
+
+## Run locally (development profile)
 
 ```bash
-TENANT=<uuid of a tenant row>
-TOK=$(go run ./cmd/serk-api token --sub alice --tenant $TENANT --roles accountant)
-curl -X POST localhost:8080/v1/journals -H "Authorization: Bearer $TOK" \
-  -H 'Content-Type: application/json' -d @journal.json
+make dev-up        # PostgreSQL 16 (127.0.0.1 only), migrations, API with dev-only secrets
+SERK_DB=postgres://postgres:dev-only-postgres-password-not-for-production@localhost:5432/serk_construction?sslmode=disable
+SERK_ADMIN_DSN=$SERK_DB SERK_TENANT_DB_SECRET=dev-only-tenant-db-secret-0123456789abcdefABCDEF \
+  go run ./cmd/serk-migrate provision-tenant --tenant <tenant-uuid> --name "Demo Contractor PLC"
+SERK_ENV=development SERK_TOKEN_SECRET=dev-only-hs256-token-secret-0123456789abcdefABCDEF \
+  go run ./cmd/serk-devtoken --sub alice --tenant <tenant-uuid> --roles accountant
 ```
 
-Lifecycle: `POST /v1/journals` (accountant) → `/approve` (finance_manager, must
-differ from preparer) → `/post` (controller, must differ from both in strict
-mode) → `/reverse` creates a draft compensating journal that follows the same
-path and marks the original `REVERSED` when it posts.
+The development compose file uses published, well-known secrets and is
+refused by the API outside `SERK_ENV=development`. Production uses
+`deploy/docker-compose.prod.yml` (secrets from files, internal database
+network, TLS proxy, OIDC required) — **not yet executed in this environment**.
 
-## Test
+## What the kernel guarantees (each item has a test; see ISSUE_REGISTER)
 
-```bash
-make test-unit                  # pure domain packages, race detector
-make test-integration           # real PostgreSQL: RLS, triggers, audit chain, API e2e
-```
+- A journal reaches POSTED only if it balances, uses whole minor units of
+  each currency, binds every FX line to an approved rate that the entity's
+  approved FX policy selects for the business-event time (re-checked at post),
+  was approved by someone other than the preparer, is unchanged since
+  approval, and an OPEN period covers its date — checked in Go and again by
+  PostgreSQL at COMMIT, with locks that make close/post and withdraw/line
+  races serialise.
+- Posted history cannot be altered by any application login; even the schema
+  owner is stopped by triggers (only disabling triggers bypasses them, which
+  the integrity scan and audit chain detect).
+- A tenant's database login can see and change only that tenant's rows, even
+  when running arbitrary SQL; the tenant is derived from the login, not from a
+  settable variable.
+- FX rates, rate sources, FX policies, WBS versions and workflow definitions
+  are maker/checker; out-of-tolerance rates and definition publishing need a
+  fresh MFA.
+- Every command writes its audit entry and outbox event atomically; the relay
+  delivers in per-aggregate order with retries, dead-lettering and replay.
 
-The integration suite includes adversarial tests that bypass the Go layer with
-raw SQL and confirm the database still refuses unbalanced postings, tampering
-with posted rows, cross-tenant writes and postings into closed periods.
+## Controlled-approval workflows
 
-## Guarantees in this release
+Definitions (JSON, versioned) declare steps, permissions, quorums, SoD rules,
+MFA, amount thresholds, SLA escalation, expiry and compensation. The
+validator refuses definitions that would weaken controls. A step's effect
+(approve/post a journal, approve/reject a rate, close a period) runs as the
+person who completed the step, through the same kernel command the API uses.
+When a definition is published as **mandatory**, the database refuses the
+subject's sensitive transition unless the same transaction recorded the
+workflow effect, which in turn requires the step's quorum of distinct,
+SoD-eligible approvers. Console API: tasks, instances, history, metrics,
+dry-run simulation. See ADR 0007.
 
-- A journal reaches `POSTED` only if it balances, every line is positive, in
-  the legal entity's functional currency (enforced by foreign key), on an
-  active account of that entity, an approver ≠ preparer approved it, its
-  content is byte-identical to what was approved (lines frozen at APPROVED,
-  command hash re-checked at post), and an OPEN fiscal period covers its
-  business-event date — checked in Go and again by PostgreSQL at COMMIT.
-- Approved and posted journals and their lines cannot be updated or deleted
-  by any role the application uses; corrections are reversals, and a journal
-  can only be marked REVERSED by a POSTED reversal whose lines mirror it
-  exactly (validated by trigger).
-- Every command writes an audit row and an outbox event in the same
-  transaction. The audit chain is computed in-database under a per-tenant
-  row lock, is linear under concurrent load (tested with 80 parallel
-  commands), and the API role cannot update the outbox or the chain head.
-- A foreign-currency line must reference an APPROVED snapshot of the pair
-  `txn_currency/functional_currency` (or its inverse); the kernel checks
-  `amount = round_half_even(txn_amount × rate)`, stores the applied rate on the
-  line, and the database re-checks pair, approval and reconciliation; a
-  referenced snapshot can no longer be withdrawn. `/v1/fx/convert` uses only
-  APPROVED rates valid at the event time and published before the knowledge
-  cutoff; a missing rate is an explicit error, never a fabricated one.
-- Identical command retries — including concurrent ones — return the original
-  journal; the same key with a different payload or a different user is a 409.
-- Row-level security confines every statement to the tenant bound in the
-  transaction and refuses rows that claim another tenant. **Scope:** this
-  protects against application defects and limits a compromised request to one
-  tenant; it is not a boundary against an attacker who can execute arbitrary
-  SQL as the application role (that role can call `set_config`). Tenants that
-  need that guarantee use the DEDICATED_DB mode (NEXT #0).
+## Not built yet
 
-## Not in this release
-
-OIDC/MFA, outbox relay, OpenTelemetry, IAS 29 restatement, logistics/customs,
-BOQ/procurement/inventory/payroll, offline field app, AI advisory layer, web
-UI, BPMN workflow. See `docs/NEXT.md` for the sequence and `docs/STATUS.md`
-for the evidence-backed register.
+BOQ/estimating, procurement → AP, inventory, contracts/IPC, scheduling, site
+diary, offline field app, BIM, payroll, logistics/customs, reports, web UI,
+AI advisory layer, OpenTelemetry, backup/PITR drill, session revocation.
+`docs/NEXT.md` is the ordered sequence.
 
 ## Licence
 

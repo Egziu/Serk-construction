@@ -1,17 +1,29 @@
 openapi: 3.1.0
 info:
   title: SERK Construction — Financial Kernel API
-  version: 0.1.0
+  version: 0.2.0-gate-a
   description: |
     Deterministic financial kernel of SERK Construction. Every command is
     authorised server-side, committed in one PostgreSQL transaction, audited
     and published to the transactional outbox. AI components never call this
     API with write authority (LAW 02).
+
+    Step-up: operations marked "MFA" require a token whose `amr` asserts a
+    multi-factor method and whose `auth_time` is at most 10 minutes old;
+    otherwise the API answers 401 with
+    `WWW-Authenticate: Bearer error="insufficient_user_authentication"` (RFC 9470).
+
+    Mandatory workflows: when a mandatory workflow is published for journals,
+    FX rates or fiscal periods, the direct approve/post/close endpoints answer
+    409 `workflow_required`; the transition then happens only as the effect of
+    a workflow step decided by an authorised person (`/v1/workflow/...`).
 servers:
   - url: https://api.example.serk/
 security:
   - bearerAuth: []
 components:
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
   schemas:
@@ -61,6 +73,44 @@ components:
             reversal_of: { type: string, format: uuid }
             reversed_by: { type: string, format: uuid }
             version: { type: integer }
+    Reason:
+      type: object
+      additionalProperties: false
+      properties: { reason: { type: string, minLength: 5 } }
+    WorkflowDefinition:
+      type: object
+      additionalProperties: false
+      required: [key, title, subject, start_permission, steps]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9_.]{2,60}$' }
+        title: { type: string }
+        subject: { type: string, enum: [journal, fx_snapshot, fiscal_period] }
+        mandatory: { type: boolean, description: When published, the direct API and database path for the subject's sensitive transitions is closed; must perform every sensitive transition of the subject }
+        start_permission: { type: string }
+        on_reject: { type: string, description: Non-sensitive compensation effect (journal.cancel, fx.reject) }
+        steps:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, title, permission]
+            properties:
+              id: { type: string, pattern: '^[a-z][a-z0-9_]{1,40}$' }
+              title: { type: string }
+              permission: { type: string }
+              approvals: { type: integer, minimum: 1, maximum: 5, default: 1, description: Quorum of distinct approvers (parallel approval) }
+              distinct_from: { type: array, items: { type: string }, description: 'initiator, subject.creator, or step:<earlier step id>. A step with a sensitive effect must list subject.creator and every earlier sensitive step.' }
+              require_mfa: { type: boolean }
+              when:
+                type: array
+                description: Journal subjects only. One threshold per currency (exact amount in that currency's minor units); the step applies when the journal's functional-currency total is at or above the threshold of its currency. A journal in a currency without a threshold cannot be routed (fail closed).
+                items: { type: object, additionalProperties: false, required: [amount_gte, currency], properties: { amount_gte: { type: string }, currency: { type: string } } }
+              sla: { type: string, example: 24h, pattern: '^([0-9]{1,4}h)?([0-9]{1,6}m)?([0-9]{1,8}s)?$' }
+              escalate_to: { type: string, description: Permission whose holders are notified at SLA breach (notification only) }
+              expire_after: { type: string, example: 168h, pattern: '^([0-9]{1,4}h)?([0-9]{1,6}m)?([0-9]{1,8}s)?$' }
+              effect: { type: string, enum: [journal.approve, journal.post, journal.cancel, fx.approve, fx.reject, period.close] }
     Error:
       type: object
       properties:
@@ -71,7 +121,8 @@ components:
               type: string
               enum: [unauthenticated, forbidden, not_found, validation, invalid_state, segregation_of_duties,
                      idempotency_conflict, version_conflict, invariant_violation, fx_exception, rate_limited,
-                     malformed_json, unsupported_media_type, too_large, timeout, internal]
+                     malformed_json, unsupported_media_type, too_large, timeout, internal,
+                     step_up_required, workflow_required, subject_changed]
             message: { type: string }
 paths:
   /healthz:
@@ -143,12 +194,31 @@ paths:
                 rate_type: { type: string, enum: [OFFICIAL, COMMERCIAL, CONTRACTUAL, CLOSING, BUDGET] }
                 effective_from_utc: { type: string, format: date-time }
                 published_at_utc: { type: string, format: date-time }
-                source_document_hash: { type: string }
-                approve: { type: boolean, default: false }
-      responses: { '201': { description: snapshot recorded } }
-  /v1/fx/convert:
+                source_document_hash: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+      responses:
+        '201': { description: snapshot recorded with status PENDING (it is never usable before a different person approves it) }
+        '400': { description: unknown field — including the removed 0.1.0 `approve` flag }
+  /v1/fx/snapshots/{id}/approve:
     post:
-      summary: Convert under policy using only approved snapshots knowable at the cutoff (permission fx.read)
+      summary: PENDING → APPROVED (permission fx.approve; approver ≠ maker). Outside the source's variance tolerance also fx.approve_exception, MFA and a reason.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: approved; reports deviation and variance_exception }, '401': { description: step_up_required }, '403': { description: forbidden }, '409': { description: invalid_state, segregation_of_duties or workflow_required } }
+  /v1/fx/snapshots/{id}/reject:
+    post:
+      summary: PENDING → REJECTED (permission fx.approve, reason required, not the maker)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: rejected } }
+  /v1/fx/snapshots/{id}/withdraw:
+    post:
+      summary: APPROVED → DISPUTED while no journal line references it (permission fx.approve, reason required)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: withdrawn }, '409': { description: referenced by a journal line } }
+  /v1/fx/sources:
+    post:
+      summary: Register a rate source (permission fx.manage); becomes trusted only when a different person approves it
       requestBody:
         required: true
         content:
@@ -156,10 +226,143 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [amount, target_currency]
+              required: [source_id, source_type, description]
+              properties:
+                source_id: { type: string }
+                source_type: { type: string, enum: [CENTRAL_BANK, COMMERCIAL_BANK, CONTRACT, PROVIDER] }
+                description: { type: string }
+                requires_document_hash: { type: boolean, default: true }
+                max_variance: { type: string, default: '0.05', description: Relative tolerance against the previous approved rate }
+      responses: { '201': { description: PENDING source } }
+  /v1/fx/sources/{id}/approve:
+    post:
+      summary: Approve a source (permission fx.approve; not the registrant)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: APPROVED } }
+  /v1/fx/policies:
+    post:
+      summary: Propose the next version of a legal entity's FX policy (permission fx.manage)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [legal_entity_id, rate_type, source_priority, max_staleness_hours]
+              properties:
+                legal_entity_id: { type: string, format: uuid }
+                purpose: { type: string, default: TRANSACTION }
+                rate_type: { type: string }
+                source_priority: { type: array, items: { type: string } }
+                max_staleness_hours: { type: integer }
+                allow_inverse: { type: boolean }
+      responses: { '201': { description: DRAFT policy version } }
+  /v1/fx/policies/{id}/approve:
+    post:
+      summary: Approve a policy version (permission fx.policy.approve; not the proposer). Journal lines bind the approved policy version.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: APPROVED } }
+  /v1/fx/policies/{id}/reject:
+    post:
+      summary: Reject a policy version (permission fx.policy.approve, reason required)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: REJECTED } }
+  /v1/periods/{id}/close:
+    post:
+      summary: 'Close (or lock) a fiscal period (permission period.close). Prerequisites: integrity scan clean, audit chain intact, no approved-but-unposted journals; the database records the closing trial balance.'
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, properties: { lock: { type: boolean } } } } } }
+      responses: { '200': { description: closing record (journal count, TB debits/credits, TB hash) }, '409': { description: invalid_state, invariant_violation or workflow_required } }
+  /v1/periods/{id}/reopen:
+    post:
+      summary: Reopen a CLOSED period (permission period.reopen, MFA, reason; not the person who closed it)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: OPEN }, '401': { description: step_up_required }, '409': { description: segregation_of_duties } }
+  /v1/workflow/definitions:
+    get:
+      summary: List definition versions (permission workflow.read)
+      responses: { '200': { description: definitions } }
+    post:
+      summary: Propose a workflow definition version (permission workflow.define). Strictly validated; control-weakening definitions are refused (422).
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WorkflowDefinition' } } } }
+      responses: { '201': { description: DRAFT version }, '422': { description: validation (lists every violated rule) } }
+  /v1/workflow/definitions/{id}/publish:
+    post:
+      summary: Publish a DRAFT (permission workflow.publish, MFA, not the author). Retires the previous version of the key.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: PUBLISHED }, '401': { description: step_up_required }, '409': { description: segregation_of_duties or invalid_state } }
+  /v1/workflow/definitions/{id}/reject:
+    post:
+      summary: Reject a DRAFT (permission workflow.publish, reason required)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: REJECTED } }
+  /v1/workflow/definitions/{id}/simulate:
+    post:
+      summary: Dry run of any definition version against a real subject — which steps apply and why. Creates nothing.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [subject_id], properties: { subject_id: { type: string, format: uuid } } } } } }
+      responses: { '200': { description: '{ dry_run: true, steps: [...] }' } }
+  /v1/workflow/instances:
+    get:
+      summary: List instances visible to the caller (permission workflow.read; filters status, subject_type, subject_id, overdue=true)
+      responses: { '200': { description: instances } }
+    post:
+      summary: "Start the published version of a definition for a subject (definition's start_permission). One ACTIVE instance per subject. When a mandatory definition governs the subject type only that definition can be started. A journal already APPROVED resumes after the definition's approval step, with its approver excluded wherever the route refers to that step." 
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [definition_key, subject_id], properties: { definition_key: { type: string }, subject_id: { type: string, format: uuid } } } } } }
+      responses: { '201': { description: instance with its frozen route and deadlines }, '409': { description: subject not in a startable state or already in a workflow } }
+  /v1/workflow/instances/{id}:
+    get:
+      summary: Instance with decisions and immutable history (permission workflow.read)
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: detail }, '404': { description: not found or out of scope } }
+  /v1/workflow/instances/{id}/approve:
+    post:
+      summary: Approve the open step as the caller. When the step's quorum is reached its effect runs in the same transaction, as the caller, through the kernel command.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: decision result (step_completed, effect_executed, approvals, approvals_needed) }, '401': { description: step_up_required }, '403': { description: forbidden }, '409': { description: segregation_of_duties, invalid_state, subject_changed or invariant_violation (effect refused — the decision is not recorded and the failure is counted) } }
+  /v1/workflow/instances/{id}/reject:
+    post:
+      summary: Reject the open step (reason required). Runs the definition's non-sensitive compensation (on_reject) as the caller.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: REJECTED } }
+  /v1/workflow/instances/{id}/cancel:
+    post:
+      summary: Cancel an ACTIVE instance (permission workflow.admin, reason). Never changes the subject.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Reason' } } } }
+      responses: { '200': { description: CANCELLED } }
+  /v1/workflow/tasks:
+    get:
+      summary: Open steps the caller may decide now (has permission and scope, not excluded by SoD, not yet decided), with deadlines, escalation and failure counts
+      responses: { '200': { description: tasks } }
+  /v1/workflow/metrics:
+    get:
+      summary: Console metrics since a time (default 30 days; tenant-wide scope required) — counts by status, overdue, escalated, cycle time avg/p90, first-pass rate, exception rate, decisions per completed instance
+      parameters: [{ name: since, in: query, schema: { type: string, format: date-time } }]
+      responses: { '200': { description: metrics } }
+  /v1/fx/convert:
+    post:
+      summary: Convert under policy using only approved snapshots knowable at the cutoff (permission fx.read). With legal_entity_id the entity's approved policy is used and the result is binding for journal lines.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount, target_currency, business_event_at]
               properties:
                 amount: { $ref: '#/components/schemas/Money' }
                 target_currency: { type: string }
+                legal_entity_id: { type: string, format: uuid }
+                purpose: { type: string }
                 business_event_at: { type: string, format: date-time }
                 knowledge_cutoff: { type: string, format: date-time, description: Defaults to business_event_at }
                 rate_type: { type: string }

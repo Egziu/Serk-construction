@@ -14,6 +14,14 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_health') THEN
     CREATE ROLE serk_health LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
   END IF;
+  -- Workflow timer login: may learn which tenants have due timers, nothing
+  -- else (EXECUTE on workflow_due_tenants only, granted by migration 0006).
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_scheduler') THEN
+    CREATE ROLE serk_scheduler NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_timer') THEN
+    CREATE ROLE serk_timer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT IN ROLE serk_scheduler;
+  END IF;
   -- Outbox relay login: cross-tenant outbox access only.
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_relay') THEN
     CREATE ROLE serk_relay LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT IN ROLE serk_publisher;

@@ -1,0 +1,47 @@
+### Gate A after-evidence — PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, 2026-10-21T17:41:22Z
+### schema migrations applied: 1,2,3,4,5,6
+
+### SC-04 after: tenant A's own role tries to switch to tenant B
+              session_user               | bound_to_a 
+-----------------------------------------+------------
+ serk_t_89461c87609b4dddbf2ea3c547031a66 | t
+(1 row)
+
+ gu_set 
+--------
+ t
+(1 row)
+
+ b_journals_visible 
+--------------------
+                  0
+(1 row)
+
+ tenants_visible 
+-----------------
+               1
+(1 row)
+
+
+### SC-01 after: move line 2 of a POSTED journal into a DRAFT journal (tenant role, then schema owner)
+ERROR:  permission denied for table journal_lines
+-- as superuser/schema owner:
+ERROR:  lines of POSTED journal 9da67412-fad1-41f8-9626-8a4cf566dfec are immutable (LAW 03)
+CONTEXT:  PL/pgSQL function journal_lines_guard() line 7 at RAISE
+-- posted journal still balanced:
+POSTED|115000.000000|115000.000000
+
+### SC-14 after: sub-minor-unit ETB amount on a DRAFT journal line (tenant role)
+ERROR:  amount 100.004900 ETB has more than 2 decimal place(s) (SC-14)
+CONTEXT:  PL/pgSQL function assert_currency_precision(numeric,character,text) line 10 at RAISE
+SQL statement "SELECT assert_currency_precision(NEW.amount, NEW.currency, 'amount')"
+PL/pgSQL function journal_lines_validate() line 22 at PERFORM
+
+### Workflow after: approve a DRAFT journal directly while a mandatory workflow is published (tenant role)
+ERROR:  journal.approve of journal 22d15e87-2de9-4ff6-a90d-d660a5c270ad requires its mandatory approval workflow
+CONTEXT:  PL/pgSQL function workflow_require_effect(uuid,text,uuid,text,text) line 12 at RAISE
+SQL statement "SELECT workflow_require_effect(NEW.tenant_id, 'journal', NEW.id, 'journal.approve', NEW.approved_by)"
+PL/pgSQL function journals_workflow_gate() line 4 at PERFORM
+-- forge an effect row without decisions:
+ERROR:  effect journal.approve is not the effect of the open step
+CONTEXT:  PL/pgSQL function workflow_effects_guard() line 10 at RAISE

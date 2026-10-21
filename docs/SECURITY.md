@@ -1,9 +1,40 @@
-# Security posture — Financial Kernel 0.1.0
+# Security posture — 0.2.0-gate-a
 
 Target: OWASP ASVS 5.0 **Level 2** for the API and **Level 3** for the
-accounting kernel (financial data of record). This file maps controls that
-exist *and are tested* to ASVS chapters; untested or absent controls are listed
-as gaps. Nothing here claims the system is impenetrable (LAW 07).
+accounting kernel. This file maps controls that exist *and are tested*; the
+threat model is `docs/architecture/THREAT_MODEL.md`, the per-finding record is
+`docs/audit/ISSUE_REGISTER.md`. Nothing here claims the system is impenetrable,
+and no third-party assessment has been performed.
+
+## Changes since 0.1.0 (all tested)
+
+| Area | Control | Test |
+|---|---|---|
+| V2 Authentication | OIDC/JWKS verifier (RS256/ES256, `kid`, refresh), `nbf`/`auth_time`/`jti` parsing, MFA from `amr` factor categories; HS256 restricted to development/staging; token minting moved out of the API binary | `TestJWKSVerifier`, `TestIsMFA`, `TestTokenTimeClaims`, config tests |
+| V2 Step-up | Recent-MFA requirement (10 min) for FX variance exceptions, period reopen, workflow publishing and MFA workflow steps; RFC 9470 challenge | `TestStepUp`, `TestAPIFXMakerCheckerFlow`, `TestAPIWorkflowConsole` |
+| V4 Multi-tenancy | Tenant identity derived from the database login (`current_tenant()` from `session_user`); per-tenant roles; fail-closed binding; dedicated tier. The 0.1.0 gap ("RLS keyed on a settable GUC") is **closed** | `TestSC04_*` |
+| V4 Access control | Explicit `scope.tenant_wide`; maker/checker on rates, sources, policies, WBS, workflow definitions; SoD in workflow steps enforced in Go and SQL | `TestScopeSC05`, `TestSC03_*`, `TestWorkflow_*` |
+| V11 Business logic | Ledger line identity immutable; FX eligibility at insert and post; period/rate locks against races; mandatory approval workflows enforced by database gates | `TestSC01_*`, `TestSC02_*`, `TestSC08_*`, `TestWorkflow_DatabaseRefusesForgedTrail` |
+| V11 Anti-automation | Pre-auth per-IP limiter, invalid-token lockout, in-flight cap | `TestAPIPreAuthFloodProtection` |
+| V14 Configuration | Fail-closed config (production default); refuses weak secrets, non-`verify-full` TLS, superuser logins, wildcard proxies | config tests |
+| Supply chain | `go.sum` with provenance; actions pinned by SHA; govulncheck; CycloneDX SBOM | CI definition (not yet executed) |
+
+## Remaining gaps
+
+- Compromise of the API process exposes every tenant (shared credential
+  derivation secret) — THREAT_MODEL T-4.
+- The database cannot verify end-user identity in workflow decisions; a
+  tenant-login attacker could fabricate decisions in other people's names that
+  satisfy SoD — detectable, not prevented (T-3a).
+- No session revocation; rate limits per process; no TLS in the binary (TLS
+  proxy in the production profile); no external penetration test; Docker and
+  CI not executed in this environment.
+
+---
+
+# Controls carried over from 0.1.0 (still tested)
+
+Where a row below conflicts with the table above (multi-tenancy, HS256-only authentication, `serk_api` role), the table above supersedes it.
 
 ## Implemented and tested
 
@@ -19,30 +50,3 @@ as gaps. Nothing here claims the system is impenetrable (LAW 07).
 | V11 Rate limiting | Per-principal fixed window, 429 + Retry-After | `server.go` | `TestAPIRateLimit` |
 | V13/V14 API & config | Security headers (nosniff, no-store, CSP none, HSTS), hardened `http.Server` timeouts, 16 KiB header cap, distroless non-root container, secrets only via env | `server.go`, `deploy/Dockerfile` | `TestAPIRejections` |
 | Supply chain | Pinned Go modules; `govulncheck` in CI; `-trimpath` reproducible builds | `go.mod`, CI | CI |
-
-## Known gaps (tracked in NEXT.md)
-
-- **Tenant isolation against SQL-level attackers.** With one application role,
-  RLS cannot stop code that calls `set_config('app.tenant_id', …)`. There is
-  no SQL injection path in this codebase (all queries parameterised, verified
-  by review), so the practical exposure is a compromised `serk_api` credential,
-  which then exposes all tenants in the shared database. Strong isolation =
-  DEDICATED_DB mode or per-tenant database roles (NEXT #0).
-- No OIDC federation, MFA, `nbf`/`jti`/revocation or key rotation yet (NEXT #2).
-- Rate limiter is per-process; multi-replica deployments need a shared store.
-- No TLS termination in the binary: deploy behind a TLS-terminating proxy.
-- No external penetration test or dependency SBOM yet (NEXT #17).
-- Audit chain protects integrity, not confidentiality: enable PostgreSQL TDE
-  or disk encryption and restrict `audit.read`.
-- `serk_api` password in `deploy/00-roles.sql` is a development default.
-
-## Threat model summary
-
-| Threat | Mitigation |
-|---|---|
-| Compromised application credentials | No DELETE grant; posted/approved history cannot be altered; audit chain exposes tampering; outbox cannot be suppressed. Does **not** confine the attacker to one tenant in SHARED mode (see gaps) |
-| Insider posts fraudulent entries | SoD across three roles, approver≠preparer enforced in DB, every step audited with actor and request id |
-| Replay / duplicate submission from flaky field networks | Idempotency key + canonical command hash; replays are no-ops, conflicting reuse is refused |
-| Back-dated postings into closed periods | DB trigger refuses POSTED unless an OPEN period covers the business event date |
-| FX manipulation | Only APPROVED snapshots selectable; observation fields immutable; selection and rate bound to the line |
-| AI output written as fact | No AI component holds `journal.*` permissions; kernel has no AI dependency (LAW 01/02) |

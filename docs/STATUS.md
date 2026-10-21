@@ -1,74 +1,42 @@
 # SERK Construction — Delivery Status (LAW 08 register)
 
-**Release:** 0.1.0 — Financial Kernel Vertical Slice
-**Date:** 2026-10-20
-**Spec:** SERK-CONSTRUCTION-MASTER-2026 v1.0
+**Release:** 0.2.0-gate-a (branch `remediation/gate-a`) · **Date:** 2026-10-21
+**Spec:** SERK-CONSTRUCTION-MASTER-2026 v1.0 · audit package v0.1.0
 
-This register states, per capability, exactly how far it has been taken. A
-capability is never marked further right than the evidence supports. An
-independent adversarial review (`docs/REVIEW-2026-10-20.md`) was run against
-the first cut; every finding was fixed and is now covered by a regression test
-listed below. Columns: **A** architecture defined · **C** code implemented ·
-**U** unit tests pass · **I** integration tests pass (real PostgreSQL 16) ·
-**S** security tested (adversarial raw-SQL / API tests) · **O** operationally
-validated · **P** production-release approved.
+Columns: **A** architecture defined · **C** code implemented · **U** unit tests
+pass · **I** integration tests pass (real PostgreSQL 16.15) · **S** security
+tested (adversarial raw-SQL / API / concurrency tests) · **O** operationally
+validated (deployed and run) · **P** production-release approved. A cell is
+never marked further than its evidence. Nothing is **P**. Nothing is **O**
+except the local binaries and test database: Docker, CI and a staging
+environment have not been executed here.
 
 | Capability | A | C | U | I | S | O | P | Evidence |
 |---|---|---|---|---|---|---|---|---|
-| Exact-decimal money, ISO 4217 registry (41 currencies incl. all African ones named in §3.2), 4 rounding policies, lossless allocation, strict external parsing (no silent rounding) | ✅ | ✅ | ✅ | — | ✅ | — | — | `pkg/money`, 7 tests |
-| FX snapshot model (all 15 spec fields), policy-driven selection with knowledge cutoff, source priority, staleness, explicit inverse, exception errors (never a fabricated rate) | ✅ | ✅ | ✅ | ✅ | — | — | — | `pkg/fx`, 9 tests; `TestFXSnapshotsAndConversion` |
-| FX line provenance: line must reference an APPROVED snapshot of the right pair, reconcile to it, and store the applied rate; referenced snapshots cannot be withdrawn; all observation fields immutable | ✅ | ✅ | — | ✅ | ✅ | — | — | `TestFXLineMustReconcileToApprovedSnapshotOfRightPair` |
-| IAS 21 monetary remeasurement with asset/liability sign (library) | ✅ | ✅ | ✅ | — | — | — | — | `pkg/fx` |
-| Journal domain: balance invariant, line rules, state machine DRAFT→APPROVED→POSTED→REVERSED, mirrored reversals, line project = header project | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | `pkg/ledger`, 6 tests; `TestProjectRestrictionCoversLines` |
-| Entity binding: journal currency = entity functional currency (FK), lines → accounts/projects of the same entity (composite FKs), active accounts, account currency restriction, frozen reference data | ✅ | ✅ | — | ✅ | ✅ | — | — | `TestJournalBoundToLegalEntity` |
-| PostgreSQL kernel: RLS (FORCE), deferred balance constraint trigger, immutability from APPROVED, approval-content hash re-check at post, reversal-link mirror validation, fiscal-period gate (LOCKED terminal), SoD CHECK | ✅ | ✅ | n/a | ✅ | ✅ | — | — | `0001_kernel.sql`; `TestUnbalancedRejectedInGoAndInDatabase`, `TestApprovedContentIsFrozen`, `TestReversedLinkCannotBeForged`, `TestPostedJournalIsImmutable`, `TestClosedPeriodBlocksPosting` |
-| Tenant isolation (RLS + composite FKs) against application defects and cross-tenant references | ✅ | ✅ | n/a | ✅ | ✅ | — | — | `TestTenantIsolation` |
-| Tenant isolation against **SQL-level attackers** (arbitrary SQL as the app role) | ✅ (DEDICATED_DB mode / per-tenant roles) | ❌ | — | — | ❌ (review showed GUC can be reset) | — | — | NEXT #0 |
-| Hash-chained, append-only audit log: SECURITY DEFINER trigger, per-tenant head row, linear under concurrency, hash covers seq/position/time/actor/payload, `audit_log_verify()` | ✅ | ✅ | n/a | ✅ | ✅ | — | — | `TestAuditChainLinearUnderConcurrency`, `TestPostedJournalIsImmutable` |
-| Transactional outbox written with every command; content immutable; API role cannot mark rows sent (separate `serk_publisher` role) | ✅ | ✅ | n/a | ✅ | ✅ | — | — | `TestHappyPathPostsAndBalancesAccounts`, `TestOutboxAndPeriodsCannotBeTamperedByAppRole` |
-| Outbox **relay / broker delivery** (NATS JetStream) | ✅ | ❌ | — | — | — | — | — | `PendingOutbox`/`MarkPublished` exist; no relay process yet (NEXT #1) |
-| Idempotent commands: atomic `ON CONFLICT` reservation, creator-scoped canonical hash, concurrent identical retries replay, reversal retries replay | ✅ | ✅ | — | ✅ | ✅ | — | — | `TestIdempotentReplayAndConflict`, `TestConcurrentIdenticalCreatesAreIdempotent`, `TestReversalFlow` |
-| RBAC + project ABAC + segregation of duties (preparer≠approver always, also a DB CHECK; poster≠approver≠preparer in strict mode) | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | `pkg/auth`; `TestSegregationOfDuties`, `TestProjectAttributeRestriction` |
-| EVM nominal & constant-price with basis guard and zero-denominator policy; cost-to-cost progress | ✅ | ✅ | ✅ | — | — | — | — | `pkg/evm`, 4 tests |
-| Effective-dated, jurisdiction-scoped tax rules (VAT net/gross, WHT thresholds, exemptions, recoverability); ambiguity is an error | ✅ | ✅ | ✅ | — | — | — | — | `pkg/tax`, 6 tests. **Rules are data; no real rate is shipped.** |
-| REST API v1 (journals lifecycle, FX snapshots/convert), OpenAPI 3.1 contract, identifier-stripped error messages | ✅ | ✅ | — | ✅ | ✅ (auth, alg=none, tamper, oversize, strict JSON, rate limit, headers) | ✅ (binary smoke test) | — | `api/openapi.yaml`; `internal/httpapi` 6 tests |
-| Authentication: HS256 bearer tokens, constant-time verify | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | `TestTokenRejections` |
-| **OIDC / OAuth 2.0 federation, MFA, revocation** | ✅ | ❌ | — | — | — | — | — | `TokenVerifier` interface is the seam (NEXT #2) |
-| Migrator with checksum-locked history, race-safe; roles separated (owner / `serk_api` / `serk_publisher`) | ✅ | ✅ | — | ✅ | — | ✅ (binary, idempotent re-run) | — | `cmd/serk-migrate` |
-| Containers (distroless, non-root), compose, CI with govulncheck | ✅ | ✅ | — | — | — | ❌ not executed in this delivery (no Docker/CI in build sandbox) | — | `deploy/`, `.github/workflows/ci.yml` |
-| **Inflation (IAS 29) restatement** | ✅ (formulas; basis guard implemented) | ❌ | — | — | — | — | — | NEXT #13 |
-| **Cross-border logistics, customs, demurrage, trade-bloc packages** | ✅ (entity list in spec) | ❌ | — | — | — | — | — | NEXT #12 |
-| **BOQ, procurement, inventory, payroll, contracts, BIM, scheduling, WIP close process** | partial | ❌ | — | — | — | — | — | NEXT #6–10 |
-| **Offline field edge (SQLite, op-log, CRDT for mergeable data)** | ✅ (LAW 05 boundary honoured: server-only authoritative commits) | ❌ | — | — | — | — | — | NEXT #11 |
-| **AI advisory layer** | ✅ (LAW 02 boundary: outbox → read projection) | ❌ | — | — | — | — | — | NEXT #14 |
-| **React/TypeScript web ERP, Flutter field app** | ❌ | ❌ | — | — | — | — | — | NEXT #15 |
-| **Workflow engine (BPMN), dynamic configuration** | ❌ | ❌ | — | — | — | — | — | NEXT #16 |
-| **OpenTelemetry tracing/metrics** | ✅ | ❌ (structured JSON logs + request ids only) | — | — | — | — | — | NEXT #3 |
+| Exact-decimal money, ISO 4217 registry, rounding policies, allocation, strict parsing | ✅ | ✅ | ✅ | — | ✅ | — | — | `pkg/money` |
+| DB currency minor-unit enforcement (SC-14) | ✅ | ✅ | — | ✅ | ✅ | — | — | `TestSC14_*` |
+| Journal lifecycle, balance, immutability, reversals; line identity immutable; OLD+NEW journal checks (SC-01) | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | `TestSC01_*`, kernel suites |
+| Ledger integrity scan + period close prerequisites + closing TB record; reopen with MFA, reason, SoD | ✅ | ✅ | — | ✅ | ✅ | — | — | `TestSC01_IntegrityScan…`, `TestClosedPeriodBlocksPosting`, workflow close tests |
+| FX: trusted sources, versioned entity policies, eligibility at insert and post, maker/checker, variance exceptions with MFA (SC-02, SC-03) | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | `TestSC02_*`, `TestSC03_*`, API flow |
+| Concurrency of close/post and withdraw/line (SC-08) | ✅ | ✅ | — | ✅ | ✅ (mutation-verified) | — | — | `TestSC08_*` |
+| Tenant identity from DB login; Router; dedicated tier (SC-04) | ✅ | ✅ | — | ✅ | ✅ | — | — | `TestSC04_*`, `GATE-A-after.txt` |
+| Explicit tenant-wide scope; project ABAC (SC-05) | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | `TestScopeSC05`, `TestSC05_*` |
+| WBS versions + cost codes, account cost-coding policy (SC-10) | ✅ | ✅ | — | ✅ | ✅ | — | — | `TestSC10_*` |
+| EVM v2 with price-basis rules and provenance (SC-09) | ✅ | ✅ | ✅ | — | — | — | — | `TestSC09_*` |
+| Hash-chained audit; atomic audit+outbox for every command (SC-07) | ✅ | ✅ | — | ✅ | ✅ | — | — | `TestSC07_*`, `TestAuditChainLinearUnderConcurrency` |
+| Outbox relay: leader lock, ordering, backoff, dead-letter, replay, HMAC webhooks, consumer dedupe | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | `internal/relay` (5 tests) |
+| Authentication: OIDC JWKS (RS256/ES256), MFA from `amr`, `auth_time`, `nbf`; HS256 dev/staging only | ✅ | ✅ | ✅ | ✅ | ✅ | — (no real IdP connected) | — | `TestJWKSVerifier`, `TestIsMFA`, `TestTokenTimeClaims` |
+| Pre-auth abuse controls (SC-13) | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | `TestAPIPreAuthFloodProtection` |
+| Fail-closed configuration; production compose (SC-06) | ✅ | ✅ | ✅ | — | ✅ | ❌ not executed | — | `internal/config` tests |
+| Reproducible build: `go.sum`, pinned CI actions, govulncheck, SBOM (SC-12) | ✅ | ✅ | — | ✅ (cold-cache build+test) | — | ❌ CI not executed | — | `SC-12-gosum-provenance.json` |
+| **Controlled-approval workflow engine**: versioned governed definitions, validator, thresholds, quorum, SoD (Go + SQL), MFA steps, effects as the decider, mandatory DB gate, compensation, durable timers, dry run, console API, metrics | ✅ | ✅ | ✅ | ✅ | ✅ (forged-trail attacks, concurrency, mutation-verified) | — | — | `TestWorkflow_*`, `TestValidatorRefusesUnsafeDefinitions`, `TestAPIWorkflowConsole`; ADR 0007 |
+| Workflow delegation, business calendars, designer UI | ✅ (ADR 0007 consequences) | ❌ | — | — | — | — | — | NEXT #2 |
+| Session revocation, OpenTelemetry, backup/PITR drill (SC-11 remainder) | ✅ | ❌ | — | — | — | — | — | NEXT #1 |
+| Tax rules engine (data-driven; **no real rates shipped**) | ✅ | ✅ | ✅ | — | — | — | — | `pkg/tax` |
+| BOQ, procurement/AP, inventory, contracts/IPC, scheduling, site, BIM, payroll, logistics (ERP-01…07) | partial | ❌ | — | — | — | — | — | NEXT #4–9 |
+| Web UI, field app (ERP-05, ERP-08) | ❌ | ❌ | — | — | — | — | — | NEXT #8–9 |
+| AI advisory layer (ERP-09) | ✅ (boundary only) | ❌ | — | — | — | — | — | NEXT #10 |
 
-## Test evidence (this delivery, fresh database, `-race`)
+## Test evidence (fresh database, `-race`, empty module cache, `-mod=readonly`)
 
-```
-pkg/money    7 tests   PASS
-pkg/fx       9 tests   PASS
-pkg/ledger   6 tests   PASS
-pkg/auth     4 tests   PASS
-pkg/evm      4 tests   PASS
-pkg/tax      6 tests   PASS
-internal/kernel   19 integration/adversarial tests  PASS   (PostgreSQL 16.15, app role under RLS)
-internal/httpapi   6 tests (4 e2e over httptest + real DB) PASS
-go vet ./...  clean     gofmt  clean
-```
-
-## Not claimed
-
-- No capability above is **production-release approved**. Gates still open:
-  strong tenant isolation (NEXT #0), OIDC + MFA, outbox relay, OpenTelemetry,
-  backup/restore drill, load test, external penetration test, accounting-policy
-  sign-off by a qualified accountant for the FX/IAS 21 treatment, and a
-  tax-rule dataset reviewed per jurisdiction.
-- `go.sum` is not in the tree: the build sandbox reaches `golang.org/x/*` only
-  through GitHub mirrors, so the recorded hashes would be wrong. Run
-  `go mod tidy` once on a machine with normal module-proxy access and commit the
-  result before the first CI run. Until then `make vet`/`make build` outside
-  the sandbox fail with "missing go.sum entry".
-- Docker build and the GitHub Actions workflow have not been executed.
+See `docs/release/READINESS.md` for the exact command, counts and output.
