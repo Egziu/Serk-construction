@@ -1,10 +1,10 @@
-### Gate A after-evidence — PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, 2026-10-21T17:59:40Z
+### Gate A after-evidence — PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, 2026-10-21T18:09:15Z
 ### schema migrations applied: 1,2,3,4,5,6
 
 ### SC-04 after: tenant A's own role tries to switch to tenant B
               session_user               | bound_to_a 
 -----------------------------------------+------------
- serk_t_c6afd482ece343b2af8a20725a38c77d | t
+ serk_t_1ac0a5a34443451688253b60a74f3ec6 | t
 (1 row)
 
  gu_set 
@@ -26,7 +26,7 @@
 ### SC-01 after: move line 2 of a POSTED journal into a DRAFT journal (tenant role, then schema owner)
 ERROR:  permission denied for table journal_lines
 -- as superuser/schema owner:
-ERROR:  lines of POSTED journal 3b8fa21f-5a05-44b5-8deb-9407ef065971 are immutable (LAW 03)
+ERROR:  lines of POSTED journal d35477d1-585a-4957-a7ca-f62c6713a1aa are immutable (LAW 03)
 CONTEXT:  PL/pgSQL function journal_lines_guard() line 7 at RAISE
 -- posted journal still balanced:
 POSTED|115000.000000|115000.000000
@@ -38,20 +38,17 @@ SQL statement "SELECT assert_currency_precision(NEW.amount, NEW.currency, 'amoun
 PL/pgSQL function journal_lines_validate() line 22 at PERFORM
 
 ### Workflow after: approve a DRAFT journal directly while a mandatory workflow is published (tenant role)
-ERROR:  journal.approve of journal 469e52f9-ea88-47fe-9b2f-f5059821a611 requires its mandatory approval workflow
+ERROR:  journal.approve of journal 161b8343-d60c-44a2-bd36-c8fee7e6be36 requires its mandatory approval workflow
 CONTEXT:  PL/pgSQL function workflow_require_effect(uuid,text,uuid,text,text) line 15 at RAISE
 SQL statement "SELECT workflow_require_effect(NEW.tenant_id, 'journal', NEW.id, 'journal.approve', NEW.approved_by)"
 PL/pgSQL function journals_workflow_gate() line 4 at PERFORM
 -- forge an effect row without decisions:
-ERROR:  a mandatory workflow governs journal; this instance belongs to another definition
-CONTEXT:  PL/pgSQL function workflow_assert_governing(workflow_instances) line 12 at RAISE
-SQL statement "SELECT workflow_assert_governing(i)"
-PL/pgSQL function workflow_effects_guard() line 8 at PERFORM
+ERROR:  effect journal.approve is not the effect of the open step
+CONTEXT:  PL/pgSQL function workflow_effects_guard() line 14 at RAISE
 -- start an instance of the mandatory definition with a one-person route:
 ERROR:  workflow facts do not match the journal
 CONTEXT:  PL/pgSQL function workflow_check_start(workflow_definitions,workflow_instances) line 19 at RAISE
 SQL statement "SELECT workflow_check_start(d, NEW)"
-PL/pgSQL function workflow_instances_guard() line 17 at PERFORM
+PL/pgSQL function workflow_instances_guard() line 20 at PERFORM
 -- retire the mandatory definition directly:
-ERROR:  a published workflow is retired only by publishing its next version
-CONTEXT:  PL/pgSQL function workflow_definitions_guard() line 52 at RAISE
+ERROR:  permission denied for table workflow_definitions

@@ -18,8 +18,9 @@ given.
 | SC-11 staging end-to-end acceptance, session revocation, telemetry, backup/PITR drill | **NOT TESTED** (not built) | NEXT #1 |
 | SC-12 cold build and tests with pinned dependencies (`-mod=readonly`, empty module cache, no `go.work`) | **PASS** | command below |
 | SC-12 `go.sum` hashes verified against `sum.golang.org`; CI run; govulncheck; SBOM | **BLOCKED** — sandbox network allowlist excludes `proxy.golang.org`/`sum.golang.org`; no CI runner | CI job defined |
-| Controlled-approval workflow engine: governed definitions, DB-enforced trail, mandatory gates, timers | **PASS** | `TestWorkflow_*` (11), validator (2), API (1); mutation table in IMPLEMENTATION_LOG |
-| Independent adversarial review of the workflow engine | see IMPLEMENTATION_LOG §9 | — |
+| Controlled-approval workflow engine: governed definitions, DB-enforced trail, mandatory gates, timers | **PASS** | `TestWorkflow_*` (11), `TestReview_*` (10), `TestReverify_*` (7), validator (2), examples (1), API (1); mutation tables in IMPLEMENTATION_LOG |
+| Independent adversarial review of the workflow engine (two rounds) | **PASS** — 9 + 6 defects found, all fixed with regression tests that fail on the pre-fix commits | IMPLEMENTATION_LOG §9, §10 |
+| Advisory-lock / TEMP restriction when migrations run as a non-superuser | **NOT TESTED** (test cluster runs migrations as superuser) | `deploy/02-restrict-advisory-locks.sql` |
 
 **Gate A overall: NOT PASSED** — SC-11 and SC-12 remain PARTIAL and the
 deployment profile has not been executed. The financial-integrity, privilege
@@ -40,10 +41,20 @@ operational items proceed in parallel.
 ## Test run recorded for this release
 
 ```
-SERK_TEST_ADMIN_DSN='postgres://postgres@/serk_gate_a?host=/tmp&port=5433' \
-GOWORK=off GOFLAGS=-mod=readonly GOPROXY=file://<local mirror> GOSUMDB=off GOMODCACHE=<empty dir> \
-go vet ./... && go test -race -count=1 -p 1 ./...
+GOWORK=off GOFLAGS=-mod=readonly GOSUMDB=off GOPROXY=file://<local module mirror> GOMODCACHE=<new empty dir>
+go clean -cache && gofmt -l . && go vet ./...
+SERK_TEST_ADMIN_DSN='postgres://postgres@/serk_final?host=/tmp&port=5433' go test -race -count=1 -p 1 -v ./...
 ```
 
-Go 1.24.7, PostgreSQL 16.15, fresh database. Results are pasted below by the
-final run of this delivery (see the bottom of this file).
+Go 1.24.7 · PostgreSQL 16.15 · fresh database · exit status 0 ·
+**126 tests passed, 0 failed, 0 skipped**:
+
+```
+internal/config    ok     internal/httpapi  ok     internal/kernel  ok
+internal/relay     ok     pkg/auth          ok     pkg/evm          ok
+pkg/fx             ok     pkg/ledger        ok     pkg/money        ok
+pkg/tax            ok     pkg/workflow      ok
+```
+
+The same suite also passes with packages in parallel (CI mode, no `-p 1`)
+and the timing-sensitive tests passed 5 consecutive repetitions.

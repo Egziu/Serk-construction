@@ -1,0 +1,342 @@
+?   	github.com/serk-group/serk-construction/cmd/serk-api	[no test files]
+?   	github.com/serk-group/serk-construction/cmd/serk-devtoken	[no test files]
+?   	github.com/serk-group/serk-construction/cmd/serk-migrate	[no test files]
+?   	github.com/serk-group/serk-construction/cmd/serk-relay	[no test files]
+=== RUN   TestProductionAcceptsHardenedConfig
+--- PASS: TestProductionAcceptsHardenedConfig (0.00s)
+=== RUN   TestProductionRefusesTheOldDemoDefaults
+    config_test.go:68: config: invalid (production):
+          - SERK_DB_BASE_DSN must use sslmode=verify-full in production (got "disable")
+          - SERK_TENANT_DB_SECRET looks like a placeholder or well-known value (contains "change-me"); generate one with `openssl rand -hex 32`
+          - SERK_HEALTH_DSN must not use a superuser/administrative login (postgres)
+          - SERK_HEALTH_DSN uses a weak password
+          - SERK_HEALTH_DSN must use sslmode=verify-full in production (got "disable")
+          - production requires OIDC (SERK_OIDC_*); shared-secret HS256 tokens are for development and staging only
+          - SERK_SOD_STRICT=false is not allowed in production
+          - SERK_TRUSTED_PROXIES must not contain a wildcard prefix (0.0.0.0/0)
+--- PASS: TestProductionRefusesTheOldDemoDefaults (0.00s)
+=== RUN   TestProductionRules
+--- PASS: TestProductionRules (0.00s)
+=== RUN   TestDevelopmentRelaxations
+--- PASS: TestDevelopmentRelaxations (0.00s)
+=== RUN   TestProductionManifestHasNoDemoDefaults
+--- PASS: TestProductionManifestHasNoDemoDefaults (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/config	1.010s
+=== RUN   TestJWKSVerifier
+--- PASS: TestJWKSVerifier (0.78s)
+=== RUN   TestAPIFullLifecycle
+--- PASS: TestAPIFullLifecycle (0.22s)
+=== RUN   TestAPIRejections
+--- PASS: TestAPIRejections (0.61s)
+=== RUN   TestAPIRateLimit
+--- PASS: TestAPIRateLimit (0.08s)
+=== RUN   TestAPIFXMakerCheckerFlow
+--- PASS: TestAPIFXMakerCheckerFlow (0.07s)
+=== RUN   TestAPIPreAuthFloodProtection
+--- PASS: TestAPIPreAuthFloodProtection (0.04s)
+=== RUN   TestTokenRoundTrip
+--- PASS: TestTokenRoundTrip (0.00s)
+=== RUN   TestTokenRejections
+--- PASS: TestTokenRejections (0.00s)
+=== RUN   TestIsMFA
+--- PASS: TestIsMFA (0.00s)
+=== RUN   TestTokenTimeClaims
+--- PASS: TestTokenTimeClaims (0.00s)
+=== RUN   TestClientIPAndLimiter
+--- PASS: TestClientIPAndLimiter (0.00s)
+=== RUN   TestAPIWorkflowConsole
+--- PASS: TestAPIWorkflowConsole (0.12s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/httpapi	2.928s
+=== RUN   TestSC08_PostWaitsForInFlightCloseThenRefuses
+    gate_a_concurrency_test.go:86: close err=ERROR: period FY2026-Q4 has 1 approved journal(s) awaiting posting; post or cancel them before closing (SQLSTATE 23514) | post err=<nil> | period=OPEN journal=POSTED
+--- PASS: TestSC08_PostWaitsForInFlightCloseThenRefuses (0.52s)
+=== RUN   TestSC08_PostBlockedByUncommittedCloseIsRefused
+    gate_a_concurrency_test.go:136: post after concurrent close -> store: database invariant violated: fiscal period is CLOSED — posting refused
+--- PASS: TestSC08_PostBlockedByUncommittedCloseIsRefused (0.48s)
+=== RUN   TestSC08_CloseWaitsForInFlightPostAndIncludesIt
+    gate_a_concurrency_test.go:183: closing TB after waiting: {Action:CLOSE Actor:u-poster JournalCount:1 TBDebits:115000.000000 TBCredits:115000.000000 TBHash:e9954aa40aafb0013f69fc073889a3445aa0d63ca2182bed944ec51ba21f1de1 RecordedAt:2026-10-21 21:10:25.527648 +0300 EAT}
+--- PASS: TestSC08_CloseWaitsForInFlightPostAndIncludesIt (0.48s)
+=== RUN   TestSC08_LineInsertWaitsForInFlightFXWithdrawal
+    gate_a_concurrency_test.go:214: create after concurrent withdrawal -> store: database invariant violated: fx snapshot 9142b5ad-c539-458a-9db1-edac1d4fa13d is DISPUTED, not APPROVED
+--- PASS: TestSC08_LineInsertWaitsForInFlightFXWithdrawal (0.46s)
+=== RUN   TestSC08_FXWithdrawalWaitsForInFlightLineAndRefuses
+    gate_a_concurrency_test.go:247: withdraw after concurrent line insert -> store: database invariant violated: snapshot 3e2c84df-cc2b-4b41-8435-8747c8c10c98 is referenced by journal lines and cannot be withdrawn
+--- PASS: TestSC08_FXWithdrawalWaitsForInFlightLineAndRefuses (0.47s)
+=== RUN   TestSC08_RawFXWithdrawalWaitsForInFlightLine
+--- PASS: TestSC08_RawFXWithdrawalWaitsForInFlightLine (0.47s)
+=== RUN   TestSC10_CostCodesAreValidatedAgainstApprovedWBS
+--- PASS: TestSC10_CostCodesAreValidatedAgainstApprovedWBS (0.11s)
+=== RUN   TestSC02_WritePathEnforcesFXPolicy
+    gate_a_fx_test.go:60: selected rate but amount does not reconcile   -> ledger: line rejected: line 1 amount 5726.00 ETB does not reconcile to 100.00 USD x 57.25 = 5725.00 ETB
+    gate_a_fx_test.go:60: future-effective (10-20 > event 10-15)        -> ledger: line rejected: line 1: snapshot 2bdfac86-bde1-4f43-8e88-5b607bf565f5 is not the rate selected by FX policy v1 for this event (expected 6b33a22f-692f-4275-b6c9-1a814c34e6d1)
+    gate_a_fx_test.go:60: stale (75 days > policy 30)                   -> ledger: line rejected: line 1: snapshot b60ca458-2fe9-4f0c-b59e-75329fc40391 is not the rate selected by FX policy v1 for this event (expected 6b33a22f-692f-4275-b6c9-1a814c34e6d1)
+    gate_a_fx_test.go:60: approved but older than the selected rate     -> ledger: line rejected: line 1: snapshot 9769b584-117b-4fea-8131-4804bff7bdd7 is not the rate selected by FX policy v1 for this event (expected 6b33a22f-692f-4275-b6c9-1a814c34e6d1)
+    gate_a_fx_test.go:60: wrong rate type (COMMERCIAL vs OFFICIAL)      -> ledger: line rejected: line 1: snapshot 8dbefe71-b1a7-4a1e-a435-8bd5de2dc1a6 is not the rate selected by FX policy v1 for this event (expected 6b33a22f-692f-4275-b6c9-1a814c34e6d1)
+    gate_a_fx_test.go:60: trusted source not admitted by the policy     -> ledger: line rejected: line 1: snapshot 3496e798-7f74-4de6-bd0a-e10ad133e113 is not the rate selected by FX policy v1 for this event (expected 6b33a22f-692f-4275-b6c9-1a814c34e6d1)
+--- PASS: TestSC02_WritePathEnforcesFXPolicy (0.12s)
+=== RUN   TestSC02_DatabaseRejectsIneligibleFXAndRechecksAtPost
+    gate_a_fx_test.go:116: raw wrong policy version         -> store: database invariant violated: fx policy f062d8d7-7715-45d1-918b-da253730afb5/v7 is not an approved policy of entity 4c30c52a-bea8-48b3-a0f5-04ccd8ae5ebb
+    gate_a_fx_test.go:116: raw applied rate differs         -> store: database invariant violated: applied_rate 58.000000000000 differs from the policy-eligible snapshot rate 57.250000000000
+    gate_a_fx_test.go:116: raw amount does not reconcile    -> store: database invariant violated: line 1 amount 6000.000000 does not reconcile to 100.000000 x 57.250000000000 = 5725.000000000000000000
+    gate_a_fx_test.go:116: raw future-effective             -> store: database invariant violated: snapshot is effective from 2026-10-20 03:00:00+03, after the business event 2026-10-15 12:00:00+03
+    gate_a_fx_test.go:116: raw stale                        -> store: database invariant violated: snapshot effective 2026-08-01 03:00:00+03 is stale for event 2026-10-15 12:00:00+03 (policy max 720:00:00)
+    gate_a_fx_test.go:116: raw pending                      -> store: database invariant violated: fx snapshot 6f25b59a-5445-4dfd-9707-504c9503a4dc is PENDING, not APPROVED
+    gate_a_fx_test.go:116: raw inverse when policy forbids  -> store: database invariant violated: policy does not allow inverse rates
+    gate_a_fx_test.go:116: raw no policy binding            -> store: database invariant violated: foreign-currency line 1 has no FX policy binding (SC-02)
+--- PASS: TestSC02_DatabaseRejectsIneligibleFXAndRechecksAtPost (0.10s)
+=== RUN   TestSC03_FXMakerChecker
+--- PASS: TestSC03_FXMakerChecker (0.07s)
+=== RUN   TestSC07_FXCommandsEmitAtomicOutboxEvents
+--- PASS: TestSC07_FXCommandsEmitAtomicOutboxEvents (0.05s)
+=== RUN   TestSC05_ScopedPrincipalsCannotReachUnassignedJournals
+--- PASS: TestSC05_ScopedPrincipalsCannotReachUnassignedJournals (0.05s)
+=== RUN   TestSC01_PostedLineCannotBeReassignedOrMutated
+    gate_a_ledger_test.go:87: move DRAFT line into POSTED journal                     -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: renumber POSTED line                                    -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line amount                               -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line project                              -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line tenant                               -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line memo                                 -> store: database invariant violated: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03)
+    gate_a_ledger_test.go:87: delete POSTED line                                      -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: insert extra line into POSTED journal                   -> store: database invariant violated: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03)
+    gate_a_ledger_test.go:87: move POSTED line 3 into DRAFT journal (audit scenario)  -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: move APPROVED line into DRAFT journal                   -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line account                              -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line legal entity                         -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: move line between two DRAFT journals                    -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: renumber DRAFT line (identity immutable even in draft)  -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:100: [owner] move line between two DRAFT journals            -> ERROR: journal line identity (journal, tenant, entity, line_no) is immutable (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] renumber DRAFT line (identity immutable even in draft) -> ERROR: journal line identity (journal, tenant, entity, line_no) is immutable (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] move DRAFT line into POSTED journal             -> ERROR: journal line identity (journal, tenant, entity, line_no) is immutable (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] renumber POSTED line                            -> ERROR: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] change POSTED line amount                       -> ERROR: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] change POSTED line project                      -> ERROR: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] change POSTED line memo                         -> ERROR: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] delete POSTED line                              -> ERROR: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] insert extra line into POSTED journal           -> ERROR: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] move POSTED line 3 into DRAFT journal (audit scenario) -> ERROR: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] move APPROVED line into DRAFT journal           -> ERROR: lines of APPROVED journal e6a4dc51-e4fc-4f54-8028-a0542f32178c are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] change POSTED line account                      -> ERROR: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] change POSTED line legal entity                 -> ERROR: lines of POSTED journal 8fbaa5d3-d36c-4c66-8a4a-87e8aee87c30 are immutable (LAW 03) (SQLSTATE 23000)
+--- PASS: TestSC01_PostedLineCannotBeReassignedOrMutated (0.08s)
+=== RUN   TestSC01_IntegrityScanDetectsPriorExploitation
+--- PASS: TestSC01_IntegrityScanDetectsPriorExploitation (0.05s)
+=== RUN   TestSC14_DatabaseEnforcesCurrencyPrecision
+    gate_a_ledger_test.go:226: ETB 100.001  ok=false -> store: database invariant violated: amount 100.001000 ETB has more than 2 decimal place(s) (SC-14)
+    gate_a_ledger_test.go:226: ETB 100.0049 ok=false -> store: database invariant violated: amount 100.004900 ETB has more than 2 decimal place(s) (SC-14)
+    gate_a_ledger_test.go:226: ETB 100.01   ok=true -> <nil>
+    gate_a_ledger_test.go:226: UGX 100.5    ok=false -> store: database invariant violated: amount 100.500000 UGX has more than 0 decimal place(s) (SC-14)
+    gate_a_ledger_test.go:226: UGX 100      ok=true -> <nil>
+    gate_a_ledger_test.go:226: TND 1.0001   ok=false -> store: database invariant violated: amount 1.000100 TND has more than 3 decimal place(s) (SC-14)
+    gate_a_ledger_test.go:226: TND 1.001    ok=true -> <nil>
+--- PASS: TestSC14_DatabaseEnforcesCurrencyPrecision (0.05s)
+=== RUN   TestSC04_CompromisedTenantCredentialCannotReachOtherTenant
+--- PASS: TestSC04_CompromisedTenantCredentialCannotReachOtherTenant (0.06s)
+=== RUN   TestSC04_SharedLoginRetiredAndMisroutingFailsClosed
+--- PASS: TestSC04_SharedLoginRetiredAndMisroutingFailsClosed (0.05s)
+=== RUN   TestSC04_DedicatedDatabaseTier
+--- PASS: TestSC04_DedicatedDatabaseTier (0.46s)
+=== RUN   TestJournalBoundToLegalEntity
+--- PASS: TestJournalBoundToLegalEntity (0.08s)
+=== RUN   TestApprovedContentIsFrozen
+--- PASS: TestApprovedContentIsFrozen (0.05s)
+=== RUN   TestReversedLinkCannotBeForged
+--- PASS: TestReversedLinkCannotBeForged (0.07s)
+=== RUN   TestProjectRestrictionCoversLines
+--- PASS: TestProjectRestrictionCoversLines (0.03s)
+=== RUN   TestConcurrentIdenticalCreatesAreIdempotent
+--- PASS: TestConcurrentIdenticalCreatesAreIdempotent (0.08s)
+=== RUN   TestAuditChainLinearUnderConcurrency
+--- PASS: TestAuditChainLinearUnderConcurrency (0.25s)
+=== RUN   TestOutboxAndPeriodsCannotBeTamperedByAppRole
+--- PASS: TestOutboxAndPeriodsCannotBeTamperedByAppRole (0.05s)
+=== RUN   TestHappyPathPostsAndBalancesAccounts
+--- PASS: TestHappyPathPostsAndBalancesAccounts (0.05s)
+=== RUN   TestUnbalancedRejectedInGoAndInDatabase
+--- PASS: TestUnbalancedRejectedInGoAndInDatabase (0.04s)
+=== RUN   TestSegregationOfDuties
+--- PASS: TestSegregationOfDuties (0.05s)
+=== RUN   TestTenantIsolation
+--- PASS: TestTenantIsolation (0.06s)
+=== RUN   TestPostedJournalIsImmutable
+--- PASS: TestPostedJournalIsImmutable (0.05s)
+=== RUN   TestIdempotentReplayAndConflict
+--- PASS: TestIdempotentReplayAndConflict (0.04s)
+=== RUN   TestReversalFlow
+--- PASS: TestReversalFlow (0.07s)
+=== RUN   TestClosedPeriodBlocksPosting
+--- PASS: TestClosedPeriodBlocksPosting (0.09s)
+=== RUN   TestProjectAttributeRestriction
+--- PASS: TestProjectAttributeRestriction (0.06s)
+=== RUN   TestOptimisticConcurrency
+--- PASS: TestOptimisticConcurrency (0.04s)
+=== RUN   TestExampleWorkflowDefinitionsAreValid
+--- PASS: TestExampleWorkflowDefinitionsAreValid (0.00s)
+=== RUN   TestReverify_RV1_ResumeKeepsWholeQuorumExcluded
+--- PASS: TestReverify_RV1_ResumeKeepsWholeQuorumExcluded (0.11s)
+=== RUN   TestReverify_RV2_StartAndPublishDoNotDeadlock
+--- PASS: TestReverify_RV2_StartAndPublishDoNotDeadlock (0.11s)
+=== RUN   TestReverify_RV3_NoCrossTenantGateBlocking
+--- PASS: TestReverify_RV3_NoCrossTenantGateBlocking (0.05s)
+=== RUN   TestReverify_RV4_CancelHonoursScope
+--- PASS: TestReverify_RV4_CancelHonoursScope (0.06s)
+=== RUN   TestReverify_RV5_EffectAfterExpiryRefused
+--- PASS: TestReverify_RV5_EffectAfterExpiryRefused (0.06s)
+=== RUN   TestReverify_RV6_NoRetirementOutsideTheDecideFunction
+--- PASS: TestReverify_RV6_NoRetirementOutsideTheDecideFunction (0.05s)
+=== RUN   TestReverify_RV7_GoSQLRouteEquivalence
+--- PASS: TestReverify_RV7_GoSQLRouteEquivalence (0.24s)
+=== RUN   TestReview_R1_OptionalDefinitionCannotBypassMandatory
+--- PASS: TestReview_R1_OptionalDefinitionCannotBypassMandatory (0.07s)
+=== RUN   TestReview_R2_ForgedRouteOrFactsRefused
+--- PASS: TestReview_R2_ForgedRouteOrFactsRefused (0.06s)
+=== RUN   TestReview_R3_DirectRetirementRefused
+--- PASS: TestReview_R3_DirectRetirementRefused (0.05s)
+=== RUN   TestReview_R4_ApprovedJournalIsNeverStranded
+--- PASS: TestReview_R4_ApprovedJournalIsNeverStranded (0.14s)
+=== RUN   TestReview_R5_ExpiredStepCannotBeDecided
+--- PASS: TestReview_R5_ExpiredStepCannotBeDecided (0.07s)
+=== RUN   TestReview_R6_SupersededVersionCannotAct
+--- PASS: TestReview_R6_SupersededVersionCannotAct (0.07s)
+=== RUN   TestReview_R7_QuorumMustExcludeMaker
+--- PASS: TestReview_R7_QuorumMustExcludeMaker (0.03s)
+=== RUN   TestReview_R8_GateHoldsDuringVersionSwitch
+--- PASS: TestReview_R8_GateHoldsDuringVersionSwitch (0.46s)
+=== RUN   TestReview_R9_FinishedInstanceIsImmutable
+--- PASS: TestReview_R9_FinishedInstanceIsImmutable (0.07s)
+=== RUN   TestReview_R11_ConsoleLeaksNothing
+--- PASS: TestReview_R11_ConsoleLeaksNothing (0.08s)
+=== RUN   TestWorkflow_MandatoryJournalWorkflowReplacesDirectPath
+--- PASS: TestWorkflow_MandatoryJournalWorkflowReplacesDirectPath (0.09s)
+=== RUN   TestWorkflow_HighValueNeedsQuorumOfDistinctExecutivesWithMFA
+--- PASS: TestWorkflow_HighValueNeedsQuorumOfDistinctExecutivesWithMFA (0.10s)
+=== RUN   TestWorkflow_DatabaseRefusesForgedTrail
+--- PASS: TestWorkflow_DatabaseRefusesForgedTrail (0.09s)
+=== RUN   TestWorkflow_RejectionRunsCompensationAsTheRejector
+--- PASS: TestWorkflow_RejectionRunsCompensationAsTheRejector (0.07s)
+=== RUN   TestWorkflow_EffectFailureRollsBackAndIsRecorded
+--- PASS: TestWorkflow_EffectFailureRollsBackAndIsRecorded (0.12s)
+=== RUN   TestWorkflow_SubjectChangedAfterStartIsRefused
+--- PASS: TestWorkflow_SubjectChangedAfterStartIsRefused (0.09s)
+=== RUN   TestWorkflow_TimersEscalateOnceAndExpire
+--- PASS: TestWorkflow_TimersEscalateOnceAndExpire (0.11s)
+=== RUN   TestWorkflow_DefinitionGovernance
+--- PASS: TestWorkflow_DefinitionGovernance (0.11s)
+=== RUN   TestWorkflow_ConcurrentDecisionsExecuteTheEffectOnce
+--- PASS: TestWorkflow_ConcurrentDecisionsExecuteTheEffectOnce (0.09s)
+=== RUN   TestWorkflow_TenantIsolation
+--- PASS: TestWorkflow_TenantIsolation (0.07s)
+=== RUN   TestWorkflow_FXApprovalKeepsVarianceControls
+--- PASS: TestWorkflow_FXApprovalKeepsVarianceControls (0.11s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/kernel	9.136s
+=== RUN   TestRelayDeliversInOrderExactlyOnceWhenHealthy
+--- PASS: TestRelayDeliversInOrderExactlyOnceWhenHealthy (0.09s)
+=== RUN   TestRelayCrashAfterPublishRedeliversAndConsumerDedupes
+--- PASS: TestRelayCrashAfterPublishRedeliversAndConsumerDedupes (0.05s)
+=== RUN   TestRelayRetryDeadLetterHeadOfLineAndReplay
+--- PASS: TestRelayRetryDeadLetterHeadOfLineAndReplay (0.06s)
+=== RUN   TestWebhookSignedDeliveryAndReceiverChecks
+--- PASS: TestWebhookSignedDeliveryAndReceiverChecks (0.06s)
+=== RUN   TestBackoff
+--- PASS: TestBackoff (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/relay	1.280s
+?   	github.com/serk-group/serk-construction/internal/store/postgres	[no test files]
+?   	github.com/serk-group/serk-construction/internal/testdb	[no test files]
+=== RUN   TestDefaultRolesSeparateDuties
+--- PASS: TestDefaultRolesSeparateDuties (0.00s)
+=== RUN   TestRequire
+--- PASS: TestRequire (0.00s)
+=== RUN   TestScopeSC05
+--- PASS: TestScopeSC05 (0.00s)
+=== RUN   TestStepUp
+--- PASS: TestStepUp (0.00s)
+=== RUN   TestSoD
+--- PASS: TestSoD (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/auth	1.012s
+=== RUN   TestDeflateToBaseline
+--- PASS: TestDeflateToBaseline (0.00s)
+=== RUN   TestComputeAndZeroDenominatorPolicy
+--- PASS: TestComputeAndZeroDenominatorPolicy (0.00s)
+=== RUN   TestBasisGuards
+--- PASS: TestBasisGuards (0.00s)
+=== RUN   TestCostToCost
+--- PASS: TestCostToCost (0.00s)
+=== RUN   TestSC09_InflationDoesNotMasqueradeAsOverrun
+--- PASS: TestSC09_InflationDoesNotMasqueradeAsOverrun (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/evm	1.011s
+=== RUN   TestSelectLatestEffectiveApproved
+--- PASS: TestSelectLatestEffectiveApproved (0.00s)
+=== RUN   TestSelectNeverUsesPendingOrFutureRates
+--- PASS: TestSelectNeverUsesPendingOrFutureRates (0.00s)
+=== RUN   TestKnowledgeCutoffRespected
+--- PASS: TestKnowledgeCutoffRespected (0.00s)
+=== RUN   TestSourcePriorityAndStaleness
+--- PASS: TestSourcePriorityAndStaleness (0.00s)
+=== RUN   TestInverseDerivationOnlyWhenAllowed
+--- PASS: TestInverseDerivationOnlyWhenAllowed (0.00s)
+=== RUN   TestConvertIsExactAndBoundToSnapshot
+--- PASS: TestConvertIsExactAndBoundToSnapshot (0.00s)
+=== RUN   TestRemeasurementSigns
+--- PASS: TestRemeasurementSigns (0.00s)
+=== RUN   TestSnapshotValidate
+--- PASS: TestSnapshotValidate (0.00s)
+=== RUN   TestDeterministicTieBreak
+--- PASS: TestDeterministicTieBreak (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/fx	1.012s
+=== RUN   TestValidJournal
+--- PASS: TestValidJournal (0.00s)
+=== RUN   TestUnbalancedRejected
+--- PASS: TestUnbalancedRejected (0.00s)
+=== RUN   TestLineRules
+--- PASS: TestLineRules (0.00s)
+=== RUN   TestStateMachine
+--- PASS: TestStateMachine (0.00s)
+=== RUN   TestReversalMirrorsLines
+--- PASS: TestReversalMirrorsLines (0.00s)
+=== RUN   TestAccountValidate
+--- PASS: TestAccountValidate (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/ledger	1.011s
+=== RUN   TestParseQuantisesToMinorUnits
+--- PASS: TestParseQuantisesToMinorUnits (0.00s)
+=== RUN   TestUnknownCurrencyRejected
+--- PASS: TestUnknownCurrencyRejected (0.00s)
+=== RUN   TestCurrencyMismatch
+--- PASS: TestCurrencyMismatch (0.00s)
+=== RUN   TestArithmeticIsExact
+--- PASS: TestArithmeticIsExact (0.00s)
+=== RUN   TestAllocateConservesEveryMinorUnit
+--- PASS: TestAllocateConservesEveryMinorUnit (0.00s)
+=== RUN   TestJSONRoundTrip
+--- PASS: TestJSONRoundTrip (0.00s)
+=== RUN   TestMinorAndRegister
+--- PASS: TestMinorAndRegister (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/money	1.011s
+=== RUN   TestRulesValidate
+--- PASS: TestRulesValidate (0.00s)
+=== RUN   TestEffectiveDatingAndReviewStatus
+--- PASS: TestEffectiveDatingAndReviewStatus (0.00s)
+=== RUN   TestAmbiguityIsAnError
+--- PASS: TestAmbiguityIsAnError (0.00s)
+=== RUN   TestComputeNetBase
+--- PASS: TestComputeNetBase (0.00s)
+=== RUN   TestComputeGrossBaseIsExact
+--- PASS: TestComputeGrossBaseIsExact (0.00s)
+=== RUN   TestThreshold
+--- PASS: TestThreshold (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/tax	1.011s
+=== RUN   TestValidDefinitionAndRouting
+--- PASS: TestValidDefinitionAndRouting (0.00s)
+=== RUN   TestValidatorRefusesUnsafeDefinitions
+--- PASS: TestValidatorRefusesUnsafeDefinitions (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/workflow	1.017s
