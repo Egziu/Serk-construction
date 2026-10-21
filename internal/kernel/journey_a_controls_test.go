@@ -3,6 +3,7 @@ package kernel
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -257,6 +258,14 @@ func TestJourneyA_PaymentControls(t *testing.T) {
 	ai := auth.Principal{UserID: "ai:payments-copilot", TenantID: f.tenant, Roles: []string{"finance_manager"}, MFA: true, AuthTime: time.Now(), IssuedAt: time.Now().Add(-time.Minute)}
 	_, err = f.svc.ApprovePayment(f.ctx, ai, p1)
 	wantErr(t, "payment approval by an AI principal", err, "human principals")
+	// A plausible-looking user id is not enough: the identity provider did
+	// not assert a human principal (Kind unset or "service").
+	for _, kind := range []string{"", auth.KindService, auth.KindAI} {
+		svc := c.finMgr
+		svc.UserID, svc.Kind = "finance-approvals", kind
+		_, err = f.svc.ApprovePayment(f.ctx, svc, p1)
+		wantErr(t, "payment approval by a principal of kind "+strconv.Quote(kind), err, "human")
+	}
 
 	// Bank-detail fraud: the payee account is revoked and replaced after the
 	// payment was prepared; the payment can no longer be approved.
@@ -286,23 +295,28 @@ func TestJourneyA_PaymentControls(t *testing.T) {
 	approverReleases.Roles = []string{"finance_manager", "treasury_officer"}
 	_, err = f.svc.ReleasePayment(f.ctx, approverReleases, p3)
 	wantErr(t, "payment released by its approver", err, "payment_release_separation")
-	// Raw: settlement without a bank statement.
+	// The preparer cannot release (two treasury officers).
 	_, err = f.svc.ReleasePayment(f.ctx, c.treasury, p3)
+	wantErr(t, "payment released by its preparer", err, "prepared a payment cannot release")
+	// Raw: settlement without a bank statement.
+	_, err = f.svc.ReleasePayment(f.ctx, c.treasury2, p3)
 	must(t, "release", err)
 	wantErr(t, "raw settlement without a bank statement", f.rawExec(`UPDATE payment_instructions SET status='SETTLED' WHERE id=$1::uuid`, p3), "settled only by reconciling")
 	// Raw: a statement cannot be imported by tenant SQL (attested file digest).
 	wantErr(t, "raw bank statement import", f.rawExec(`INSERT INTO bank_statements(company_bank_id, statement_no, statement_date, opening_balance, closing_balance, source_sha256, imported_by)
 		VALUES ($1::uuid, 'FAKE', current_date, 0, -388700, repeat('a', 64), 'u-treasury')`, w.bank), "attestation")
 	// Statements must balance and continue the previous closing balance.
-	_, err = f.svc.ImportBankStatement(f.ctx, c.treasury, StatementInput{CompanyBankID: w.bank, StatementNo: "S-1", StatementDate: today(),
-		OpeningBalance: dec("1000"), ClosingBalance: dec("999"), Lines: []StatementLine{{today(), dec("-2"), "x", "y"}}, Raw: []byte("unbalanced")})
+	_, err = f.svc.ImportBankStatement(f.ctx, c.bankOfficer, stmt(w.bank, "S-1", today(), "1000", "999", [3]string{"-2", "x", "y"}))
 	wantErr(t, "statement that does not balance", err, "does not balance")
+	// Treasury (who prepares and releases payments) cannot import statements.
+	_, err = f.svc.ImportBankStatement(f.ctx, c.treasury2, stmt(w.bank, "S-T", today(), "1000000", "1000000"))
+	wantErr(t, "statement import by treasury", err, "forbidden")
 	// The releaser cannot reconcile their own payment.
 	d, _ := f.svc.GetP2PDoc(f.ctx, c.treasury, "payment_instruction", p3)
-	stID, err := f.svc.ImportBankStatement(f.ctx, c.treasury, StatementInput{CompanyBankID: w.bank, StatementNo: "S-2", StatementDate: today(),
-		OpeningBalance: dec("1000000"), ClosingBalance: dec("611300"), Lines: []StatementLine{{today(), dec("-388700"), d.Number, "ABC"}}, Raw: []byte("s2")})
+	s2 := stmt(w.bank, "S-2", today(), "1000000", "611300", [3]string{"-388700", d.Number, "ABC"})
+	stID, err := f.svc.ImportBankStatement(f.ctx, c.bankOfficer, s2)
 	must(t, "import", err)
-	selfRec := c.treasury
+	selfRec := c.treasury2
 	selfRec.Roles = []string{"treasury_officer", "accountant"}
 	res, err := f.svc.AutoReconcile(f.ctx, selfRec, stID)
 	must(t, "reconcile run", err)
@@ -315,8 +329,7 @@ func TestJourneyA_PaymentControls(t *testing.T) {
 		t.Errorf("accountant reconciliation: %+v", res)
 	}
 	// The same file cannot be imported twice.
-	_, err = f.svc.ImportBankStatement(f.ctx, c.treasury, StatementInput{CompanyBankID: w.bank, StatementNo: "S-3", StatementDate: today(),
-		OpeningBalance: dec("611300"), ClosingBalance: dec("611300"), Raw: []byte("s2")})
+	_, err = f.svc.ImportBankStatement(f.ctx, c.bankOfficer, s2)
 	wantErr(t, "re-import of the same statement file", err)
 }
 

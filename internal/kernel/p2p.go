@@ -10,14 +10,20 @@ package kernel
 // posts them through the ordinary attested journal commands.
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 
@@ -183,6 +189,11 @@ func (s *Service) ProposeP2PPolicy(ctx context.Context, p auth.Principal, pol po
 		if err != nil {
 			return err
 		}
+		// The creator is bound by an attestation over the created content,
+		// consumed by the database at commit (0014, review 3 H1).
+		if err := s.authorize(ctx, tx, p, "p2p.policy.create", "p2p_policy", id, ""); err != nil {
+			return err
+		}
 		return s.record(ctx, tx, p, "p2p.policy.propose", "p2p_policy", id, "p2p.policy.proposed", map[string]any{"policy_id": id, "legal_entity_id": pol.LegalEntityID})
 	})
 	return id, err
@@ -237,6 +248,11 @@ func (s *Service) CreateSupplier(ctx context.Context, p auth.Principal, entity, 
 		id, err = postgres.InsertReturningID(ctx, tx, `INSERT INTO suppliers(legal_entity_id, code, name, tax_id, created_by) VALUES ($1::uuid, $2, $3, $4, $5) RETURNING id::text`,
 			entity, strings.ToUpper(strings.TrimSpace(code)), strings.TrimSpace(name), tax, p.UserID)
 		if err != nil {
+			return err
+		}
+		// The creator is bound by an attestation over the created content,
+		// consumed by the database at commit (0014, review 3 H1).
+		if err := s.authorize(ctx, tx, p, "supplier.create", "supplier", id, ""); err != nil {
 			return err
 		}
 		return s.record(ctx, tx, p, "supplier.create", "supplier", id, "supplier.created", map[string]any{"supplier_id": id, "code": code})
@@ -300,6 +316,11 @@ func (s *Service) AddSupplierBankAccount(ctx context.Context, p auth.Principal, 
 		if err != nil {
 			return err
 		}
+		// The creator is bound by an attestation over the created content,
+		// consumed by the database at commit (0014, review 3 H1).
+		if err := s.authorize(ctx, tx, p, "supplier.bank.create", "supplier_bank_account", id, ""); err != nil {
+			return err
+		}
 		return s.record(ctx, tx, p, "supplier.bank.add", "supplier_bank_account", id, "supplier.bank_account.added",
 			map[string]any{"supplier_id": supplierID, "bank_account_id": id, "account_last4": last4(accountNumber)})
 	})
@@ -348,6 +369,11 @@ func (s *Service) RegisterCompanyBankAccount(ctx context.Context, p auth.Princip
 		id, err = postgres.InsertReturningID(ctx, tx, `INSERT INTO company_bank_accounts(legal_entity_id, name, account_number, currency, gl_account_id, clearing_account_id, created_by)
 			VALUES ($1::uuid, $2, $3, $4, $5::uuid, $6::uuid, $7) RETURNING id::text`, entity, name, number, ccy, glAccount, clearingAccount, p.UserID)
 		if err != nil {
+			return err
+		}
+		// The creator is bound by an attestation over the created content,
+		// consumed by the database at commit (0014, review 3 H1).
+		if err := s.authorize(ctx, tx, p, "bankacct.create", "company_bank_account", id, ""); err != nil {
 			return err
 		}
 		return s.record(ctx, tx, p, "bankacct.register", "company_bank_account", id, "company_bank_account.registered", map[string]any{"bank_account_id": id})
@@ -686,6 +712,11 @@ func (s *Service) RecordQuote(ctx context.Context, p auth.Principal, rfqID, supp
 				return err
 			}
 		}
+		// The creator is bound by an attestation over the created content,
+		// consumed by the database at commit (0014, review 3 H1).
+		if err := s.authorize(ctx, tx, p, "rfq.quote.record", "rfq_quote", id, ""); err != nil {
+			return err
+		}
 		return s.record(ctx, tx, p, "rfq.quote", "rfq_quote", id, "rfq.quote_received", map[string]any{"rfq_id": rfqID, "quote_id": id, "supplier_id": supplierID})
 	})
 	return id, err
@@ -791,6 +822,11 @@ func (s *Service) CreatePOFromAward(ctx context.Context, p auth.Principal, rfqID
 				 WHERE o.id = $1::uuid`, id, n, acct); err != nil {
 				return err
 			}
+		}
+		// The creator is bound by an attestation over the created content,
+		// consumed by the database at commit (0014, review 3 H1).
+		if err := s.authorize(ctx, tx, p, "po.create", "purchase_order", id, ""); err != nil {
+			return err
 		}
 		return s.record(ctx, tx, p, "po.create", "purchase_order", id, "po.created", map[string]any{"po_id": id, "number": num, "rfq_id": rfqID})
 	})
@@ -1223,37 +1259,215 @@ type StatementLine struct {
 	Counterparty string          `json:"counterparty"`
 }
 
-// StatementInput is a parsed statement plus the raw file it came from.
+// StatementInput is a statement parsed from its file. It is produced only by
+// ParseStatement: lines are never accepted separately from the file bytes.
 type StatementInput struct {
 	CompanyBankID  string          `json:"company_bank_id"`
 	StatementNo    string          `json:"statement_no"`
-	StatementDate  time.Time       `json:"statement_date"`
+	StatementDate  time.Time       `json:"-"`
 	OpeningBalance decimal.Decimal `json:"opening_balance"`
 	ClosingBalance decimal.Decimal `json:"closing_balance"`
-	Lines          []StatementLine `json:"lines"`
-	Raw            []byte          `json:"-"`
+	Lines          []StatementLine `json:"-"`
+	SourceSHA256   string          `json:"-"`
 }
 
-// ImportBankStatement stores a statement. The attestation names the SHA-256
-// of the raw file, so the same file cannot be imported twice and a statement
-// cannot be created by tenant SQL alone.
-func (s *Service) ImportBankStatement(ctx context.Context, p auth.Principal, in StatementInput) (string, error) {
-	if len(in.Raw) == 0 {
-		return "", fmt.Errorf("%w: the raw statement file is required", ErrInvalidInput)
+// statementFile is the SERK statement interchange format (JSON).
+type statementFile struct {
+	CompanyBankID  string          `json:"company_bank_id"`
+	StatementNo    string          `json:"statement_no"`
+	StatementDate  string          `json:"statement_date"`
+	OpeningBalance decimal.Decimal `json:"opening_balance"`
+	ClosingBalance decimal.Decimal `json:"closing_balance"`
+	Lines          []struct {
+		BookingDate  string          `json:"booking_date"`
+		Amount       decimal.Decimal `json:"amount"`
+		Reference    string          `json:"reference"`
+		Counterparty string          `json:"counterparty"`
+	} `json:"lines"`
+}
+
+const maxStatementLines = 5000
+
+// ParseStatement parses a statement file strictly (unknown fields, trailing
+// data, bad dates and more than 6 decimals are refused) and records the
+// SHA-256 of the exact bytes.
+func ParseStatement(raw []byte) (StatementInput, error) {
+	var in StatementInput
+	if len(raw) == 0 {
+		return in, fmt.Errorf("%w: the statement file is empty", ErrInvalidInput)
 	}
-	sum := sha256.Sum256(in.Raw)
-	digest := hex.EncodeToString(sum[:])
+	if err := noDuplicateKeys(raw); err != nil {
+		return in, fmt.Errorf("%w: statement file: %v", ErrInvalidInput, err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var f statementFile
+	if err := dec.Decode(&f); err != nil {
+		return in, fmt.Errorf("%w: statement file: %v", ErrInvalidInput, err)
+	}
+	if dec.More() {
+		return in, fmt.Errorf("%w: statement file has trailing data", ErrInvalidInput)
+	}
+	if _, err := uuid.Parse(f.CompanyBankID); err != nil {
+		return in, fmt.Errorf("%w: company_bank_id must be a bank account id", ErrInvalidInput)
+	}
+	if strings.TrimSpace(f.StatementNo) == "" || len(f.Lines) > maxStatementLines {
+		return in, fmt.Errorf("%w: statement_no is required and a statement has at most %d lines", ErrInvalidInput, maxStatementLines)
+	}
+	date := func(v, what string) (time.Time, error) {
+		t, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			return t, fmt.Errorf("%w: %s %q must be YYYY-MM-DD", ErrInvalidInput, what, v)
+		}
+		return t, nil
+	}
+	limit := decimal.New(1, 18) // numeric(24,6): at most 18 integer digits
+	six := func(d decimal.Decimal, what string) error {
+		if d.Exponent() < -6 && !d.Equal(d.Round(6)) {
+			return fmt.Errorf("%w: %s has more than 6 decimal places", ErrInvalidInput, what)
+		}
+		if d.Abs().GreaterThanOrEqual(limit) {
+			return fmt.Errorf("%w: %s is out of range", ErrInvalidInput, what)
+		}
+		return nil
+	}
+	clean := func(v, what string) error {
+		if strings.ContainsRune(v, 0) || !utf8.ValidString(v) || len(v) > 500 {
+			return fmt.Errorf("%w: %s must be valid text of at most 500 bytes", ErrInvalidInput, what)
+		}
+		return nil
+	}
+	if err := clean(f.StatementNo, "statement_no"); err != nil {
+		return in, err
+	}
+	var err error
+	if in.StatementDate, err = date(f.StatementDate, "statement_date"); err != nil {
+		return in, err
+	}
+	if err := six(f.OpeningBalance, "opening_balance"); err != nil {
+		return in, err
+	}
+	if err := six(f.ClosingBalance, "closing_balance"); err != nil {
+		return in, err
+	}
+	in.CompanyBankID, in.StatementNo = f.CompanyBankID, f.StatementNo
+	in.OpeningBalance, in.ClosingBalance = f.OpeningBalance, f.ClosingBalance
+	for i, l := range f.Lines {
+		bd, err := date(l.BookingDate, fmt.Sprintf("line %d booking_date", i+1))
+		if err != nil {
+			return in, err
+		}
+		if err := six(l.Amount, fmt.Sprintf("line %d amount", i+1)); err != nil {
+			return in, err
+		}
+		if l.Amount.IsZero() {
+			return in, fmt.Errorf("%w: line %d amount is zero", ErrInvalidInput, i+1)
+		}
+		if err := clean(l.Reference, fmt.Sprintf("line %d reference", i+1)); err != nil {
+			return in, err
+		}
+		if err := clean(l.Counterparty, fmt.Sprintf("line %d counterparty", i+1)); err != nil {
+			return in, err
+		}
+		in.Lines = append(in.Lines, StatementLine{BookingDate: bd, Amount: l.Amount, Reference: l.Reference, Counterparty: l.Counterparty})
+	}
+	sum := sha256.Sum256(raw)
+	in.SourceSHA256 = hex.EncodeToString(sum[:])
+	return in, nil
+}
+
+// noDuplicateKeys refuses JSON objects that repeat a key: the statement must
+// have one meaning, not "last value wins".
+func noDuplicateKeys(raw []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	type frame struct {
+		obj  bool
+		keys map[string]bool
+		key  bool // next string token in an object is a key
+	}
+	var stack []*frame
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		var top *frame
+		if len(stack) > 0 {
+			top = stack[len(stack)-1]
+		}
+		if d, ok := tok.(json.Delim); ok {
+			switch d {
+			case '{':
+				if top != nil && top.obj {
+					top.key = true
+				}
+				stack = append(stack, &frame{obj: true, keys: map[string]bool{}, key: true})
+			case '[':
+				if top != nil && top.obj {
+					top.key = true
+				}
+				stack = append(stack, &frame{})
+			default:
+				stack = stack[:len(stack)-1]
+			}
+			continue
+		}
+		if top != nil && top.obj {
+			if top.key {
+				k, _ := tok.(string)
+				if top.keys[k] {
+					return fmt.Errorf("duplicate key %q", k)
+				}
+				top.keys[k] = true
+				top.key = false
+			} else {
+				top.key = true
+			}
+		}
+	}
+}
+
+// ContentDigest is the canonical digest of a parsed statement. The database
+// computes the same digest from the stored rows (p2p_statement_digest) and
+// refuses the import at commit unless it equals the attested one, so the
+// stored lines are exactly the lines parsed from the attested file.
+func (in StatementInput) ContentDigest() string {
+	hx := func(v string) string { return hex.EncodeToString([]byte(v)) }
+	var b strings.Builder
+	b.WriteString(strings.Join([]string{"v1", in.CompanyBankID, hx(in.StatementNo), in.StatementDate.Format("2006-01-02"),
+		in.OpeningBalance.StringFixed(6), in.ClosingBalance.StringFixed(6), in.SourceSHA256}, "|"))
+	for i, l := range in.Lines {
+		b.WriteString("\n")
+		b.WriteString(strings.Join([]string{strconv.Itoa(i + 1), l.BookingDate.Format("2006-01-02"), l.Amount.StringFixed(6), hx(l.Reference), hx(l.Counterparty)}, "|"))
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+// ImportBankStatement parses and stores a statement file. The attestation
+// names the SHA-256 of the file and, in its context, the digest of the parsed
+// content; the importer must be independent of every payment the statement
+// later settles (enforced by the database at reconciliation).
+func (s *Service) ImportBankStatement(ctx context.Context, p auth.Principal, raw []byte) (string, error) {
+	in, err := ParseStatement(raw)
+	if err != nil {
+		return "", err
+	}
 	var id string
-	err := s.p2pTx(ctx, p, auth.PermBankImport, func(ctx context.Context, tx pgx.Tx) error {
+	err = s.p2pTx(ctx, p, auth.PermBankImport, func(ctx context.Context, tx pgx.Tx) error {
 		if !s.authz.Has(p, auth.PermScopeTenantWide) {
 			return fmt.Errorf("%w: bank statements need tenant-wide scope", auth.ErrForbidden)
 		}
-		if err := s.authorize(ctx, tx, p, "bank.import", "bank_statement_source", digest, in.CompanyBankID); err != nil {
+		if err := s.authorize(ctx, tx, p, "bank.import", "bank_statement_source", in.SourceSHA256, in.CompanyBankID+"|"+in.ContentDigest()); err != nil {
 			return err
 		}
 		var err error
 		id, err = postgres.InsertReturningID(ctx, tx, `INSERT INTO bank_statements(company_bank_id, statement_no, statement_date, opening_balance, closing_balance, source_sha256, imported_by)
-			VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) RETURNING id::text`, in.CompanyBankID, in.StatementNo, in.StatementDate, in.OpeningBalance, in.ClosingBalance, digest, p.UserID)
+			VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) RETURNING id::text`, in.CompanyBankID, in.StatementNo, in.StatementDate, in.OpeningBalance, in.ClosingBalance, in.SourceSHA256, p.UserID)
 		if err != nil {
 			return err
 		}
@@ -1264,7 +1478,7 @@ func (s *Service) ImportBankStatement(ctx context.Context, p auth.Principal, in 
 			}
 		}
 		return s.record(ctx, tx, p, "bank.import", "bank_statement", id, "bank.statement_imported",
-			map[string]any{"statement_id": id, "lines": len(in.Lines), "sha256": digest})
+			map[string]any{"statement_id": id, "lines": len(in.Lines), "sha256": in.SourceSHA256})
 	})
 	return id, err
 }
@@ -1463,4 +1677,111 @@ func (s *Service) batch(ids []string, fn func(string) error) []BatchResult {
 		out = append(out, BatchResult{JournalID: id, OK: true})
 	}
 	return out
+}
+
+// ListP2PDocs lists documents of a type visible to the principal (project
+// scope applied per row; entity-level documents need tenant-wide scope,
+// except supplier master data which every P2P reader may see).
+func (s *Service) ListP2PDocs(ctx context.Context, p auth.Principal, docType, status string, limit int) ([]postgres.DocSummary, error) {
+	var out []postgres.DocSummary
+	err := s.p2pTx(ctx, p, auth.PermP2PRead, func(ctx context.Context, tx pgx.Tx) error {
+		sc := s.authz.ScopeOf(p) // the same scope RequireProject applies per document
+		wide := sc.TenantWide
+		// Suppliers and their bank accounts are shared master data; other
+		// entity-level documents (payments, policies, statements) are
+		// tenant-wide only. Project documents follow SC-05 project scope.
+		scope := postgres.ListScope{TenantWide: wide, Projects: sc.Projects,
+			EntityLevel: wide || docType == "supplier" || docType == "supplier_bank_account"}
+		if scope.Projects == nil {
+			scope.Projects = []string{}
+		}
+		var err error
+		out, err = postgres.ListDocs(ctx, tx, docType, status, scope, limit)
+		return err
+	})
+	return out, err
+}
+
+// ListJournals lists journals for finance worklists (tenant-wide readers).
+func (s *Service) ListJournals(ctx context.Context, p auth.Principal, status, sourcePrefix string, limit int) ([]postgres.JournalSummary, error) {
+	if err := s.authz.Require(p, auth.PermJournalRead, p.TenantID); err != nil {
+		return nil, err
+	}
+	if !s.authz.Has(p, auth.PermScopeTenantWide) {
+		return nil, fmt.Errorf("%w: journal worklists need tenant-wide scope", auth.ErrForbidden)
+	}
+	var out []postgres.JournalSummary
+	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		out, err = postgres.ListJournals(ctx, tx, status, sourcePrefix, limit)
+		return err
+	})
+	return out, err
+}
+
+// Identity describes the caller for the console: what it shows is display
+// only; every command is re-authorized by the kernel and the database.
+type Identity struct {
+	UserID      string            `json:"user_id"`
+	TenantID    string            `json:"tenant_id"`
+	Roles       []string          `json:"roles"`
+	ProjectIDs  []string          `json:"project_ids"`
+	TenantWide  bool              `json:"tenant_wide"`
+	MFA         bool              `json:"mfa"`
+	Permissions []auth.Permission `json:"permissions"`
+}
+
+// Whoami returns the caller's identity and effective permissions.
+func (s *Service) Whoami(p auth.Principal) Identity {
+	id := Identity{UserID: p.UserID, TenantID: p.TenantID, Roles: p.Roles, ProjectIDs: p.ProjectIDs,
+		TenantWide: s.authz.Has(p, auth.PermScopeTenantWide), MFA: p.MFA, Permissions: s.authz.Permissions(p)}
+	if id.Roles == nil {
+		id.Roles = []string{}
+	}
+	if id.ProjectIDs == nil {
+		id.ProjectIDs = []string{}
+	}
+	return id
+}
+
+// Reference is the form reference data visible to the caller.
+type Reference struct {
+	LegalEntities []postgres.RefItem `json:"legal_entities"`
+	Projects      []postgres.RefItem `json:"projects"`
+	Accounts      []postgres.RefItem `json:"accounts"`
+}
+
+// P2PReference returns entities, the projects in the caller's scope and GL
+// accounts.
+func (s *Service) P2PReference(ctx context.Context, p auth.Principal) (Reference, error) {
+	var ref Reference
+	err := s.p2pTx(ctx, p, auth.PermP2PRead, func(ctx context.Context, tx pgx.Tx) error {
+		ents, projs, accts, err := postgres.ReferenceData(ctx, tx)
+		if err != nil {
+			return err
+		}
+		scope := s.authz.ScopeOf(p)
+		ref = Reference{LegalEntities: ents, Accounts: accts, Projects: []postgres.RefItem{}}
+		for _, pr := range projs {
+			if scope.Allows(pr.ID) {
+				ref.Projects = append(ref.Projects, pr)
+			}
+		}
+		return nil
+	})
+	return ref, err
+}
+
+// ProjectCostCodes lists the active cost codes of a project in scope.
+func (s *Service) ProjectCostCodes(ctx context.Context, p auth.Principal, projectID string) ([]postgres.RefItem, error) {
+	if err := s.authz.RequireProject(p, auth.PermP2PRead, p.TenantID, projectID); err != nil {
+		return nil, err
+	}
+	var out []postgres.RefItem
+	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		out, err = postgres.ProjectCostCodes(ctx, tx, projectID)
+		return err
+	})
+	return out, err
 }

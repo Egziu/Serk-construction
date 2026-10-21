@@ -35,6 +35,9 @@ type Claims struct {
 	AMR      []string `json:"amr,omitempty"`
 	AuthTime int64    `json:"auth_time,omitempty"`
 	TokenID  string   `json:"jti,omitempty"`
+	// Kind is the identity provider's assertion of the principal type
+	// ("human", "service", "ai"). Absent means unknown, which is never human.
+	Kind string `json:"pkind,omitempty"`
 }
 
 // factorCategory maps RFC 8176 authentication method references to the
@@ -64,7 +67,7 @@ func IsMFA(amr []string) bool {
 
 // principal maps verified claims to an auth.Principal.
 func (c Claims) principal() auth.Principal {
-	p := auth.Principal{UserID: c.Subject, TenantID: c.TenantID, Roles: c.Roles, ProjectIDs: c.Projects, MFA: IsMFA(c.AMR)}
+	p := auth.Principal{UserID: c.Subject, TenantID: c.TenantID, Roles: c.Roles, ProjectIDs: c.Projects, MFA: IsMFA(c.AMR), Kind: c.Kind}
 	if c.AuthTime > 0 {
 		p.AuthTime = time.Unix(c.AuthTime, 0)
 	}

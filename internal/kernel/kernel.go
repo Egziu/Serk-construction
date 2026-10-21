@@ -63,6 +63,12 @@ func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p auth.Principal, ac
 	for _, perm := range s.authz.Permissions(p) {
 		perms = append(perms, string(perm))
 	}
+	// Platform-derived marker (never grantable by a role): the identity
+	// provider asserted this principal is a person. The database requires it
+	// for payment approval and release (0014, review 3 M2).
+	if p.Kind == auth.KindHuman {
+		perms = append(perms, auth.ReservedPermissionPrefix+"human")
+	}
 	var authTime int64
 	if !p.AuthTime.IsZero() {
 		authTime = p.AuthTime.Unix()

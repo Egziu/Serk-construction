@@ -9,6 +9,17 @@ commit = subprocess.check_output(["git", "-C", ROOT, "rev-parse", "--short", "HE
 ENV = "Go 1.24.7, PostgreSQL 16.15 (local disposable cluster), linux/amd64 sandbox, no network to Go proxy/sumdb/vulndb"
 FULL = "SERK_TEST_ADMIN_DSN=<disposable> go test -race -count=1 -p 1 ./..."
 AI_REV = "independent AI review agents x2 (not a human sign-off)"
+AI_REV_P2P = "independent AI review agents x2 on 0013/0014 (reviews 3 and 4; not a human sign-off)"
+J = ["internal/store/postgres/migrations/0013_procure_to_pay.sql", "internal/store/postgres/migrations/0014_p2p_hardening.sql",
+     "internal/store/postgres/migrations/0015_p2p_hardening_2.sql", "internal/kernel/p2p.go", "internal/httpapi/p2p_handlers.go"]
+J_EV = ["docs/testing/E2E_JOURNEY_A.md", "docs/testing/evidence/full-suite.log", "docs/testing/evidence/console-journey-a.log",
+        "docs/security/INDEPENDENT_REVIEW_3_2026-10-21.md", "docs/security/INDEPENDENT_REVIEW_4_2026-10-22.md",
+        "docs/security/evidence/independent-review-3-before.txt", "docs/security/evidence/independent-review-3-after.txt",
+        "docs/security/evidence/independent-review-4-before.txt", "docs/security/evidence/independent-review-4-after.txt",
+        "docs/adr/0009-subledger-documents-generate-bound-draft-journals.md", "docs/workflows/PROCESS_CATALOG.md"]
+J_CMD = "SERK_TEST_ADMIN_DSN=<disposable> go test -race -count=1 -p 1 ./... (incl. TestJourneyA_*, TestAPIJourneyA_EndToEnd, TestConsoleBrowserJourneyA, TestR3_*, TestR4_*)"
+J_RES = ("R-BANKFEED (statement authenticity depends on how the file is obtained; no bank-signed feed); R-SPLIT-SUPPLIER (no supplier-level "
+         "aggregation for dual approval); collusion of two people; plus R-SIGNER/R-DBA/R-MFA-SOURCE")
 
 def item(id, title, severity, gate, state, scope, repo_paths, threat, root_cause, remediation_commit, migration,
          negative_test, positive_test, executed_command, actual_result, evidence, residual, reviewer, blocker, next_action,
@@ -58,7 +69,8 @@ items = [
       "Human review"),
  item("GATEA-05", "Old SC-01 to SC-14 accounting/security tests rerun", "P0", "Gate A", "PASS", "kernel",
       ["internal/kernel"], "Regression of v0.2 controls", "n/a", "74fb7d4", "0001-0012", "TestSC01..SC14 negative cases", "lifecycle tests",
-      FULL, "170 top-level tests PASS, 0 FAIL, 0 SKIP (race detector)", ["docs/audit/evidence/final-test-run.log"], "", "", "",
+      FULL, "205 tests PASS, 0 FAIL, 0 SKIP (race detector, 13 packages, migrations 0001-0015)",
+      ["docs/audit/evidence/final-test-run.log", "docs/testing/evidence/full-suite.log"], "", "", "",
       "Re-run in CI once a runner is available", signoff=False),
  item("GATEA-06", "Database roles, functions and grants least privilege", "P0", "Gate A", "PASS", "all runtime roles that exist",
       ["internal/store/postgres/migrations/0008_function_least_privilege.sql", "docs/security/privilege_matrix.sql"],
@@ -105,6 +117,42 @@ items = [
       [], "Unvalidated legacy data", "NOT VALID FKs (SC-10) pending data review", "", "", "", "", "", "not executed", [], "", "",
       "No legacy/customer data set provided", "Migration rehearsal on anonymized data"),
 ]
+DONE = {
+ "GATEB-02": item("GATEB-02", "Versioned BOQ estimation and approved baseline", "P1", "Gate B", "PASS", "BOQ versions, cost-code budgets",
+      J, "Unapproved or altered budget baseline", "", "a1f337c + this checkpoint", "0013-0015",
+      "TestJourneyA_SegregationOfDutiesAndBudget, TestR3_03 (items frozen after DRAFT)", "TestJourneyA_BOQToBankReconciliationToGL",
+      J_CMD, "BOQ maker/checker, items frozen, budget = approved BOQ; over-budget PR/PO refused or escalated (override+MFA)", J_EV,
+      "BOQ estimation is quantities x rates only (no resource build-up, tender comparison or versions diff UI)", AI_REV_P2P, "",
+      "Human review; estimation build-up and tender module (directive §4)"),
+ "GATEB-03": item("GATEB-03", "PR RFQ technical commercial approval PO implemented", "P1", "Gate B", "PASS", "requisitions, RFQs, quotes, POs",
+      J, "Collusive or unjustified award; altered PO", "maker identity free text (review 3 H1), quote lines appendable (review 4 M-A)",
+      "a1f337c + this checkpoint", "0013-0015",
+      "TestJourneyA_ProcurementRules, TestR3_07, TestR3_14, TestR4_01, TestR4_09", "TestAPIJourneyA_EndToEnd, TestConsoleBrowserJourneyA",
+      J_CMD, "min 3 suppliers or justified single source; evaluator != recorder; lowest compliant or 20-char reason; PO = award; late quotes refused",
+      J_EV, J_RES, AI_REV_P2P, "", "Human review; PO change orders/cancel; RFQ clarifications"),
+ "GATEB-04": item("GATEB-04", "GRN partial delivery invoice 3-way matching to AP", "P1", "Gate B", "PASS", "GRNs, invoices, AP",
+      J, "Paying for goods not received or at unagreed prices", "", "a1f337c + this checkpoint", "0013-0015",
+      "TestJourneyA_ReceiptAndMatchingControls (over-receipt, over-billing, VAT, exception+MFA, duplicates)", "TestJourneyA_BOQToBankReconciliationToGL",
+      J_CMD, "partial deliveries; DB 3-way match with tolerance; price variance to PPV; GRNI and AP reconcile to GL at 0", J_EV,
+      "No debit notes/returns, GRN cancel, landed costs or inventory valuation (GATEB-05)", AI_REV_P2P, "", "Human review; returns and debit notes"),
+ "GATEC-01": item("GATEC-01", "Journey A BOQ to payment controlled bank reconciliation", "P1", "Gate C", "PASS", "end-to-end",
+      J + ["internal/webui/static/app.js", "e2e/console_journey_a.mjs"], "Unreconciled or unauthorised money flow",
+      "review 3: 2 High/3 Medium/3 Low; review 4: 2 Medium/4 Low (all fixed)", "a1f337c + this checkpoint", "0013-0015",
+      "TestR3_* (14), TestR4_* (9), 12+ API-boundary probes, UI SoD refusal", "Journey A at kernel, HTTP and browser level (15 people)",
+      J_CMD, "GRNI/AP/in-transit 0, bank -2,486,875 = GL, cost report exact, 2 payments SETTLED, no unposted P2P journals; all probes held",
+      J_EV + ["docs/testing/evidence/console/08-subledger-gl-reconciliation.png"], J_RES, AI_REV_P2P,
+      "Not on staging (GATEA-08 BLOCKED); no real bank feed; no human finance sign-off",
+      "Human finance/security review; staging run; Journey B"),
+ "GATEB-07": item("GATEB-07", "Accessible user-facing ERP core screens", "P1", "Gate B", "PARTIAL", "web console (Journey A screens only)",
+      ["internal/webui/static/index.html", "internal/webui/static/app.js", "internal/webui/static/app.css", "e2e/console_journey_a.mjs"],
+      "Unusable or inaccessible operations", "", "this checkpoint", "",
+      "automated audit: labels, names, landmarks, unique ids, WCAG AA contrast light+dark, 390px reflow, skip link, CSP",
+      "TestConsoleBrowserJourneyA", "go test ./internal/httpapi -run TestConsoleBrowserJourneyA -v",
+      "15-person UI journey PASS; 3 UI defects found by the audit and fixed", ["docs/testing/evidence/console-journey-a.log",
+      "docs/testing/evidence/console/05-finance-my-work.png", "docs/testing/E2E_JOURNEY_A.md"],
+      "Only Journey A screens; no manual WCAG audit or screen-reader test; English only (no Amharic/Tigrinya/Oromo yet); no offline", "", "",
+      "Manual accessibility audit; localisation; screens for other modules"),
+}
 for gid, title, prio in [
  ("GATEB-01","Canonical entities, project scopes, WBS and cost codes","P1"),("GATEB-02","Versioned BOQ estimation and approved baseline","P1"),
  ("GATEB-03","PR RFQ technical commercial approval PO implemented","P1"),("GATEB-04","GRN partial delivery invoice 3-way matching to AP","P1"),
@@ -118,6 +166,9 @@ for gid, title, prio in [
  ("GATEP-01","Independent external penetration test accepted","P0"),("GATEP-02","Load soak chaos and recovery tested","P0"),
  ("GATEP-03","Finance tax legal and data policy signed","P0"),("GATEP-04","Authorized engineering security ops product GO/NO-GO","P0")]:
     blocker = "Requires independent human parties / signed records; an AI agent cannot provide or sign these" if gid.startswith("GATEP") else ""
+    if gid in DONE:
+        items.append(DONE[gid])
+        continue
     items.append(item(gid, title, prio, "Gate " + gid[4], "NOT TESTED", "", [], "", "", "", "", "", "", "", "not started", [], "", "", blocker,
                       "Phase 1: Journey A slice (BOQ->PR->RFQ->PO->GRN->invoice->AP->payment instruction->bank rec->GL)" if gid in ("GATEB-02","GATEB-03","GATEB-04","GATEC-01") else "per directive §12 order"))
 
@@ -130,7 +181,7 @@ for it in items:
         gates.setdefault(it["gate"], []).append(it["state"])
 summary = {g: ("PASS" if all(s == "PASS" for s in v) else "NOT PASSED") for g, v in gates.items()}
 doc = {"generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "source_commit": commit,
-       "release_decision": "NO-GO", "release_decision_reason": "Gate A not passed (BLOCKED items); Gates B-F not tested; Gate P requires independent human sign-off",
+       "release_decision": "NO-GO", "release_decision_reason": "Gate A not passed (BLOCKED items); Gate B/C partly evidenced (Journey A only), other items not tested; Gate P requires independent human sign-off",
        "deployment_authorization": "NONE. Production deployment and live financial operations require explicit authorization and independent human sign-off.",
        "gate_summary": summary, "items": items}
 os.makedirs(os.path.join(ROOT, "docs/release"), exist_ok=True)
@@ -144,4 +195,4 @@ with open(os.path.join(ROOT, "docs/release/SERK_Production_Release_Gate_Checklis
             w.writerow([it["id"], it["severity"], it["gate"], it["title"], it["state"], "; ".join(it["evidence_path"]),
                         it["owner"], it["blocker"] or it["residual_risk"]])
 print(json.dumps(summary), "|", sum(1 for i in items if i["state"] == "PASS"), "PASS,",
-      sum(1 for i in items if i["state"] == "BLOCKED"), "BLOCKED,", sum(1 for i in items if i["state"] == "NOT TESTED"), "NOT TESTED")
+      sum(1 for i in items if i["state"] == "BLOCKED"), "BLOCKED,", sum(1 for i in items if i["state"] == "PARTIAL"), "PARTIAL,", sum(1 for i in items if i["state"] == "NOT TESTED"), "NOT TESTED")

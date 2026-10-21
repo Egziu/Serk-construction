@@ -3,8 +3,8 @@
 **Generated from the live catalog**, not transcribed from migrations: the tables
 below are the verbatim output of `psql -At -f docs/security/privilege_matrix.sql`
 run as superuser against a freshly migrated PostgreSQL 16.15 database
-(`serk_full`, migrations 0001–0012)
-at commit 74fb7d4. Re-generate after every migration; the invariants are enforced
+(`serk_full`, migrations 0001–0015)
+at the Journey A checkpoint commit (0.4.0). Re-generate after every migration; the invariants are enforced
 by `internal/kernel/privilege_test.go` (`TestPrivileges_*`), which fails the build if
 they regress.
 
@@ -71,6 +71,11 @@ Column grants are shown as `UPDATE(col,…)` when the role lacks table-level UPD
 | approval_keys | — | — | — | — | no |
 | audit_heads | — | — | — | — | enabled |
 | audit_log | SELECT INSERT | — | — | — | yes |
+| bank_statement_lines | SELECT INSERT · UPDATE(status,payment_id,matched_by,journal_id) | — | — | — | yes |
+| bank_statements | SELECT INSERT | — | — | — | yes |
+| boq_items | SELECT INSERT · UPDATE(description,unit,quantity,rate,cost_code_id) | — | — | — | yes |
+| boq_versions | SELECT INSERT · UPDATE(status,approved_by,decision_reason) | — | — | — | yes |
+| company_bank_accounts | SELECT INSERT · UPDATE(status,approved_by) | — | — | — | yes |
 | cost_codes | SELECT INSERT · UPDATE(status,valid_to) | — | — | — | yes |
 | currencies | SELECT | — | — | — | no |
 | fiscal_period_closes | SELECT | — | — | — | yes |
@@ -78,15 +83,33 @@ Column grants are shown as `UPDATE(col,…)` when the role lacks table-level UPD
 | fx_policies | SELECT INSERT · UPDATE(status,approved_by,approved_at) | — | — | — | yes |
 | fx_snapshots | SELECT INSERT · UPDATE(approval_status,approved_by,decided_at,decision_reason,rejected_by,variance_exception,approver_mfa) | — | — | — | yes |
 | fx_sources | SELECT INSERT · UPDATE(status,approved_by,approved_at) | — | — | — | yes |
+| grn_lines | SELECT INSERT | — | — | — | yes |
+| grns | SELECT INSERT · UPDATE(status,confirmed_by,journal_id) | — | — | — | yes |
+| invoice_lines | SELECT INSERT | — | — | — | yes |
 | journal_lines | SELECT INSERT | — | — | — | yes |
-| journals | SELECT INSERT · UPDATE(status,approved_by,approved_at,posted_by,posted_at,reversed_by) | — | — | — | yes |
+| journals | SELECT · INSERT(all but created_txid) · UPDATE(status,approved_by,approved_at,posted_by,posted_at,reversed_by) | — | — | — | yes |
 | legal_entities | SELECT INSERT · UPDATE(name,presentation_currency) | — | — | — | yes |
 | migration_exceptions | — | — | — | — | no |
 | outbox | SELECT INSERT | SELECT · UPDATE(published_at,attempts,next_attempt_at,last_error,dead_at) | — | — | yes |
+| p2p_counters | SELECT INSERT · UPDATE(last) | — | — | — | yes |
+| p2p_policies | SELECT INSERT · UPDATE(status,approved_by) | — | — | — | yes |
+| payment_allocations | SELECT INSERT | — | — | — | yes |
+| payment_instructions | SELECT INSERT · UPDATE(status,approved_by,second_approved_by,released_by,release_journal_id,cancel_reason) | — | — | — | yes |
+| po_lines | SELECT INSERT | — | — | — | yes |
+| pr_lines | SELECT INSERT · UPDATE(boq_item_id,cost_code_id,description,unit,quantity,est_unit_price) | — | — | — | yes |
 | processed_events | — | SELECT INSERT | — | — | no |
 | projects | SELECT INSERT · UPDATE(name,status) | — | — | — | yes |
+| purchase_orders | SELECT INSERT · UPDATE(total,status,approved_by,budget_override_reason) | — | — | — | yes |
+| purchase_requisitions | SELECT INSERT · UPDATE(status,approved_by,decision_reason) | — | — | — | yes |
+| rfq_quote_lines | SELECT INSERT | — | — | — | yes |
+| rfq_quotes | SELECT INSERT · UPDATE(total,technical_status,technical_note,evaluated_by) | — | — | — | yes |
+| rfq_suppliers | SELECT INSERT | — | — | — | yes |
+| rfqs | SELECT INSERT · UPDATE(status,awarded_quote_id,awarded_by,award_reason) | — | — | — | yes |
 | schema_migrations | — | — | — | — | no |
 | session_revocations | SELECT INSERT | — | — | — | yes |
+| supplier_bank_accounts | SELECT INSERT · UPDATE(status,approved_by) | — | — | — | yes |
+| supplier_invoices | SELECT INSERT · UPDATE(status,exception_reason,approved_by,decision_reason,journal_id) | — | — | — | yes |
+| suppliers | SELECT INSERT · UPDATE(status,approved_by,blocked_reason) | — | — | — | yes |
 | tenant_db_roles | — | — | — | — | no |
 | tenants | SELECT | — | — | — | yes |
 | wbs_nodes | SELECT INSERT | — | — | — | yes |
@@ -125,6 +148,28 @@ Column grants are shown as `UPDATE(col,…)` when the role lacks table-level UPD
 | fx_assert_eligible(uuid,uuid,integer,character,character,uuid,timestamp with time zone,timestamp with time zone) | invoker | EXECUTE | — | — | — | — |
 | journal_balance_assert(uuid) | invoker | EXECUTE | — | — | — | — |
 | ledger_integrity_scan() | invoker | EXECUTE | — | — | — | — |
+| p2p_assert_budget(uuid,uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_assert_human(text) | invoker | EXECUTE | — | — | — | — |
+| p2p_assert_journal(uuid,text,uuid,uuid,character,date) | invoker | EXECUTE | — | — | — | — |
+| p2p_assert_payee(payment_instructions) | invoker | EXECUTE | — | — | — | — |
+| p2p_bank_snapshot(uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_billed_qty(uuid,integer,uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_cost_position(uuid,uuid,uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_expected_lines(text,uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_expected_text(text,uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_gl_reconciliation(uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_is_control_account(uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_lines_text(uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_match_invoice(uuid,uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_next_number(text) | invoker | EXECUTE | — | — | — | — |
+| p2p_only_changed(jsonb,jsonb,text[],text) | invoker | EXECUTE | — | — | — | — |
+| p2p_policy_for(uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_project_cost_report(uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_received_qty(uuid,integer) | invoker | EXECUTE | — | — | — | — |
+| p2p_round(numeric,character) | invoker | EXECUTE | — | — | — | — |
+| p2p_statement_digest(uuid) | invoker | EXECUTE | — | — | — | — |
+| p2p_subject_text(text,text) | invoker | EXECUTE | — | — | — | — |
+| round_half_even(numeric,integer) | invoker | EXECUTE | — | — | — | — |
 | session_is_revoked(text,text,timestamp with time zone) | invoker | EXECUTE | — | — | — | — |
 | workflow_approvals(uuid,integer) | invoker | EXECUTE | — | — | — | — |
 | workflow_assert_governing(workflow_instances) | invoker | EXECUTE | — | — | — | — |

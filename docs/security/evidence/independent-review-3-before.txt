@@ -1,0 +1,134 @@
+=== RUN   TestR3_01_SubledgerJournalLinesAppendedAfterBinding
+    zz_review3_test.go:85: OPEN: raw append of a balanced pair to a CONFIRMED receipt's DRAFT journal succeeded
+    zz_review3_test.go:90: OBSERVATION: journal still equals the receipt's accounting: false
+    zz_review3_test.go:96: held: finance approval refused: ledger: illegal status transition: journal content changed after creation
+    zz_review3_test.go:111: OBSERVATION: recovery by cancelling the tampered receipt journal: store: database invariant violated: subledger journals are not cancelled; correct the source document (lines cannot be deleted either: no DELETE grant)
+    zz_review3_test.go:114: OPEN: raw journal.approve (genuine finance attestation) of the tampered P2P_GRN journal succeeded
+    zz_review3_test.go:116: OPEN: raw journal.post (genuine controller attestation) of the tampered P2P_GRN journal succeeded
+    zz_review3_test.go:119: OBSERVATION: tampered P2P_GRN journal status now POSTED
+    zz_review3_test.go:123: OPEN: a P2P_GRN journal that no longer equals its receipt's accounting was approved and POSTED
+    zz_review3_test.go:124: OBSERVATION: journal status POSTED, lines 4
+    zz_review3_test.go:128: OBSERVATION: cost code posted actual now 1422500.000000; budget available before 9940000.000000, after 9940000.000000 (actual_other 0) (the extra 1,000,000 is invisible to the budget check)
+    zz_review3_test.go:130: OBSERVATION: p2p_gl_reconciliation: GRNI (goods received not invoiced) diff=0.000000; Accounts payable diff=0; Payments in transit: CBE Operating diff=0; Bank (reconciled movements): CBE Operating diff=-1000000.000000
+--- FAIL: TestR3_01_SubledgerJournalLinesAppendedAfterBinding (0.54s)
+=== RUN   TestR3_02_NoDeleteOrTruncate
+    zz_review3_test.go:141: held: DELETE FROM p2p_counters                                               store: database invariant violated: privilege: permission denied for table p2p_counters
+    zz_review3_test.go:142: held: TRUNCATE p2p_counters                                                  store: database invariant violated: privilege: permission denied for table p2p_counters
+    zz_review3_test.go:141: held: DELETE FROM p2p_policies                                               store: database invariant violated: privilege: permission denied for table p2p_policies
+    zz_review3_test.go:142: held: TRUNCATE p2p_policies                                                  store: database invariant violated: privilege: permission denied for table p2p_policies
+    zz_review3_test.go:141: held: DELETE FROM suppliers                                                  store: database invariant violated: privilege: permission denied for table suppliers
+    zz_review3_test.go:142: held: TRUNCATE suppliers                                                     store: database invariant violated: privilege: permission denied for table suppliers
+    zz_review3_test.go:141: held: DELETE FROM supplier_bank_accounts                                     store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    zz_review3_test.go:142: held: TRUNCATE supplier_bank_accounts                                        store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    zz_review3_test.go:141: held: DELETE FROM boq_versions                                               store: database invariant violated: privilege: permission denied for table boq_versions
+    zz_review3_test.go:142: held: TRUNCATE boq_versions                                                  store: database invariant violated: privilege: permission denied for table boq_versions
+    zz_review3_test.go:141: held: DELETE FROM boq_items                                                  store: database invariant violated: privilege: permission denied for table boq_items
+    zz_review3_test.go:142: held: TRUNCATE boq_items                                                     store: database invariant violated: privilege: permission denied for table boq_items
+    zz_review3_test.go:141: held: DELETE FROM purchase_requisitions                                      store: database invariant violated: privilege: permission denied for table purchase_requisitions
+    zz_review3_test.go:142: held: TRUNCATE purchase_requisitions                                         store: database invariant violated: privilege: permission denied for table purchase_requisitions
+    zz_review3_test.go:141: held: DELETE FROM pr_lines                                                   store: database invariant violated: privilege: permission denied for table pr_lines
+    zz_review3_test.go:142: held: TRUNCATE pr_lines                                                      store: database invariant violated: privilege: permission denied for table pr_lines
+    zz_review3_test.go:141: held: DELETE FROM rfqs                                                       store: database invariant violated: privilege: permission denied for table rfqs
+    zz_review3_test.go:142: held: TRUNCATE rfqs                                                          store: database invariant violated: privilege: permission denied for table rfqs
+    zz_review3_test.go:141: held: DELETE FROM rfq_suppliers                                              store: database invariant violated: privilege: permission denied for table rfq_suppliers
+    zz_review3_test.go:142: held: TRUNCATE rfq_suppliers                                                 store: database invariant violated: privilege: permission denied for table rfq_suppliers
+    zz_review3_test.go:141: held: DELETE FROM rfq_quotes                                                 store: database invariant violated: privilege: permission denied for table rfq_quotes
+    zz_review3_test.go:142: held: TRUNCATE rfq_quotes                                                    store: database invariant violated: privilege: permission denied for table rfq_quotes
+    zz_review3_test.go:141: held: DELETE FROM rfq_quote_lines                                            store: database invariant violated: privilege: permission denied for table rfq_quote_lines
+    zz_review3_test.go:142: held: TRUNCATE rfq_quote_lines                                               store: database invariant violated: privilege: permission denied for table rfq_quote_lines
+    zz_review3_test.go:141: held: DELETE FROM purchase_orders                                            store: database invariant violated: privilege: permission denied for table purchase_orders
+    zz_review3_test.go:142: held: TRUNCATE purchase_orders                                               store: database invariant violated: privilege: permission denied for table purchase_orders
+    zz_review3_test.go:141: held: DELETE FROM po_lines                                                   store: database invariant violated: privilege: permission denied for table po_lines
+    zz_review3_test.go:142: held: TRUNCATE po_lines                                                      store: database invariant violated: privilege: permission denied for table po_lines
+    zz_review3_test.go:141: held: DELETE FROM grns                                                       store: database invariant violated: privilege: permission denied for table grns
+    zz_review3_test.go:142: held: TRUNCATE grns                                                          store: database invariant violated: privilege: permission denied for table grns
+    zz_review3_test.go:141: held: DELETE FROM grn_lines                                                  store: database invariant violated: privilege: permission denied for table grn_lines
+    zz_review3_test.go:142: held: TRUNCATE grn_lines                                                     store: database invariant violated: privilege: permission denied for table grn_lines
+    zz_review3_test.go:141: held: DELETE FROM supplier_invoices                                          store: database invariant violated: privilege: permission denied for table supplier_invoices
+    zz_review3_test.go:142: held: TRUNCATE supplier_invoices                                             store: database invariant violated: privilege: permission denied for table supplier_invoices
+    zz_review3_test.go:141: held: DELETE FROM invoice_lines                                              store: database invariant violated: privilege: permission denied for table invoice_lines
+    zz_review3_test.go:142: held: TRUNCATE invoice_lines                                                 store: database invariant violated: privilege: permission denied for table invoice_lines
+    zz_review3_test.go:141: held: DELETE FROM company_bank_accounts                                      store: database invariant violated: privilege: permission denied for table company_bank_accounts
+    zz_review3_test.go:142: held: TRUNCATE company_bank_accounts                                         store: database invariant violated: privilege: permission denied for table company_bank_accounts
+    zz_review3_test.go:141: held: DELETE FROM payment_instructions                                       store: database invariant violated: privilege: permission denied for table payment_instructions
+    zz_review3_test.go:142: held: TRUNCATE payment_instructions                                          store: database invariant violated: privilege: permission denied for table payment_instructions
+    zz_review3_test.go:141: held: DELETE FROM payment_allocations                                        store: database invariant violated: privilege: permission denied for table payment_allocations
+    zz_review3_test.go:142: held: TRUNCATE payment_allocations                                           store: database invariant violated: privilege: permission denied for table payment_allocations
+    zz_review3_test.go:141: held: DELETE FROM bank_statements                                            store: database invariant violated: privilege: permission denied for table bank_statements
+    zz_review3_test.go:142: held: TRUNCATE bank_statements                                               store: database invariant violated: privilege: permission denied for table bank_statements
+    zz_review3_test.go:141: held: DELETE FROM bank_statement_lines                                       store: database invariant violated: privilege: permission denied for table bank_statement_lines
+    zz_review3_test.go:142: held: TRUNCATE bank_statement_lines                                          store: database invariant violated: privilege: permission denied for table bank_statement_lines
+--- PASS: TestR3_02_NoDeleteOrTruncate (0.05s)
+=== RUN   TestR3_03_ChildRowsFrozenAfterParentLeavesDraft
+    zz_review3_test.go:156: held: INSERT boq_items into APPROVED BOQ                                     store: database invariant violated: BOQ items change only while the version is DRAFT
+    zz_review3_test.go:157: held: UPDATE boq_items quantity of APPROVED BOQ                              store: database invariant violated: BOQ items change only while the version is DRAFT
+    zz_review3_test.go:158: held: INSERT pr_lines into APPROVED PR                                       store: database invariant violated: requisition lines change only while DRAFT
+    zz_review3_test.go:159: held: UPDATE pr_lines of APPROVED PR                                         store: database invariant violated: requisition lines change only while DRAFT
+    zz_review3_test.go:160: held: INSERT rfq_suppliers into AWARDED RFQ                                  store: database invariant violated: suppliers are invited only while the RFQ is DRAFT
+    zz_review3_test.go:161: held: INSERT rfq_quote_lines into evaluated/awarded quote                    store: database invariant violated: quote lines are recorded only while the RFQ is ISSUED and the quote is not yet evaluated
+    zz_review3_test.go:162: held: UPDATE rfq_quote_lines price of awarded quote                          store: database invariant violated: privilege: permission denied for table rfq_quote_lines
+    zz_review3_test.go:163: held: INSERT po_lines into APPROVED PO                                       store: database invariant violated: PO lines are added only while the PO is DRAFT
+    zz_review3_test.go:164: held: UPDATE po_lines price/qty/amount of APPROVED PO                        store: database invariant violated: privilege: permission denied for table po_lines
+    zz_review3_test.go:165: held: INSERT grn_lines into CONFIRMED GRN                                    store: database invariant violated: receipt lines are added only while the receipt is DRAFT
+    zz_review3_test.go:166: held: UPDATE grn_lines qty of CONFIRMED GRN                                  store: database invariant violated: privilege: permission denied for table grn_lines
+    zz_review3_test.go:167: held: INSERT invoice_lines into APPROVED invoice                             store: database invariant violated: invoice lines are added only while the invoice is DRAFT
+    zz_review3_test.go:168: held: UPDATE invoice_lines of APPROVED invoice                               store: database invariant violated: privilege: permission denied for table invoice_lines
+    zz_review3_test.go:169: held: UPDATE supplier_invoices amounts                                       store: database invariant violated: privilege: permission denied for table supplier_invoices
+    zz_review3_test.go:170: held: INSERT payment_allocations into SUBMITTED payment                      store: database invariant violated: allocations are added only while the payment is DRAFT
+    zz_review3_test.go:171: held: UPDATE payment_allocations amount                                      store: database invariant violated: privilege: permission denied for table payment_allocations
+    zz_review3_test.go:172: held: UPDATE payment_instructions amount                                     store: database invariant violated: privilege: permission denied for table payment_instructions
+    zz_review3_test.go:173: held: UPDATE boq_items moving it to another version                          store: database invariant violated: privilege: permission denied for table boq_items
+--- PASS: TestR3_03_ChildRowsFrozenAfterParentLeavesDraft (0.26s)
+=== RUN   TestR3_04_LinesAddedAfterAttestation
+    zz_review3_test.go:184: held: GRN submitted after an extra line was added post-attestation           store: database invariant violated: privilege: grn d9bfb105-37a3-4740-b7fe-428d7202f1b6 changed after the approval was attested
+    zz_review3_test.go:198: held: payment submitted after amount+allocation changed post-attestation     store: database invariant violated: allocations (101.000000) must equal the payment amount (100.000000)
+--- PASS: TestR3_04_LinesAddedAfterAttestation (0.30s)
+=== RUN   TestR3_05_DualApprovalWithOneAttestation
+    zz_review3_test.go:221: held: one CFO attestation: PARTIALLY_APPROVED then APPROVED                  store: database invariant violated: privilege: payment.approve of payment_instruction 2b04ee68-b9e2-4f1d-b3ef-b471994787f9 requires a verified approval attestation for u-finance-manager
+    zz_review3_test.go:231: held: single approval straight to APPROVED above the dual threshold          store: database invariant violated: payments of 500000.000000 ETB or more need two approvers (first approval -> PARTIALLY_APPROVED)
+    zz_review3_test.go:233: held: same person as first and second approver                               store: database invariant violated: new row for relation "payment_instructions" violates check constraint "payment_dual_distinct"
+--- PASS: TestR3_05_DualApprovalWithOneAttestation (0.26s)
+=== RUN   TestR3_06_AnotherDocumentsAttestation
+    zz_review3_test.go:260: held: confirm GRN 2 with GRN 1's confirm attestation                         store: database invariant violated: privilege: grn.confirm of grn 3859329b-51b2-48a1-b004-cc8836338ee5 requires a verified approval attestation for u-site-engineer
+--- PASS: TestR3_06_AnotherDocumentsAttestation (0.18s)
+=== RUN   TestR3_07_ForgedMakerThenSelfApproval
+    zz_review3_test.go:273: OPEN: finance manager approves bank details they inserted as 'u-buyer' succeeded
+    zz_review3_test.go:275: OBSERVATION: ghost account status = APPROVED
+    zz_review3_test.go:279: OPEN: procurement manager activates a supplier they inserted as 'u-buyer' succeeded
+    zz_review3_test.go:285: OPEN: CFO activates a company bank account they inserted as 'u-treasury' succeeded
+    zz_review3_test.go:293: OPEN: CFO approves a policy they inserted as 'u-controller' (25% tolerances, no dual approval) succeeded
+    zz_review3_test.go:315: OPEN: site engineer evaluates a quote they inserted as 'u-buyer' succeeded
+--- FAIL: TestR3_07_ForgedMakerThenSelfApproval (0.14s)
+=== RUN   TestR3_08_HumanOnlyByNamingConvention
+    zz_review3_test.go:330: OPEN: payment approved by non-human principal ai.payments-copilot succeeded
+    zz_review3_test.go:330: OPEN: payment approved by non-human principal svc/payments-bot succeeded
+--- FAIL: TestR3_08_HumanOnlyByNamingConvention (0.26s)
+=== RUN   TestR3_09_FabricatedStatementSettlesPayment
+    zz_review3_test.go:367: OPEN: statement with lines typed by the payment's releaser (no bank evidence) succeeded
+    zz_review3_test.go:376: OPEN: payment PAY-2026-000001 SETTLED from a statement fabricated by its releaser (matched 1)
+--- FAIL: TestR3_09_FabricatedStatementSettlesPayment (0.34s)
+=== RUN   TestR3_10_StatementAppendAndContinuity
+    zz_review3_test.go:388: held: append a line to an existing statement                                 store: database invariant violated: statement lines are imported together with their statement
+    zz_review3_test.go:389: held: rewrite a statement line amount/reference                              store: database invariant violated: privilege: permission denied for table bank_statement_lines
+    zz_review3_test.go:390: held: rewrite statement closing balance                                      store: database invariant violated: privilege: permission denied for table bank_statements
+    zz_review3_test.go:394: OPEN: back-dated statement with an opening balance that continues nothing succeeded
+--- FAIL: TestR3_10_StatementAppendAndContinuity (0.11s)
+=== RUN   TestR3_11_CrossTenant
+    zz_review3_test.go:439: held: functions return nothing for tenant 1 ids (expected_lines=0, subject_text=NULL, lines_text='', recon rows=0)
+    zz_review3_test.go:444: held: tenant 2 inserts a supplier into tenant 1                              store: database invariant violated: privilege: new row violates row-level security policy for table "suppliers"
+    zz_review3_test.go:448: held: tenant 2 sets tenant 1's counters                                      store: database invariant violated: privilege: new row violates row-level security policy for table "p2p_counters"
+    zz_review3_test.go:462: held: tenant 2 UPDATE of tenant 1 invoice: 0 rows (RLS hides the row)
+    zz_review3_test.go:469: held: no new p2p function or P2P trigger function is SECURITY DEFINER
+--- PASS: TestR3_11_CrossTenant (0.26s)
+=== RUN   TestR3_12_POLineToBankGLAccount
+    zz_review3_test.go:494: OPEN: PO line whose receipt debits the bank GL account (Cash at Bank) succeeded
+--- FAIL: TestR3_12_POLineToBankGLAccount (0.16s)
+=== RUN   TestR3_13_Observations
+    zz_review3_test.go:512: OBSERVATION: invoice above the dual threshold paid by 2 single-approver payments
+    zz_review3_test.go:516: OBSERVATION: extra 1 ETB allocation beyond total refused at submit? store: database invariant violated: invoice R3-13 cannot take this allocation (status APPROVED, total 971750.000000, would be paid 971751.000000)
+    zz_review3_test.go:522: OBSERVATION: tenant-set counter -> next payment number "PAY-2026-100000" (lpad truncation)
+    zz_review3_test.go:529: OBSERVATION: payment released by its preparer (u-treasury): err=<nil>
+--- PASS: TestR3_13_Observations (0.39s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	3.260s
+FAIL

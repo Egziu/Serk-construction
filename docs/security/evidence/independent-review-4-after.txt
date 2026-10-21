@@ -1,0 +1,75 @@
+=== RUN   TestR4_01_CreatorBinding
+    review4_regression_test.go:117: held: tenant login SET session_replication_role = replica                    store: database invariant violated: privilege: permission denied to set parameter "session_replication_role"
+    review4_regression_test.go:118: held: tenant login ALTER TABLE suppliers DISABLE TRIGGER suppliers_created_by store: database invariant violated: privilege: must be owner of table suppliers
+    review4_regression_test.go:119: held: tenant login UPDATE suppliers.created_by                               store: database invariant violated: privilege: permission denied for table suppliers
+    review4_regression_test.go:120: held: tenant login UPDATE supplier_bank_accounts.created_by                  store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    review4_regression_test.go:121: held: tenant login UPDATE rfq_quotes.received_by                             store: database invariant violated: privilege: permission denied for table rfq_quotes
+    review4_regression_test.go:122: held: tenant login CREATE FUNCTION (to call approval_use from its own trigger) store: database invariant violated: privilege: permission denied for schema public
+    review4_regression_test.go:125: held: SET CONSTRAINTS ALL IMMEDIATE, forged supplier + checker's own create attestation store: database invariant violated: privilege: supplier.create of supplier b0e619c1-d766-45b3-8511-04637649693a requires a verified approval attestation for u-buyer
+    review4_regression_test.go:135: held: SET CONSTRAINTS suppliers_created_by DEFERRED then forged insert       store: database invariant violated: privilege: supplier.create of supplier e93bbf31-10e1-40a2-9fb6-77ebf6dfabe4 requires a verified approval attestation for u-buyer
+    review4_regression_test.go:144: held: forged row X alongside row Y that carries u-buyer's genuine create attestation store: database invariant violated: privilege: supplier.create of supplier 465c5efa-173d-4e94-88d9-73589754a0e7 requires a verified approval attestation for u-buyer
+    review4_regression_test.go:156: held: two supplier rows in one INSERT with one create attestation            store: database invariant violated: privilege: supplier.create of supplier a6dcb78e-8ac9-4974-96d4-7b44289e0441 requires a verified approval attestation for u-buyer
+    review4_regression_test.go:186: held: bank details attested at creation then approved (mutated) in the same transaction store: database invariant violated: privilege: supplier_bank_account 80da61a6-6153-478f-ab26-0162d492fbfb changed after the approval was attested
+    review4_regression_test.go:202: held: raw quote line after creation: store: database invariant violated: privilege: rfq_quote lines are written only by the attested creation of the rfq_quote
+--- PASS: TestR4_01_CreatorBinding (0.17s)
+=== RUN   TestR4_02_StatementDigestDifferential
+    review4_regression_test.go:274: DIFF negative-zero opening            imported; go digest == sql digest (47a910058f75...) stored=-1.500000 5041597c310a58
+    review4_regression_test.go:274: DIFF pipe/newline/CR in text          imported; go digest == sql digest (84c722e3f0ba...) stored=-2.000000 617c620d0a7c63
+    review4_regression_test.go:274: DIFF combining vs precomposed         imported; go digest == sql digest (03063f91c934...) stored=-0.010000 65cc81
+    review4_regression_test.go:263: DIFF 6 decimals on a 2-decimal currency import refused: store: database invariant violated: statement line -0.000001 ETB has more than 2 decimal place(s) (SC-14)
+    review4_regression_test.go:274: DIFF emoji, tab, U+2028               imported; go digest == sql digest (7cbaea7c34d6...) stored=100.000000 f09f988009e280a8
+    review4_regression_test.go:274: DIFF lone surrogate                   imported; go digest == sql digest (30f7cdb2e858...) stored=-2.000000 efbfbd
+    review4_regression_test.go:274: DIFF invalid UTF-8 byte               imported; go digest == sql digest (08988f971d03...) stored=-3.000000 626164efbfbd62797465
+    review4_regression_test.go:258: DIFF 7 decimals non-zero              parse refused: kernel: invalid input: line 1 amount has more than 6 decimal places
+    review4_regression_test.go:258: DIFF NUL in reference                 parse refused: kernel: invalid input: line 1 reference must be valid text of at most 500 bytes
+    review4_regression_test.go:274: DIFF 18 integer digits                imported; go digest == sql digest (cbe5c2dbf31f...) stored=999999999999999999.990000 696e;-999999999999999999.990000 6f7574
+    review4_regression_test.go:258: DIFF 19 integer digits                parse refused: kernel: invalid input: line 1 amount is out of range
+    review4_regression_test.go:258: DIFF zero amount                      parse refused: kernel: invalid input: line 1 amount is zero
+    review4_regression_test.go:274: DIFF unicode statement_no             imported; go digest == sql digest (c1f1057956f3...) stored=-1.000000 75
+    review4_regression_test.go:258: DIFF duplicate JSON key (last wins)   parse refused: kernel: invalid input: statement file: duplicate key "amount"
+    review4_regression_test.go:258: DIFF amount as string with spaces     parse refused: kernel: invalid input: statement file: error decoding string ' -1 ': can't convert  -1  to decimal
+--- PASS: TestR4_02_StatementDigestDifferential (0.17s)
+=== RUN   TestR4_03_StatementLinesBinding
+    review4_regression_test.go:290: held: stored lines reordered (same multiset) vs attested file                store: database invariant violated: privilege: statement R4-L1: the stored lines are not the content parsed from the attested statement file
+    review4_regression_test.go:294: held: extra line inserted in the same tx after the header                    store: database invariant violated: statement R4-L2 does not balance: opening 0.000000 + lines -20.000000 <> closing -30.000000
+    review4_regression_test.go:302: held: line_no gap (1,3) with otherwise identical lines                       store: database invariant violated: privilege: statement R4-L3: the stored lines are not the content parsed from the attested statement file
+    review4_regression_test.go:306: held: reference changed only in letter case                                  store: database invariant violated: privilege: statement R4-L4: the stored lines are not the content parsed from the attested statement file
+    review4_regression_test.go:319: held: control: the same raw path stores the unaltered file
+--- PASS: TestR4_03_StatementLinesBinding (0.13s)
+=== RUN   TestR4_04_ReconcilerSeparation
+    review4_regression_test.go:368: held: control: releaser reconciles own payment, matched_by = releaser        store: database invariant violated: the person who released a payment cannot reconcile it
+    review4_regression_test.go:374: held: matched_by NULL: store: database invariant violated: a reconciled statement line names its reconciler and its importer
+    review4_regression_test.go:379: OBSERVATION: principal 'U-TREASURY-2' (case variant of the releaser 'u-treasury-2') AutoReconcile: err=<nil> matched=0 unmatched=[{LineNo:1 Amount:-1000 Reason:the reconciler must be independent of the statement import and of the payment} {LineNo:2 Amount:-2000 Reason:the reconciler must be independent of the statement import and of the payment} {LineNo:3 Amount:-3000 Reason:the reconciler must be independent of the statement import and of the payment}]; PAY-2026-000003 status=RELEASED
+--- PASS: TestR4_04_ReconcilerSeparation (0.47s)
+=== RUN   TestR4_05_StatementContinuityRace
+    review4_regression_test.go:433: held: second import waited for the first and was refused: store: database invariant violated: statement opening balance -10.000000 does not continue the previous closing balance -30.000000 (R4-A:-10.000000->-30.000000, R4-P:0.000000->-10.000000)
+--- PASS: TestR4_05_StatementContinuityRace (0.22s)
+=== RUN   TestR4_06_JournalFreeze
+    review4_regression_test.go:448: OBSERVATION: tenant login column privilege on journals.created_txid INSERT/UPDATE = false/false
+    review4_regression_test.go:452: OBSERVATION: types: txid_current()=bigint, journals.created_txid=bigint, current txid=115523
+    review4_regression_test.go:457: held: UPDATE journals.created_txid of a P2P journal                          store: database invariant violated: privilege: permission denied for table journals
+    review4_regression_test.go:458: held: DELETE a P2P journal line                                              store: database invariant violated: privilege: permission denied for table journal_lines
+    review4_regression_test.go:459: held: UPDATE a P2P journal line amount                                       store: database invariant violated: privilege: permission denied for table journal_lines
+    review4_regression_test.go:460: held: UPDATE journal_lines.journal_id moving a line into the P2P journal     store: database invariant violated: privilege: permission denied for table journal_lines
+    review4_regression_test.go:467: held: raw GRN confirm whose P2P journal is inserted with created_txid = txid_current()+5 store: database invariant violated: privilege: permission denied for table journals
+    review4_regression_test.go:515: OBSERVATION: lines appended after p2p_assert_journal in the generating tx were committed (journal 24000f37-b89a-4861-b7f9-b1d4d2922f31); M1 now rests on the rebind trigger
+    review4_regression_test.go:516: held: raw journal.approve (genuine attestation) of that journal              store: database invariant violated: subledger journal 24000f37-b89a-4861-b7f9-b1d4d2922f31 no longer equals the accounting of P2P_GRN b9f98006-6f36-4523-a29b-f749f22629ba (expected 07a5323a-bb99-425a-bd49-e6a4dd85d675|DEBIT|84500.000000|d8dda52c-1732-429d-b8fc-edf15088e8f1|5553506a-637e-40b7-974a-c4097f81dccc;0b08be1e-8245-4ed1-817c-d0f7db05506d|CREDIT|84500.000000|d8dda52c-1732-429d-b8fc-edf15088e8f1|-, got 07a5323a-bb99-425a-bd49-e6a4dd85d675|DEBIT|1000000.000000|d8dda52c-1732-429d-b8fc-edf15088e8f1|5553506a-637e-40b7-974a-c4097f81dccc;07a5323a-bb99-425a-bd49-e6a4dd85d675|DEBIT|84500.000000|d8dda52c-1732-429d-b8fc-edf15088e8f1|5553506a-637e-40b7-974a-c4097f81dccc;0b08be1e-8245-4ed1-817c-d0f7db05506d|CREDIT|84500.000000|d8dda52c-1732-429d-b8fc-edf15088e8f1|-;a9e4a5f4-ca7f-4ae4-8800-e7678142fe8b|CREDIT|1000000.000000|d8dda52c-1732-429d-b8fc-edf15088e8f1|-)
+    review4_regression_test.go:521: held: legitimate P2P_GRN journal approved and posted
+--- PASS: TestR4_06_JournalFreeze (0.32s)
+=== RUN   TestR4_07_PolicySuccessorGRNI
+    review4_regression_test.go:551: held: successor with different GRNI: store: database invariant violated: a successor P2P policy keeps the GRNI and AP control accounts of the policy in force
+--- PASS: TestR4_07_PolicySuccessorGRNI (0.24s)
+=== RUN   TestR4_08_HumanMarker
+    review4_regression_test.go:592: OBSERVATION: Permissions() with a role granting principal.human: [Principal.human ap.approve_exception fx.approve fx.policy.approve fx.read journal.approve journal.read p2p.read payment.approve scope.tenant_wide supplier.bank.approve wbs.approve workflow.read]
+    review4_regression_test.go:596: held: AI principal whose role lists principal.human approves a payment       store: database invariant violated: privilege: payments are authorised only by principals the identity provider asserts are human (actor u-fm-bot)
+    review4_regression_test.go:600: held: principal with kind 'Human' (wrong case) approves a payment            store: database invariant violated: privilege: payments are authorised only by principals the identity provider asserts are human (actor u-fm-unknown)
+    review4_regression_test.go:603: held: AI-kind attestation + same actor's human journal.approve attestation in the tx store: database invariant violated: privilege: payments are authorised only by principals the identity provider asserts are human (actor u-finance-manager)
+    review4_regression_test.go:637: held: marker borrowed from another payment's attestation: store: database invariant violated: privilege: payments are authorised only by principals the identity provider asserts are human (actor u-finance-manager)
+--- PASS: TestR4_08_HumanMarker (0.32s)
+=== RUN   TestR4_09_ControlAccounts
+    review4_regression_test.go:653: held: company bank account registered on an account PO lines already use     store: database invariant violated: bank and payments-in-transit accounts must be distinct and not used as P2P control or PO cost accounts
+    review4_regression_test.go:666: held: legitimate successor between confirm and post: approve ok, post ok=true 
+    review4_regression_test.go:677: held: PO line on retired VAT input account: store: database invariant violated: PO line 1 cannot post receipts to a control account (bank, payments in transit, GRNI, AP, VAT input or price variance)
+    review4_regression_test.go:680: OBSERVATION: PO line accepted on an unregistered cash-type ASSET account 1010 'Petty cash' (only registered control accounts are excluded)
+    review4_regression_test.go:687: held: PO line on payments-in-transit: store: database invariant violated: PO line 1 cannot post receipts to a control account (bank, payments in transit, GRNI, AP, VAT input or price variance)
+--- PASS: TestR4_09_ControlAccounts (0.39s)

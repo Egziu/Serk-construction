@@ -19,6 +19,7 @@ import (
 	"github.com/serk-group/serk-construction/internal/kernel"
 	"github.com/serk-group/serk-construction/internal/obs"
 	"github.com/serk-group/serk-construction/internal/store/postgres"
+	"github.com/serk-group/serk-construction/internal/webui"
 	"github.com/serk-group/serk-construction/pkg/auth"
 	"github.com/serk-group/serk-construction/pkg/fx"
 	"github.com/serk-group/serk-construction/pkg/ledger"
@@ -133,6 +134,10 @@ func New(cfg Config) *Server {
 	s.mux.Handle("GET /v1/workflow/metrics", s.authed(s.workflowMetrics))
 	s.mux.Handle("POST /v1/identity/sessions/revoke", s.authed(s.revokeSessions))
 	s.mux.Handle("POST /v1/identity/logout", s.authed(s.logout))
+	s.registerP2P()
+	// Operations console: static assets only; it has no authority of its own.
+	s.mux.Handle("GET /console/", webui.Handler())
+	s.mux.Handle("GET /{$}", http.RedirectHandler("/console/", http.StatusFound))
 	return s
 }
 
@@ -492,6 +497,10 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusUnauthorized, "step_up_required", "recent multi-factor authentication required")
 	case errors.Is(err, kernel.ErrSessionRevoked):
 		writeErr(w, http.StatusUnauthorized, "session_revoked", "session revoked; authenticate again")
+	case errors.Is(err, kernel.ErrBudgetExceeded):
+		writeErr(w, http.StatusConflict, "budget_exceeded", err.Error())
+	case errors.Is(err, postgres.ErrUnknownDocType):
+		writeErr(w, http.StatusNotFound, "not_found", "unknown document type")
 	case errors.Is(err, kernel.ErrInvalidInput):
 		writeErr(w, http.StatusUnprocessableEntity, "validation", err.Error())
 	case errors.Is(err, auth.ErrUnauthenticated):

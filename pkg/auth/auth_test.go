@@ -21,6 +21,7 @@ func TestDefaultRolesSeparateDuties(t *testing.T) {
 		{PermGRNCreate, PermGRNConfirm}, {PermAPEnter, PermAPApprove}, {PermAPEnter, PermAPApproveException},
 		{PermPaymentPrepare, PermPaymentApprove}, {PermPaymentApprove, PermPaymentRelease}, {PermPaymentRelease, PermBankReconcile},
 		{PermP2PPolicyManage, PermP2PPolicyApprove}, {PermBankImport, PermBankReconcile},
+		{PermBankImport, PermPaymentPrepare}, {PermBankImport, PermPaymentApprove}, {PermBankImport, PermPaymentRelease},
 	}
 	for name := range DefaultRoles {
 		p := Principal{UserID: "u", TenantID: "t", Roles: []string{name}}
@@ -147,5 +148,19 @@ func TestSoD(t *testing.T) {
 	}
 	if err := CheckMakerChecker(Principal{UserID: "m"}, "m", "rate"); !errors.Is(err, ErrSoD) {
 		t.Fatal("maker approved own record")
+	}
+}
+
+// A tenant-defined role can never grant a platform-derived permission.
+func TestReservedPermissionsNotGrantableByRoles(t *testing.T) {
+	a := NewAuthorizer(map[string]Role{"bot": {Name: "bot", Permissions: []Permission{"principal.human", PermPaymentApprove}}}, true)
+	p := Principal{UserID: "svc-x", TenantID: "t", Roles: []string{"bot"}}
+	for _, perm := range a.Permissions(p) {
+		if perm == "principal.human" {
+			t.Fatal("role granted principal.human")
+		}
+	}
+	if !a.Has(p, PermPaymentApprove) {
+		t.Fatal("ordinary permission lost")
 	}
 }

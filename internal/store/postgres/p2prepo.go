@@ -231,3 +231,155 @@ func DBDate(ctx context.Context, tx pgx.Tx) (time.Time, error) {
 	err := tx.QueryRow(ctx, `SELECT current_date::timestamptz`).Scan(&d)
 	return d, err
 }
+
+// DocSummary is a list row: enough for a worklist, scope-filterable.
+type DocSummary struct {
+	ID        string          `json:"id"`
+	Number    string          `json:"number,omitempty"`
+	Status    string          `json:"status"`
+	CreatedBy string          `json:"created_by"`
+	CreatedAt time.Time       `json:"created_at"`
+	ProjectID string          `json:"project_id,omitempty"`
+	Amount    decimal.Decimal `json:"amount"`
+	Label     string          `json:"label"`
+}
+
+var listSQL = map[string]string{
+	"p2p_policy":            `SELECT id::text, 'v' || version, status, created_by, created_at, '', 0::numeric, 'P2P policy' FROM p2p_policies`,
+	"supplier":              `SELECT id::text, code, status, created_by, created_at, '', 0::numeric, name FROM suppliers`,
+	"supplier_bank_account": `SELECT b.id::text, '', b.status, b.created_by, b.created_at, '', 0::numeric, s.code || ' ' || b.bank_name || ' ****' || right(b.account_number, 4) FROM supplier_bank_accounts b JOIN suppliers s ON s.id = b.supplier_id`,
+	"company_bank_account":  `SELECT id::text, '', status, created_by, created_at, '', 0::numeric, name || ' ****' || right(account_number, 4) FROM company_bank_accounts`,
+	"boq_version":           `SELECT v.id::text, 'v' || v.version, v.status, v.created_by, v.created_at, v.project_id::text, COALESCE((SELECT sum(amount) FROM boq_items i WHERE i.version_id = v.id), 0), v.description FROM boq_versions v`,
+	"purchase_requisition":  `SELECT r.id::text, r.number, r.status, r.requested_by, r.created_at, r.project_id::text, COALESCE((SELECT sum(est_amount) FROM pr_lines l WHERE l.pr_id = r.id), 0), r.justification FROM purchase_requisitions r`,
+	"rfq":                   `SELECT q.id::text, q.number, q.status, q.created_by, q.created_at, r.project_id::text, 0::numeric, r.justification FROM rfqs q JOIN purchase_requisitions r ON r.id = q.pr_id`,
+	"rfq_quote":             `SELECT x.id::text, s.code, x.technical_status, x.received_by, x.received_at, r.project_id::text, x.total, q.number FROM rfq_quotes x JOIN rfqs q ON q.id = x.rfq_id JOIN purchase_requisitions r ON r.id = q.pr_id JOIN suppliers s ON s.id = x.supplier_id`,
+	"purchase_order":        `SELECT o.id::text, o.number, o.status, o.created_by, o.created_at, o.project_id::text, o.total, s.name FROM purchase_orders o JOIN suppliers s ON s.id = o.supplier_id`,
+	"grn":                   `SELECT g.id::text, g.number, g.status, g.created_by, g.created_at, o.project_id::text, 0::numeric, o.number || ' / ' || g.delivery_note_ref FROM grns g JOIN purchase_orders o ON o.id = g.po_id`,
+	"supplier_invoice":      `SELECT i.id::text, i.invoice_number, i.status || CASE WHEN i.status = 'SUBMITTED' THEN '/' || i.match_status ELSE '' END, i.entered_by, i.created_at, o.project_id::text, i.total, s.name FROM supplier_invoices i JOIN purchase_orders o ON o.id = i.po_id JOIN suppliers s ON s.id = i.supplier_id`,
+	"payment_instruction":   `SELECT p.id::text, p.number, p.status, p.created_by, p.created_at, '', p.amount, s.name FROM payment_instructions p JOIN suppliers s ON s.id = p.supplier_id`,
+	"bank_statement": `SELECT s.id::text, s.statement_no, CASE WHEN EXISTS (SELECT 1 FROM bank_statement_lines l WHERE l.statement_id = s.id AND l.status = 'UNMATCHED') THEN 'OPEN' ELSE 'RECONCILED' END,
+	       s.imported_by, s.imported_at, '', s.closing_balance, b.name FROM bank_statements s JOIN company_bank_accounts b ON b.id = s.company_bank_id`,
+}
+
+// ListScope is the project visibility applied inside the list query (before
+// LIMIT, so a project-scoped worklist is never truncated by other projects'
+// documents).
+type ListScope struct {
+	TenantWide  bool     // every document
+	Projects    []string // project documents of these projects
+	EntityLevel bool     // documents without a project
+}
+
+// ListDocs lists documents of a type, newest first, optionally by status.
+func ListDocs(ctx context.Context, tx pgx.Tx, docType, status string, scope ListScope, limit int) ([]DocSummary, error) {
+	q, ok := listSQL[docType]
+	if !ok {
+		return nil, ErrUnknownDocType
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := tx.Query(ctx, `SELECT * FROM (`+q+`) d(id, number, status, created_by, created_at, project_id, amount, label)
+		WHERE ($1 = '' OR d.status = $1 OR d.status LIKE $1 || '/%')
+		  AND ($3 OR (d.project_id <> '' AND d.project_id = ANY($4::text[])) OR (d.project_id = '' AND $5))
+		ORDER BY created_at DESC LIMIT $2`, status, limit, scope.TenantWide, scope.Projects, scope.EntityLevel)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DocSummary
+	for rows.Next() {
+		var d DocSummary
+		if err := rows.Scan(&d.ID, &d.Number, &d.Status, &d.CreatedBy, &d.CreatedAt, &d.ProjectID, &d.Amount, &d.Label); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// JournalSummary is a journal worklist row.
+type JournalSummary struct {
+	ID          string          `json:"id"`
+	Status      string          `json:"status"`
+	SourceType  string          `json:"source_type"`
+	SourceRef   string          `json:"source_ref"`
+	Description string          `json:"description"`
+	EventDate   time.Time       `json:"business_event_at"`
+	CreatedBy   string          `json:"created_by"`
+	ApprovedBy  string          `json:"approved_by,omitempty"`
+	ProjectID   string          `json:"project_id,omitempty"`
+	Debits      decimal.Decimal `json:"debits"`
+}
+
+// ListJournals lists journals by status (and source type prefix).
+func ListJournals(ctx context.Context, tx pgx.Tx, status, sourcePrefix string, limit int) ([]JournalSummary, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := tx.Query(ctx, `SELECT j.id::text, j.status, j.source_type, COALESCE(j.source_ref, ''), j.description, j.business_event_at, j.created_by,
+		COALESCE(j.approved_by, ''), COALESCE(j.project_id::text, ''), COALESCE((SELECT sum(amount) FROM journal_lines l WHERE l.journal_id = j.id AND l.side = 'DEBIT'), 0)
+		FROM journals j WHERE ($1 = '' OR j.status = $1) AND j.source_type LIKE $2 || '%' ORDER BY j.created_at DESC LIMIT $3`, status, sourcePrefix, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []JournalSummary
+	for rows.Next() {
+		var j JournalSummary
+		if err := rows.Scan(&j.ID, &j.Status, &j.SourceType, &j.SourceRef, &j.Description, &j.EventDate, &j.CreatedBy, &j.ApprovedBy, &j.ProjectID, &j.Debits); err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// RefItem is a reference-data choice for forms (entity, project, account,
+// cost code). It carries no amounts and no personal data.
+type RefItem struct {
+	ID     string `json:"id"`
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Kind   string `json:"kind,omitempty"`   // account type, cost type
+	Parent string `json:"parent,omitempty"` // legal entity of a project/account
+}
+
+func refRows(ctx context.Context, tx pgx.Tx, q string, args ...any) ([]RefItem, error) {
+	rows, err := tx.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []RefItem{}
+	for rows.Next() {
+		var r RefItem
+		if err := rows.Scan(&r.ID, &r.Code, &r.Name, &r.Kind, &r.Parent); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ReferenceData returns the tenant's legal entities, active projects and
+// active GL accounts (RLS confines every query to the current tenant).
+func ReferenceData(ctx context.Context, tx pgx.Tx) (entities, projects, accounts []RefItem, err error) {
+	if entities, err = refRows(ctx, tx, `SELECT id::text, country::text, name, functional_currency::text, '' FROM legal_entities ORDER BY name`); err != nil {
+		return
+	}
+	if projects, err = refRows(ctx, tx, `SELECT id::text, code, name, COALESCE(contract_currency::text, ''), legal_entity_id::text FROM projects WHERE status = 'ACTIVE' ORDER BY code`); err != nil {
+		return
+	}
+	accounts, err = refRows(ctx, tx, `SELECT id::text, code, name, type, legal_entity_id::text FROM accounts WHERE active ORDER BY code`)
+	return
+}
+
+// ProjectCostCodes lists the active cost codes of a project's approved WBS.
+func ProjectCostCodes(ctx context.Context, tx pgx.Tx, projectID string) ([]RefItem, error) {
+	return refRows(ctx, tx, `SELECT c.id::text, c.code, c.name, c.cost_type, c.project_id::text
+		  FROM cost_codes c JOIN wbs_nodes n ON n.id = c.wbs_node_id JOIN wbs_versions v ON v.id = n.version_id
+		 WHERE c.project_id = $1::uuid AND v.status = 'APPROVED' AND c.status = 'ACTIVE'
+		   AND c.valid_from <= current_date AND (c.valid_to IS NULL OR c.valid_to >= current_date)
+		 ORDER BY c.code`, projectID)
+}

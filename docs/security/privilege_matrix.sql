@@ -8,6 +8,9 @@
 \echo '|---|---|---|---|---|---|'
 SELECT format('| %s | %s | %s | %s | %s | %s |', c.relname,
   (SELECT COALESCE(string_agg(p, ' '), '—') FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE']) p WHERE has_table_privilege('serk_app', c.oid, p))
+    || COALESCE(' · INSERT(all but ' || (SELECT string_agg(a.attname, ',' ORDER BY a.attnum) FROM pg_attribute a
+         WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped AND NOT has_table_privilege('serk_app', c.oid, 'INSERT')
+           AND has_any_column_privilege('serk_app', c.oid, 'INSERT') AND NOT has_column_privilege('serk_app', c.oid, a.attnum, 'INSERT')) || ')', '')
     || COALESCE(' · UPDATE(' || (SELECT string_agg(a.attname, ',' ORDER BY a.attnum) FROM pg_attribute a
          WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped AND NOT has_table_privilege('serk_app', c.oid, 'UPDATE')
            AND has_column_privilege('serk_app', c.oid, a.attnum, 'UPDATE')) || ')', ''),

@@ -9,8 +9,8 @@ This record is assembled by the engineering agent from evidence in the repositor
 | Gate | Result | Why |
 |---|---|---|
 | A: trusted foundation | **NOT PASSED** | 6 PASS: approval forgery blocked, FX provenance, workflow publication, SC regressions, least privilege, PITR drill. 6 BLOCKED by infrastructure this environment lacks: real IdP step-up and back-channel logout, staging deployment, edge and multi-replica abuse tests, Prometheus/OTel, network supply-chain checks. 1 NOT TESTED: legacy data. |
-| B: core ERP | NOT PASSED | not started; next: Journey A slice |
-| C: verified financial lifecycles | NOT PASSED | Journeys A and B not executed |
+| B: core ERP | NOT PASSED | 3 PASS (BOQ baseline, PR→RFQ→PO, GRN→3-way match→AP), all from Journey A. 1 PARTIAL: accessible screens exist for Journey A only, with automated accessibility checks but no manual audit. The other items (inventory, contracts/IPC, canonical entities) are NOT TESTED. |
+| C: verified financial lifecycles | NOT PASSED | Journey A PASS at three levels: kernel, HTTP and a real browser with 15 people. Two independent AI reviews found 2 High, 5 Medium, 7 Low and several Info issues. Every fix is applied and regression-tested; two Info items and two residual risks (R-BANKFEED, R-SPLIT-SUPPLIER) remain open. Journey B is not built. Nothing has run on staging. |
 | D: field execution | NOT PASSED | not started |
 | E: advanced scope | NOT PASSED | not started |
 | F: governed AI | NOT PASSED | no AI component exists; no AI role or tool can reach the kernel (there is none to test) |
@@ -23,10 +23,13 @@ This record is assembled by the engineering agent from evidence in the repositor
 - **GATEA-12 (High for production).** Four `go.sum` hashes have never been compared with sum.golang.org, and `govulncheck` has never run.
 - **R-DBA (Medium).** The database owner or superuser can disable controls. Planned mitigations: off-host evidence, pgaudit alerts and a non-superuser migrator.
 
+- **R-BANKFEED (Medium).** Settlement relies on statement files imported by an independent officer. Their authenticity depends on how the file is obtained, because no bank-signed feed exists. Two colluding people could still fabricate a settlement.
+
 ## Safety constraints in force
 
 - No production deployment, no production credentials, no payment commands and no access to live tenant data. All tests ran against disposable local databases with synthetic data.
-- No AI principal holds payment, approval or posting authority. The database accepts authority only from attestations signed by the API's key for an authenticated human session.
+- No AI principal holds payment, approval or posting authority. The database accepts authority only from attestations signed by the API's key for an authenticated human session. Since 0014/0015, payment approval and release also require the platform-signed `principal.human` marker, which comes from the identity provider's principal-kind assertion; no role can grant it.
+- Payment instructions are records only. Nothing in this system moves money; settlement is recognised only from imported bank statements.
 
 ## Sign-off (to be completed by humans; intentionally blank)
 

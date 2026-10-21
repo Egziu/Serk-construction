@@ -1,0 +1,1006 @@
+// SERK operations console (Journey A: procure-to-pay).
+//
+// Security model: this page holds no authority. The access token lives only
+// in memory (never in storage); every action is an API call that the kernel
+// and PostgreSQL re-authorize, including separation of duties, project scope,
+// MFA step-up and budget checks. Server data is only ever inserted as text
+// (no innerHTML), under a CSP that forbids inline script.
+
+const S = { token: null, me: null, ref: null, can: new Set() };
+
+// ---------- DOM helpers ----------
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'on') for (const [ev, fn] of Object.entries(v)) el.addEventListener(ev, fn);
+    else if (k === 'value') el.value = v;
+    else el.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const c of kids.flat(Infinity)) {
+    if (c == null || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+const $ = (id) => document.getElementById(id);
+let uid = 0;
+const nextId = (p) => `${p}-${++uid}`;
+
+function field(label, control, hint) {
+  const id = control.id || (control.id = nextId('f'));
+  const kids = [h('label', { for: id }, label), control];
+  if (hint) {
+    const hid = nextId('h');
+    control.setAttribute('aria-describedby', hid);
+    kids.push(h('span', { class: 'hint', id: hid }, hint));
+  }
+  return h('div', { class: 'field' }, kids);
+}
+const input = (name, attrs = {}) => h('input', { name, ...attrs });
+function select(name, options, attrs = {}) {
+  const s = h('select', { name, ...attrs });
+  for (const o of options) s.append(h('option', { value: o.value }, o.label));
+  return s;
+}
+
+function say(msg) { const s = $('status'); s.textContent = ''; setTimeout(() => { s.textContent = msg; }, 30); }
+function showError(err) {
+  const a = $('alert');
+  a.textContent = '';
+  a.append(h('strong', {}, errorTitle(err)), ' ', err.message || String(err));
+  a.hidden = false;
+  a.scrollIntoView({ block: 'nearest' });
+}
+function clearError() { $('alert').hidden = true; }
+function errorTitle(e) {
+  if (!(e instanceof ApiError)) return 'Something went wrong.';
+  if (e.status === 401 && /insufficient_user_authentication/.test(e.challenge || '')) return 'Multi-factor sign-in required.';
+  if (e.status === 401) return 'Your session is no longer valid.';
+  if (e.status === 403) return 'Not permitted.';
+  if (e.status === 404) return 'Not found.';
+  if (e.status === 409) return 'Refused by a business rule.';
+  if (e.status === 422 || e.status === 400) return 'Please correct the input.';
+  if (e.status === 429) return 'Too many requests; wait a moment.';
+  return 'The server could not complete the request.';
+}
+
+// ---------- API ----------
+class ApiError extends Error {
+  constructor(status, code, message, challenge) { super(message); this.status = status; this.code = code; this.challenge = challenge; }
+}
+async function api(method, path, body, raw) {
+  const init = { method, headers: { Authorization: 'Bearer ' + S.token } };
+  if (raw !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = raw; }
+  else if (body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
+  const r = await fetch(path, init);
+  let data = null;
+  try { data = await r.json(); } catch { /* empty body */ }
+  if (!r.ok) {
+    const e = (data && data.error) || {};
+    throw new ApiError(r.status, e.code || 'error', e.message || r.statusText, r.headers.get('WWW-Authenticate'));
+  }
+  return data;
+}
+
+// ---------- formatting & exact decimals ----------
+function money(s) {
+  if (s == null || s === '') return '';
+  s = String(s);
+  const neg = s.startsWith('-');
+  if (neg) s = s.slice(1);
+  let [i, f = ''] = s.split('.');
+  f = f.replace(/0+$/, '');
+  f = (f + '00').slice(0, Math.max(2, f.length));
+  i = i.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (neg ? '−' : '') + i + '.' + f;
+}
+const SC = 1000000n; // 6 decimal places, as stored
+function dparse(s) {
+  s = String(s ?? '').trim();
+  if (!/^-?\d+(\.\d{1,6})?$/.test(s)) return null;
+  const neg = s[0] === '-';
+  if (neg) s = s.slice(1);
+  const [i, f = ''] = s.split('.');
+  const v = BigInt(i) * SC + BigInt(f.padEnd(6, '0'));
+  return neg ? -v : v;
+}
+function dfmt(v) {
+  const neg = v < 0n;
+  if (neg) v = -v;
+  let f = (v % SC).toString().padStart(6, '0').replace(/0+$/, '');
+  if (f.length < 2) f = f.padEnd(2, '0');
+  return (neg ? '-' : '') + (v / SC).toString() + '.' + f;
+}
+const dmul = (a, b) => (a * b) / SC;
+const when = (s) => (s ? new Date(s).toLocaleString() : '');
+const words = (k) => k.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
+const OK = /^(APPROVED|ACTIVE|CONFIRMED|SETTLED|MATCHED|RECONCILED|POSTED|COMPLIANT|AWARDED)/;
+const BAD = /^(REJECTED|CANCELLED|BLOCKED|EXCEPTION|NON_COMPLIANT|REVOKED|CLOSED)/;
+function chip(status) {
+  const cls = OK.test(status) ? 'chip ok' : BAD.test(status) ? 'chip bad' : 'chip warn';
+  return h('span', { class: cls }, String(status).replace(/_/g, ' '));
+}
+
+// ---------- document catalogue ----------
+// actions: [action, permission, mode]; mode: undefined | 'opt' (optional
+// reason) | 'req' (reason required) | 'award' | 'evaluate'.
+const DOCS = {
+  boq_version: { title: 'BOQ versions', one: 'BOQ version', base: '/v1/boqs', create: 'boq.manage', form: 'boq',
+    statuses: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'SUPERSEDED'],
+    actions: { DRAFT: [['submit', 'boq.manage']], SUBMITTED: [['approve', 'boq.approve', 'opt'], ['reject', 'boq.approve', 'req']] } },
+  purchase_requisition: { title: 'Requisitions', one: 'Requisition', base: '/v1/requisitions', create: 'pr.create', form: 'requisition',
+    statuses: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'],
+    actions: { DRAFT: [['submit', 'pr.create']], SUBMITTED: [['approve', 'pr.approve', 'opt'], ['reject', 'pr.approve', 'req']] } },
+  rfq: { title: 'RFQs', one: 'RFQ', base: '/v1/rfqs', create: 'rfq.manage', form: 'rfq',
+    statuses: ['DRAFT', 'ISSUED', 'AWARDED', 'CANCELLED'],
+    actions: { DRAFT: [['issue', 'rfq.manage']], ISSUED: [['award', 'rfq.award', 'award']] } },
+  rfq_quote: { title: 'Quotes', one: 'Quote', base: '/v1/quotes', create: 'rfq.manage', form: 'quote',
+    statuses: ['PENDING', 'COMPLIANT', 'NON_COMPLIANT'],
+    actions: { PENDING: [['evaluate', 'rfq.evaluate', 'evaluate']] } },
+  purchase_order: { title: 'Purchase orders', one: 'Purchase order', base: '/v1/purchase-orders', create: 'po.manage', form: 'po',
+    statuses: ['DRAFT', 'APPROVED', 'CLOSED', 'CANCELLED'],
+    actions: { DRAFT: [['approve', 'po.approve', 'opt']] } },
+  grn: { title: 'Goods receipts', one: 'Goods receipt', base: '/v1/goods-receipts', create: 'grn.create', form: 'grn',
+    statuses: ['DRAFT', 'SUBMITTED', 'CONFIRMED'],
+    actions: { DRAFT: [['submit', 'grn.create']], SUBMITTED: [['confirm', 'grn.confirm']] } },
+  supplier_invoice: { title: 'Supplier invoices', one: 'Supplier invoice', base: '/v1/invoices', create: 'ap.enter', form: 'invoice',
+    statuses: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'],
+    actions: { DRAFT: [['submit', 'ap.enter']], SUBMITTED: [['approve', 'ap.approve', 'opt'], ['reject', 'ap.approve', 'req']] } },
+  payment_instruction: { title: 'Payments', one: 'Payment instruction', base: '/v1/payments', create: 'payment.prepare', form: 'payment',
+    statuses: ['DRAFT', 'SUBMITTED', 'PARTIALLY_APPROVED', 'APPROVED', 'RELEASED', 'SETTLED', 'CANCELLED'],
+    actions: {
+      DRAFT: [['submit', 'payment.prepare'], ['cancel', 'payment.prepare', 'req']],
+      SUBMITTED: [['approve', 'payment.approve'], ['cancel', 'payment.approve', 'req']],
+      PARTIALLY_APPROVED: [['approve', 'payment.approve'], ['cancel', 'payment.approve', 'req']],
+      APPROVED: [['release', 'payment.release'], ['cancel', 'payment.approve', 'req']] } },
+  supplier: { title: 'Suppliers', one: 'Supplier', base: '/v1/suppliers', create: 'supplier.manage', form: 'supplier',
+    statuses: ['PENDING', 'ACTIVE', 'BLOCKED'],
+    actions: { PENDING: [['approve', 'supplier.approve']], ACTIVE: [['block', 'supplier.approve', 'req']] } },
+  supplier_bank_account: { title: 'Supplier bank accounts', one: 'Supplier bank account', base: '/v1/supplier-bank-accounts', create: 'supplier.manage', form: 'supplierbank',
+    statuses: ['PENDING', 'APPROVED', 'REVOKED'], actions: { PENDING: [['approve', 'supplier.bank.approve']] } },
+  company_bank_account: { title: 'Company bank accounts', one: 'Company bank account', base: '/v1/company-bank-accounts', create: 'bankacct.manage', form: 'companybank',
+    statuses: ['PENDING', 'ACTIVE', 'CLOSED'], actions: { PENDING: [['approve', 'bankacct.approve']] } },
+  p2p_policy: { title: 'P2P policies', one: 'P2P policy', base: '/v1/p2p/policies', create: 'p2p.policy.manage', form: 'policy',
+    statuses: ['DRAFT', 'APPROVED', 'REJECTED', 'RETIRED'],
+    actions: { DRAFT: [['approve', 'p2p.policy.approve'], ['reject', 'p2p.policy.approve']] } },
+};
+const ACTION_LABEL = { submit: 'Submit for approval', approve: 'Approve', reject: 'Reject', issue: 'Issue to suppliers', award: 'Award',
+  evaluate: 'Record evaluation', confirm: 'Confirm receipt', release: 'Release payment', cancel: 'Cancel', block: 'Block supplier' };
+
+const NAV = [
+  ['Overview', [['#/home', 'My work', null]]],
+  ['Project', [['#/list/boq_version', 'BOQ', 'p2p.read'], ['#/list/purchase_requisition', 'Requisitions', 'p2p.read'], ['#/cost', 'Cost report', 'p2p.read']]],
+  ['Procurement', [['#/list/rfq', 'RFQs', 'p2p.read'], ['#/list/rfq_quote', 'Quotes', 'p2p.read'], ['#/list/purchase_order', 'Purchase orders', 'p2p.read'], ['#/list/supplier', 'Suppliers', 'p2p.read']]],
+  ['Site', [['#/list/grn', 'Goods receipts', 'p2p.read']]],
+  ['Payables', [['#/list/supplier_invoice', 'Invoices', 'p2p.read'], ['#/list/payment_instruction', 'Payments', 'p2p.read']]],
+  ['Treasury', [['#/bank', 'Bank statements', 'bank.import|bank.reconcile'], ['#/list/company_bank_account', 'Company banks', 'scope.tenant_wide'], ['#/list/supplier_bank_account', 'Supplier banks', 'p2p.read']]],
+  ['Finance', [['#/journals', 'Journals', 'journal.read'], ['#/recon', 'Reconciliation', 'journal.read'], ['#/list/p2p_policy', 'P2P policies', 'scope.tenant_wide']]],
+];
+const allowed = (perm) => !perm || perm.split('|').some((p) => S.can.has(p));
+
+const QUEUES = [
+  ['boq.approve', 'boq_version', 'SUBMITTED', 'BOQs to approve'],
+  ['pr.approve', 'purchase_requisition', 'SUBMITTED', 'Requisitions to approve'],
+  ['rfq.manage', 'purchase_requisition', 'APPROVED', 'Approved requisitions'],
+  ['rfq.manage', 'rfq', 'DRAFT', 'RFQs to issue'],
+  ['rfq.evaluate', 'rfq_quote', 'PENDING', 'Quotes to evaluate'],
+  ['rfq.award', 'rfq', 'ISSUED', 'RFQs awaiting award'],
+  ['po.manage', 'rfq', 'AWARDED', 'Awarded RFQs'],
+  ['po.approve', 'purchase_order', 'DRAFT', 'Purchase orders to approve'],
+  ['grn.create', 'purchase_order', 'APPROVED', 'Open purchase orders'],
+  ['grn.create', 'grn', 'DRAFT', 'Receipts to submit'],
+  ['grn.confirm', 'grn', 'SUBMITTED', 'Receipts to confirm'],
+  ['ap.enter', 'supplier_invoice', 'DRAFT', 'Invoices to submit'],
+  ['ap.approve', 'supplier_invoice', 'SUBMITTED', 'Invoices to approve'],
+  ['payment.prepare', 'payment_instruction', 'DRAFT', 'Payments to submit'],
+  ['payment.approve', 'payment_instruction', 'SUBMITTED', 'Payments to approve'],
+  ['payment.approve', 'payment_instruction', 'PARTIALLY_APPROVED', 'Payments needing 2nd approval'],
+  ['payment.release', 'payment_instruction', 'APPROVED', 'Payments to release'],
+  ['supplier.approve', 'supplier', 'PENDING', 'Suppliers to approve'],
+  ['supplier.bank.approve', 'supplier_bank_account', 'PENDING', 'Supplier bank accounts to approve'],
+  ['bankacct.approve', 'company_bank_account', 'PENDING', 'Company bank accounts to approve'],
+  ['p2p.policy.approve', 'p2p_policy', 'DRAFT', 'Policies to approve'],
+  ['bank.reconcile', 'bank_statement', 'OPEN', 'Statements to reconcile'],
+];
+
+// ---------- shell ----------
+function page(title, lede, ...kids) {
+  const v = $('view');
+  v.textContent = '';
+  const h1 = h('h1', { tabindex: '-1' }, title);
+  v.append(...[h1, lede ? h('p', { class: 'lede' }, lede) : null, ...kids].filter(Boolean));
+  document.title = `${title} — SERK Construction`;
+  h1.focus();
+  return v;
+}
+function buildNav() {
+  const nav = $('nav');
+  nav.textContent = '';
+  for (const [group, items] of NAV) {
+    const vis = items.filter(([, , p]) => allowed(p));
+    if (!vis.length) continue;
+    nav.append(h('h2', {}, group), h('ul', {}, vis.map(([href, label]) => h('li', {}, h('a', { href }, label)))));
+  }
+  nav.hidden = false;
+}
+function markNav() {
+  const cur = location.hash.split('/').slice(0, 3).join('/');
+  for (const a of $('nav').querySelectorAll('a')) {
+    if (a.getAttribute('href') === cur || (cur.startsWith('#/doc/') && a.getAttribute('href') === '#/list/' + location.hash.split('/')[2])) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  }
+}
+
+async function route() {
+  clearError();
+  if (!S.token) return renderSignin();
+  markNav();
+  const [, view, a, b] = location.hash.split('/');
+  try {
+    switch (view) {
+      case 'list': return await renderList(a, b ? decodeURIComponent(b) : '');
+      case 'doc': return await renderDoc(a, b);
+      case 'new': return await renderForm(a, b);
+      case 'journals': return await renderJournals();
+      case 'bank': return await renderBank();
+      case 'recon': return await renderRecon();
+      case 'cost': return await renderCost();
+      default: return await renderHome();
+    }
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401 && !/insufficient_user_authentication/.test(e.challenge || '')) return signOut('Your session ended. Sign in again.');
+    showError(e);
+  }
+}
+
+// ---------- sign-in ----------
+function renderSignin(msg) {
+  $('nav').hidden = true;
+  $('who').hidden = true;
+  const ta = h('textarea', { name: 'token', autocomplete: 'off', spellcheck: 'false', required: true });
+  const form = h('form', { class: 'panel signin', on: { submit: async (ev) => {
+    ev.preventDefault();
+    S.token = ta.value.trim();
+    try {
+      S.me = await api('GET', '/v1/identity/me');
+      S.can = new Set(S.me.permissions);
+      S.ref = S.can.has('p2p.read') ? await api('GET', '/v1/p2p-reference') : { legal_entities: [], projects: [], accounts: [] };
+      $('who-name').textContent = `${S.me.user_id} · ${S.me.roles.join(', ')}`;
+      $('who-mfa').hidden = !S.me.mfa;
+      $('who').hidden = false;
+      buildNav();
+      if (location.hash === '' || location.hash === '#/') location.hash = '#/home';
+      else route();
+      say(`Signed in as ${S.me.user_id}`);
+    } catch (e) {
+      S.token = null;
+      showError(e);
+    }
+  } } },
+  h('h1', { tabindex: '-1' }, 'Sign in'),
+  h('p', { class: 'lede' }, 'Paste the access token issued by your organisation’s identity provider. It is kept in this tab’s memory only and is forgotten when you sign out or close the tab.'),
+  msg ? h('p', { class: 'notice' }, msg) : null,
+  field('Access token', ta),
+  h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Sign in')));
+  const v = $('view');
+  v.textContent = '';
+  v.append(form);
+  document.title = 'Sign in — SERK Construction';
+  ta.focus();
+}
+async function signOut(msg) {
+  if (S.token) { try { await api('POST', '/v1/identity/logout'); } catch { /* session may already be gone */ } }
+  S.token = null; S.me = null; S.ref = null; S.can = new Set();
+  history.replaceState(null, '', '#/');
+  renderSignin(msg || 'You have signed out.');
+}
+
+// ---------- home ----------
+async function renderHome() {
+  const cards = h('div', { class: 'cards' });
+  page('My work', `Items waiting for you as ${S.me.roles.join(', ')}. Counts include only the projects you can see.`, cards);
+  const qs = QUEUES.filter(([p]) => S.can.has(p));
+  const jobs = qs.map(([, type, status]) => api('GET', `/v1/p2p/${type}?status=${status}`).then((r) => r.items.length).catch(() => null));
+  if (S.can.has('journal.approve')) jobs.push(api('GET', '/v1/journals?status=DRAFT&source_prefix=P2P_').then((r) => r.journals.length).catch(() => null));
+  if (S.can.has('journal.post')) jobs.push(api('GET', '/v1/journals?status=APPROVED').then((r) => r.journals.length).catch(() => null));
+  const counts = await Promise.all(jobs);
+  const all = qs.map(([, type, status, label], i) => [label, `#/list/${type}/${status}`, counts[i]]);
+  let k = qs.length;
+  if (S.can.has('journal.approve')) all.push(['Subledger journals to approve', '#/journals', counts[k++]]);
+  if (S.can.has('journal.post')) all.push(['Approved journals to post', '#/journals', counts[k++]]);
+  if (!all.length) cards.append(h('p', { class: 'empty' }, 'No work queues for your roles.'));
+  for (const [label, href, n] of all) {
+    cards.append(h('a', { class: 'card', href }, h('div', { class: 'n' }, n == null ? '–' : String(n)), h('div', { class: 't' }, label)));
+  }
+}
+
+// ---------- lists ----------
+function table(caption, cols, rows, empty) {
+  const t = h('table', {}, h('caption', {}, caption),
+    h('thead', {}, h('tr', {}, cols.map((c) => h('th', { scope: 'col', class: c.num ? 'num' : null }, c.label)))),
+    h('tbody', {}, rows.length ? rows.map((r) => h('tr', { class: r._class || null }, cols.map((c) => h('td', { class: c.num ? 'num' : null }, c.cell(r))))) :
+      h('tr', {}, h('td', { colspan: cols.length, class: 'empty' }, empty || 'Nothing here.'))));
+  return h('div', { class: 'tablewrap' }, t);
+}
+
+async function renderList(type, status) {
+  if (type === 'bank_statement') return renderBank();
+  const meta = DOCS[type];
+  if (!meta) return renderHome();
+  const r = await api('GET', `/v1/p2p/${type}${status ? '?status=' + encodeURIComponent(status) : ''}`);
+  const filter = select('status', [{ value: '', label: 'All statuses' }, ...meta.statuses.map((s) => ({ value: s, label: words(s.toLowerCase()) }))]);
+  filter.value = status || '';
+  filter.addEventListener('change', () => { location.hash = `#/list/${type}${filter.value ? '/' + filter.value : ''}`; });
+  const tools = h('div', { class: 'toolbar' }, field('Status', filter),
+    meta.form && S.can.has(meta.create) ? h('a', { class: 'btn', href: `#/new/${meta.form}` }, `New ${meta.one.toLowerCase()}`) : null);
+  page(meta.title, null, tools, table(`${meta.title}${status ? ' — ' + words(status.toLowerCase()) : ''} (${r.items.length})`, [
+    { label: 'Reference', cell: (d) => h('a', { href: `#/doc/${type}/${d.id}` }, d.number || d.id.slice(0, 8)) },
+    { label: 'Description', cell: (d) => d.label },
+    { label: 'Status', cell: (d) => chip(d.status) },
+    { label: 'Amount', num: true, cell: (d) => (d.amount && d.amount !== '0' ? money(d.amount) : '') },
+    { label: 'Created by', cell: (d) => d.created_by },
+    { label: 'Created', cell: (d) => when(d.created_at) },
+  ], r.items, 'No documents match.'));
+}
+
+// ---------- document view ----------
+// Internal or derived fields that mean nothing to a reader.
+const HIDE = new Set(['tenant_id', 'id', 'normalized_number', 'bank_snapshot', 'command_hash', 'source_sha256', 'legal_entity_id', 'match_detail']);
+// References to other documents: shown as links, not raw ids.
+const REF = { pr_id: 'purchase_requisition', rfq_id: 'rfq', po_id: 'purchase_order', quote_id: 'rfq_quote', awarded_quote_id: 'rfq_quote',
+  supplier_id: 'supplier', supplier_bank_id: 'supplier_bank_account', company_bank_id: 'company_bank_account', policy_id: 'p2p_policy' };
+// Reading order: what the document is, its state, money, dates, people.
+const ORDER = ['number', 'invoice_number', 'statement_no', 'code', 'name', 'description', 'justification', 'status', 'technical_status', 'match_status',
+  'currency', 'subtotal', 'tax_amount', 'total', 'amount', 'invoice_date', 'due_date', 'received_on', 'value_date', 'needed_by', 'valid_until', 'due_at'];
+const MONEY = /amount|total|price|balance|subtotal|threshold|rate$/;
+const STAMP = /_at$/;
+const rank = (k) => { const i = ORDER.indexOf(k); return i < 0 ? ORDER.length + (/_by$|_at$/.test(k) ? 1 : 0) : i; };
+const ordered = (keys) => [...keys].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+function fmtValue(k, v) {
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  if (STAMP.test(k)) return when(v);
+  if (MONEY.test(k) && !/_pct$/.test(k)) return money(v);
+  return String(v);
+}
+function kv(obj) {
+  const dl = h('dl', { class: 'kv' });
+  for (const k of ordered(Object.keys(obj || {}))) {
+    const v = obj[k];
+    if (HIDE.has(k) || v == null || typeof v === 'object') continue;
+    if (REF[k]) {
+      if (DOCS[REF[k]]) dl.append(h('dt', {}, words(k.replace(/_id$/, ''))), h('dd', {}, h('a', { href: `#/doc/${REF[k]}/${v}` }, `Open ${DOCS[REF[k]].one.toLowerCase()}`)));
+      continue;
+    }
+    if (/_id$/.test(k)) continue;
+    dl.append(h('dt', {}, words(k)), h('dd', {}, fmtValue(k, v)));
+  }
+  return dl;
+}
+const LINE_ORDER = ['line_no', 'po_line_no', 'pr_line_no', 'po_line', 'item_no', 'description', 'unit', 'quantity', 'qty_received', 'received_qty',
+  'billed_qty_cumulative', 'est_unit_price', 'unit_price', 'po_price', 'invoice_price', 'rate', 'price_variance_pct', 'within_tolerance', 'est_amount', 'amount', 'note'];
+function rowsTable(caption, rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const lr = (k) => { const i = LINE_ORDER.indexOf(k); return i < 0 ? LINE_ORDER.length : i; };
+  const keys = Object.keys(rows[0]).filter((k) => !HIDE.has(k) && !/_id$/.test(k) && typeof rows[0][k] !== 'object').sort((a, b) => lr(a) - lr(b));
+  return table(caption, keys.map((k) => ({ label: words(k), num: /quantity|qty|price|amount|rate|total|pct|line/.test(k),
+    cell: (r) => (r[k] == null ? '' : /_pct$/.test(k) ? `${(Number(r[k]) * 100).toFixed(2)}%` : fmtValue(k, r[k])) })), rows);
+}
+
+async function renderDoc(type, id) {
+  const meta = DOCS[type];
+  if (!meta) return renderHome();
+  const d = await api('GET', `/v1/p2p/${type}/${id}`);
+  const det = d.detail || {};
+  const head = det.h || det.q || det;
+  const parts = [h('div', { class: 'panel' }, h('p', {}, chip(d.status), ' ', `created by ${d.created_by}`), kv(head))];
+  const md = head.match_detail;
+  if (md && Array.isArray(md.lines)) {
+    parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Three-way match'),
+      h('p', {}, chip(md.status || head.match_status), ` price tolerance ${(Number(md.price_tolerance_pct) * 100).toFixed(2)}% · VAT ${(Number(md.vat_rate) * 100).toFixed(2)}% · policy version ${md.policy_version}`),
+      rowsTable('Invoice against purchase order and confirmed receipts', md.lines)));
+  }
+  parts.push(rowsTable('Lines', det.lines), rowsTable('Items', det.items), rowsTable('Allocations', det.alloc));
+  if (Array.isArray(det.quotes)) parts.push(rowsTable('Quotes received', det.quotes.map((x) => x.q)));
+  if (det.payee) parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Payee (approved bank account)'), kv(det.payee)));
+  parts.push(actionsPanel(type, d, det), nextSteps(type, d));
+  page(`${meta.one} ${d.number || ''}`.trim(), null, ...parts);
+}
+
+function nextSteps(type, d) {
+  const links = [];
+  const add = (perm, href, label) => { if (S.can.has(perm)) links.push(h('a', { class: 'btn', href }, label)); };
+  if (type === 'purchase_requisition' && d.status === 'APPROVED') add('rfq.manage', `#/new/rfq/${d.id}`, 'Create RFQ');
+  if (type === 'rfq' && d.status === 'ISSUED') add('rfq.manage', `#/new/quote/${d.id}`, 'Record a quote');
+  if (type === 'rfq' && d.status === 'AWARDED') add('po.manage', `#/new/po/${d.id}`, 'Create purchase order');
+  if (type === 'purchase_order' && d.status === 'APPROVED') { add('grn.create', `#/new/grn/${d.id}`, 'Record goods receipt'); add('ap.enter', `#/new/invoice/${d.id}`, 'Enter supplier invoice'); }
+  if (type === 'supplier_invoice' && d.status === 'APPROVED') add('payment.prepare', `#/new/payment/${d.id}`, 'Prepare payment');
+  if (type === 'supplier' && d.status === 'ACTIVE') add('supplier.manage', `#/new/supplierbank/${d.id}`, 'Add bank account');
+  return links.length ? h('div', { class: 'actions' }, links) : null;
+}
+
+function actionsPanel(type, d, det) {
+  const meta = DOCS[type];
+  const acts = (meta.actions[d.status] || []).filter(([, perm]) => S.can.has(perm));
+  if (!acts.length) return null;
+  const box = h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Actions'));
+  for (const [action, , mode] of acts) {
+    const extra = [];
+    let collect = () => ({});
+    if (mode === 'opt' || mode === 'req') {
+      const r = input('reason', { type: 'text', maxlength: '500', required: mode === 'req' });
+      extra.push(field(mode === 'req' ? `Reason for ${action}` : 'Comment (optional)', r));
+      collect = () => (r.value.trim() ? { reason: r.value.trim() } : mode === 'req' ? null : {});
+    } else if (mode === 'award') {
+      const comp = (det.quotes || []).map((x) => x.q).filter((q) => q.technical_status === 'COMPLIANT');
+      const sel = select('quote_id', comp.map((q) => ({ value: q.id, label: `${q.supplier_reference || q.id.slice(0, 8)} — ${money(q.total)}` })));
+      const r = input('reason', { type: 'text', maxlength: '500' });
+      extra.push(field('Winning quote (technically compliant only)', sel), field('Award reason (required if not the lowest)', r));
+      collect = () => (sel.value ? { quote_id: sel.value, reason: r.value.trim() } : null);
+    } else if (mode === 'evaluate') {
+      const yes = h('input', { type: 'radio', name: 'compliant', value: 'yes', id: nextId('r') });
+      const no = h('input', { type: 'radio', name: 'compliant', value: 'no', id: nextId('r') });
+      const note = input('note', { type: 'text', maxlength: '500' });
+      extra.push(h('fieldset', {}, h('legend', {}, 'Technical evaluation'),
+        h('div', { class: 'check' }, yes, h('label', { for: yes.id }, 'Compliant')), h('div', { class: 'check' }, no, h('label', { for: no.id }, 'Not compliant'))),
+      field('Evaluation note', note));
+      collect = () => (yes.checked || no.checked ? { compliant: yes.checked, note: note.value.trim() } : null);
+    }
+    const btn = h('button', { type: 'button', class: action === 'reject' || action === 'cancel' || action === 'block' ? 'danger' : null }, ACTION_LABEL[action] || action);
+    btn.addEventListener('click', async () => {
+      clearError();
+      const body = collect();
+      if (body === null) { showError(new Error('Complete the required fields for this action.')); return; }
+      btn.disabled = true;
+      try {
+        const res = await api('POST', `${meta.base}/${d.id}/${action}`, Object.keys(body).length ? body : undefined);
+        let msg = `${ACTION_LABEL[action] || action}: done.`;
+        if (res && res.journal_id) msg += ' A draft journal was created for finance to approve and post.';
+        if (res && res.match_status) msg += ` Three-way match: ${res.match_status}.`;
+        if (res && res.status) msg += ` Status: ${res.status}.`;
+        await renderDoc(type, d.id);
+        $('view').insertBefore(h('p', { class: 'notice', role: 'status' }, msg), $('view').children[1]);
+        say(msg);
+      } catch (e) { btn.disabled = false; showError(e); }
+    });
+    box.append(h('div', { class: 'actions' }, extra, btn));
+  }
+  return box;
+}
+
+// ---------- forms ----------
+const opt = (items, label) => items.map((x) => ({ value: x.id, label: label(x) }));
+const entityOpts = () => opt(S.ref.legal_entities, (e) => e.name);
+const projectOpts = () => opt(S.ref.projects, (p) => `${p.code} — ${p.name}`);
+const accountOpts = (types) => opt(S.ref.accounts.filter((a) => !types || types.includes(a.kind)), (a) => `${a.code} ${a.name}`);
+async function docOpts(type, status) {
+  const r = await api('GET', `/v1/p2p/${type}?status=${status}`);
+  return r.items.map((d) => ({ value: d.id, label: `${d.number || ''} ${d.label}${d.amount && d.amount !== '0' ? ' — ' + money(d.amount) : ''}`.trim() }));
+}
+const today = () => new Date().toISOString().slice(0, 10);
+const plusDays = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+
+function formPage(title, lede, fields, submitLabel, onSubmit) {
+  const btn = h('button', { type: 'submit' }, submitLabel);
+  const form = h('form', { class: 'panel', novalidate: true }, fields, h('div', { class: 'actions' }, btn));
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    clearError();
+    for (const el of form.querySelectorAll('[required]')) el.setAttribute('aria-invalid', String(!el.value.trim()));
+    const bad = form.querySelector('[aria-invalid=true]');
+    if (bad) { showError(new Error('Fill in the highlighted fields.')); bad.focus(); return; }
+    btn.disabled = true;
+    try { await onSubmit(); } catch (e) { showError(e); } finally { btn.disabled = false; }
+  });
+  page(title, lede, form);
+  return form;
+}
+async function created(type, res, what) {
+  say(`${what} created.`);
+  location.hash = `#/doc/${type}/${res.id}`;
+}
+
+// Editable line grid: cols = [{key,label,make()}].
+function lineGrid(legend, cols, initial, allowAdd) {
+  const tbody = h('tbody');
+  const addRow = (vals = {}) => {
+    const tr = h('tr');
+    const n = tbody.children.length + 1;
+    for (const c of cols) {
+      const el = c.make(vals, n);
+      el.setAttribute('aria-label', `${c.label}, line ${n}`);
+      if (vals[c.key] != null && el.tagName !== 'SPAN') el.value = vals[c.key];
+      tr.append(h('td', {}, el));
+    }
+    if (allowAdd) tr.append(h('td', {}, h('button', { type: 'button', class: 'ghost', 'aria-label': `Remove line ${n}`, on: { click: () => tr.remove() } }, 'Remove')));
+    tbody.append(tr);
+  };
+  (initial.length ? initial : allowAdd ? [{}] : []).forEach(addRow);
+  const fs = h('fieldset', {}, h('legend', {}, legend), h('div', { class: 'tablewrap' }, h('table', { class: 'lines' },
+    h('thead', {}, h('tr', {}, cols.map((c) => h('th', { scope: 'col' }, c.label)), allowAdd ? h('th', { scope: 'col' }, h('span', { class: 'sr' }, 'Remove')) : null)), tbody)),
+  allowAdd ? h('div', { class: 'actions' }, h('button', { type: 'button', class: 'ghost', on: { click: () => addRow() } }, 'Add line')) : null);
+  fs.rows = () => [...tbody.children].map((tr) => {
+    const o = {};
+    cols.forEach((c, i) => { const el = tr.children[i].firstChild; if (el.name) o[c.key] = el.value.trim(); });
+    return o;
+  });
+  return fs;
+}
+const num = (key, attrs = {}) => () => input(key, { inputmode: 'decimal', autocomplete: 'off', ...attrs });
+const txt = (key, attrs = {}) => () => input(key, { type: 'text', ...attrs });
+const ro = (key) => (v) => h('span', {}, v[key] == null ? '' : String(v[key]));
+
+async function renderForm(kind, arg) {
+  const F = FORMS[kind];
+  if (!F) return renderHome();
+  return F(arg);
+}
+
+const FORMS = {
+  async requisition() {
+    const proj = select('project_id', projectOpts(), { required: true });
+    const just = input('justification', { type: 'text', required: true, maxlength: '500' });
+    const need = input('needed_by', { type: 'date', value: plusDays(14) });
+    let grid;
+    const holder = h('div');
+    const load = async () => {
+      const cc = proj.value ? (await api('GET', `/v1/projects/${proj.value}/cost-codes`)).cost_codes : [];
+      grid = lineGrid('Requested lines', [
+        { key: 'cost_code_id', label: 'Cost code', make: () => select('cost_code_id', opt(cc, (c) => `${c.code} ${c.name}`)) },
+        { key: 'description', label: 'Description', make: txt('description') },
+        { key: 'unit', label: 'Unit', make: txt('unit', { size: '5' }) },
+        { key: 'quantity', label: 'Quantity', make: num('quantity') },
+        { key: 'est_unit_price', label: 'Estimated unit price', make: num('est_unit_price') },
+      ], [], true);
+      holder.replaceChildren(grid);
+    };
+    proj.addEventListener('change', load);
+    formPage('New requisition', 'Request materials or services against an approved cost code. Approval checks the project budget.',
+      [h('div', { class: 'grid' }, field('Project', proj), field('Justification', just), field('Needed by', need)), holder], 'Create requisition', async () => {
+        const lines = grid.rows().map((r, i) => ({ line_no: i + 1, ...r }));
+        const res = await api('POST', '/v1/requisitions', { project_id: proj.value, justification: just.value.trim(), needed_by: need.value || undefined, lines });
+        created('purchase_requisition', res, 'Requisition');
+      });
+    await load();
+  },
+
+  async boq() {
+    const proj = select('project_id', projectOpts(), { required: true });
+    const desc = input('description', { type: 'text', required: true });
+    let grid;
+    const holder = h('div');
+    const load = async () => {
+      const cc = proj.value ? (await api('GET', `/v1/projects/${proj.value}/cost-codes`)).cost_codes : [];
+      grid = lineGrid('BOQ items', [
+        { key: 'item_no', label: 'Item no.', make: txt('item_no', { size: '6' }) },
+        { key: 'description', label: 'Description', make: txt('description') },
+        { key: 'unit', label: 'Unit', make: txt('unit', { size: '5' }) },
+        { key: 'quantity', label: 'Quantity', make: num('quantity') },
+        { key: 'rate', label: 'Rate', make: num('rate') },
+        { key: 'cost_code_id', label: 'Cost code', make: () => select('cost_code_id', opt(cc, (c) => `${c.code} ${c.name}`)) },
+      ], [], true);
+      holder.replaceChildren(grid);
+    };
+    proj.addEventListener('change', load);
+    formPage('New BOQ version', 'Priced bill of quantities; once approved it is the budget for its cost codes.',
+      [h('div', { class: 'grid' }, field('Project', proj), field('Description', desc)), holder], 'Create BOQ', async () => {
+        const res = await api('POST', '/v1/boqs', { project_id: proj.value, description: desc.value.trim(), items: grid.rows() });
+        created('boq_version', res, 'BOQ');
+      });
+    await load();
+  },
+
+  async rfq(prID) {
+    const prs = await docOpts('purchase_requisition', 'APPROVED');
+    const pr = select('pr_id', prs, { required: true });
+    if (prID) pr.value = prID;
+    const due = input('due_at', { type: 'date', value: plusDays(3), required: true });
+    const min = input('min_suppliers', { type: 'number', min: '1', max: '10', value: '3' });
+    const reason = input('single_source_reason', { type: 'text', maxlength: '500' });
+    const sups = (await api('GET', '/v1/p2p/supplier?status=ACTIVE')).items;
+    const boxes = sups.map((s) => { const c = h('input', { type: 'checkbox', name: 'supplier', value: s.id, id: nextId('s') }); return h('div', { class: 'check' }, c, h('label', { for: c.id }, `${s.number} — ${s.label}`)); });
+    formPage('New RFQ', 'Invite approved suppliers to quote for an approved requisition.', [
+      h('div', { class: 'grid' }, field('Requisition', pr), field('Quotes due', due), field('Minimum suppliers', min, 'Fewer than the policy minimum needs a single-source reason.')),
+      field('Single-source reason', reason),
+      h('fieldset', {}, h('legend', {}, 'Suppliers invited'), boxes.length ? boxes : h('p', { class: 'empty' }, 'No approved suppliers.')),
+    ], 'Create RFQ', async () => {
+      const ids = boxes.map((b) => b.querySelector('input')).filter((c) => c.checked).map((c) => c.value);
+      const res = await api('POST', '/v1/rfqs', { pr_id: pr.value, due_at: new Date(due.value + 'T17:00:00').toISOString(), min_suppliers: Number(min.value),
+        single_source_reason: reason.value.trim(), supplier_ids: ids });
+      created('rfq', res, 'RFQ');
+    });
+  },
+
+  async quote(rfqID) {
+    const rfqs = await docOpts('rfq', 'ISSUED');
+    const rfq = select('rfq_id', rfqs, { required: true });
+    if (rfqID) rfq.value = rfqID;
+    const holder = h('div');
+    let grid, sup, valid, ref;
+    const load = async () => {
+      holder.textContent = '';
+      if (!rfq.value) return;
+      const r = (await api('GET', `/v1/p2p/rfq/${rfq.value}`)).detail;
+      const prd = (await api('GET', `/v1/p2p/purchase_requisition/${r.h.pr_id}`)).detail;
+      const supNames = Object.fromEntries((await api('GET', '/v1/p2p/supplier')).items.map((s) => [s.id, `${s.number} — ${s.label}`]));
+      sup = select('supplier_id', (r.suppliers || []).map((id) => ({ value: id, label: supNames[id] || id })), { required: true });
+      valid = input('valid_until', { type: 'date', value: plusDays(30), required: true });
+      ref = input('supplier_reference', { type: 'text' });
+      grid = lineGrid('Quoted prices', [
+        { key: 'pr_line_no', label: 'Line', make: (v) => input('pr_line_no', { type: 'hidden', value: String(v.line_no) }) },
+        { key: 'description', label: 'Description', make: ro('description') },
+        { key: 'quantity', label: 'Quantity', make: ro('quantity') },
+        { key: 'unit_price', label: 'Unit price', make: num('unit_price', { required: true }) },
+      ], prd.lines.map((l) => ({ ...l, unit_price: '' })), false);
+      holder.append(h('div', { class: 'grid' }, field('Supplier', sup), field('Valid until', valid), field('Supplier reference', ref)), grid);
+    };
+    rfq.addEventListener('change', load);
+    formPage('Record quote', 'Enter a supplier’s written quotation against an issued RFQ.', [field('RFQ', rfq), holder], 'Record quote', async () => {
+      const lines = grid.rows().map((r) => ({ pr_line_no: Number(r.pr_line_no), unit_price: r.unit_price }));
+      const res = await api('POST', `/v1/rfqs/${rfq.value}/quotes`, { supplier_id: sup.value, valid_until: valid.value, supplier_reference: ref.value.trim(), lines });
+      say('Quote recorded.');
+      location.hash = `#/doc/rfq/${rfq.value}`;
+      return res;
+    });
+    await load();
+  },
+
+  async po(rfqID) {
+    const rfqs = await docOpts('rfq', 'AWARDED');
+    const rfq = select('rfq_id', rfqs, { required: true });
+    if (rfqID) rfq.value = rfqID;
+    const holder = h('div');
+    let grid;
+    const load = async () => {
+      holder.textContent = '';
+      if (!rfq.value) return;
+      const r = (await api('GET', `/v1/p2p/rfq/${rfq.value}`)).detail;
+      const prd = (await api('GET', `/v1/p2p/purchase_requisition/${r.h.pr_id}`)).detail;
+      grid = lineGrid('GL account per line', [
+        { key: 'line_no', label: 'Line', make: (v) => input('line_no', { type: 'hidden', value: String(v.line_no) }) },
+        { key: 'description', label: 'Description', make: ro('description') },
+        { key: 'account', label: 'Expense or asset account', make: () => select('account', accountOpts(['EXPENSE', 'ASSET'])) },
+      ], prd.lines, false);
+      holder.append(grid);
+    };
+    rfq.addEventListener('change', load);
+    formPage('New purchase order', 'Create the purchase order from the awarded quote. Prices come from the quote and cannot be changed here.', [field('Awarded RFQ', rfq), holder], 'Create purchase order', async () => {
+      const accounts = Object.fromEntries(grid.rows().map((r) => [r.line_no, r.account]));
+      const res = await api('POST', '/v1/purchase-orders', { rfq_id: rfq.value, accounts });
+      created('purchase_order', res, 'Purchase order');
+    });
+    await load();
+  },
+
+  async grn(poID) {
+    const pos = await docOpts('purchase_order', 'APPROVED');
+    const po = select('po_id', pos, { required: true });
+    if (poID) po.value = poID;
+    const on = input('received_on', { type: 'date', value: today(), required: true });
+    const dn = input('delivery_note', { type: 'text', required: true });
+    const holder = h('div');
+    let grid;
+    const load = async () => {
+      holder.textContent = '';
+      if (!po.value) return;
+      const d = (await api('GET', `/v1/p2p/purchase_order/${po.value}`)).detail;
+      grid = lineGrid('Quantities received', [
+        { key: 'po_line_no', label: 'Line', make: (v) => input('po_line_no', { type: 'hidden', value: String(v.line_no) }) },
+        { key: 'description', label: 'Description', make: ro('description') },
+        { key: 'quantity', label: 'Ordered', make: ro('quantity') },
+        { key: 'qty_received', label: 'Received now', make: num('qty_received') },
+        { key: 'note', label: 'Note', make: txt('note') },
+      ], d.lines.map((l) => ({ ...l, qty_received: '' })), false);
+      holder.append(grid);
+    };
+    po.addEventListener('change', load);
+    formPage('Record goods receipt', 'Record what physically arrived on site. A site engineer confirms it.', [
+      h('div', { class: 'grid' }, field('Purchase order', po), field('Received on', on), field('Delivery note', dn)), holder], 'Record receipt', async () => {
+      const lines = grid.rows().filter((r) => r.qty_received).map((r) => ({ po_line_no: Number(r.po_line_no), qty_received: r.qty_received, note: r.note || undefined }));
+      const res = await api('POST', '/v1/goods-receipts', { po_id: po.value, received_on: on.value, delivery_note: dn.value.trim(), lines });
+      created('grn', res, 'Goods receipt');
+    });
+    await load();
+  },
+
+  async invoice(poID) {
+    const pos = await docOpts('purchase_order', 'APPROVED');
+    const po = select('po_id', pos, { required: true });
+    if (poID) po.value = poID;
+    const no = input('invoice_number', { type: 'text', required: true });
+    const idate = input('invoice_date', { type: 'date', value: today(), required: true });
+    const due = input('due_date', { type: 'date', value: plusDays(30), required: true });
+    const sub = input('subtotal', { inputmode: 'decimal', required: true, readonly: true });
+    const tax = input('tax_amount', { inputmode: 'decimal', required: true, value: '0' });
+    const tot = input('total', { inputmode: 'decimal', required: true, readonly: true });
+    const holder = h('div');
+    let grid;
+    const recalc = () => {
+      let s = 0n;
+      for (const r of grid ? grid.rows() : []) { const q = dparse(r.quantity), p = dparse(r.unit_price); if (q != null && p != null) s += dmul(q, p); }
+      sub.value = dfmt(s);
+      const t = dparse(tax.value);
+      tot.value = t == null ? '' : dfmt(s + t);
+    };
+    const load = async () => {
+      holder.textContent = '';
+      if (!po.value) return;
+      const d = (await api('GET', `/v1/p2p/purchase_order/${po.value}`)).detail;
+      grid = lineGrid('Invoice lines (as billed)', [
+        { key: 'po_line_no', label: 'Line', make: (v) => input('po_line_no', { type: 'hidden', value: String(v.line_no) }) },
+        { key: 'description', label: 'Description', make: ro('description') },
+        { key: 'quantity', label: 'Quantity billed', make: num('quantity') },
+        { key: 'unit_price', label: 'Unit price billed', make: num('unit_price') },
+      ], d.lines.map((l) => ({ ...l, quantity: '', unit_price: String(l.unit_price) })), false);
+      grid.addEventListener('input', recalc);
+      holder.append(grid);
+      recalc();
+    };
+    tax.addEventListener('input', recalc);
+    po.addEventListener('change', load);
+    formPage('Enter supplier invoice', 'Billed quantities are matched against confirmed receipts and PO prices (three-way match) when you submit.', [
+      h('div', { class: 'grid' }, field('Purchase order', po), field('Invoice number', no), field('Invoice date', idate), field('Due date', due)), holder,
+      h('div', { class: 'grid' }, field('Subtotal', sub, 'Computed from the lines.'), field('Tax (VAT)', tax, 'As printed on the invoice.'), field('Total', tot))], 'Save invoice', async () => {
+      const lines = grid.rows().filter((r) => r.quantity).map((r) => ({ po_line_no: Number(r.po_line_no), quantity: r.quantity, unit_price: r.unit_price }));
+      const res = await api('POST', '/v1/invoices', { po_id: po.value, invoice_number: no.value.trim(), invoice_date: idate.value, due_date: due.value,
+        subtotal: sub.value, tax_amount: tax.value.trim(), total: tot.value, lines });
+      created('supplier_invoice', res, 'Invoice');
+    });
+    await load();
+  },
+
+  async payment(invID) {
+    const invs = await docOpts('supplier_invoice', 'APPROVED');
+    const inv = select('invoice_id', invs, { required: true });
+    if (invID) inv.value = invID;
+    const ent = select('legal_entity_id', entityOpts(), { required: true });
+    const cbanks = (await api('GET', '/v1/p2p/company_bank_account?status=ACTIVE')).items;
+    const cbank = select('company_bank_id', cbanks.map((b) => ({ value: b.id, label: b.label })), { required: true });
+    const vdate = input('value_date', { type: 'date', value: today(), required: true });
+    const amount = input('amount', { inputmode: 'decimal', required: true });
+    const sbank = select('supplier_bank_id', [], { required: true });
+    let supplierID = '';
+    const load = async () => {
+      sbank.textContent = '';
+      if (!inv.value) return;
+      const d = (await api('GET', `/v1/p2p/supplier_invoice/${inv.value}`)).detail.h;
+      supplierID = d.supplier_id;
+      amount.value = String(d.total);
+      const banks = (await api('GET', '/v1/p2p/supplier_bank_account?status=APPROVED')).items;
+      for (const b of banks) {
+        const bd = (await api('GET', `/v1/p2p/supplier_bank_account/${b.id}`)).detail;
+        if (bd.supplier_id === supplierID) sbank.append(h('option', { value: b.id }, b.label));
+      }
+    };
+    inv.addEventListener('change', load);
+    formPage('Prepare payment', 'Pays an approved invoice to the supplier’s approved bank account. Approval and release are done by other people.', [
+      h('div', { class: 'grid' }, field('Invoice', inv), field('Amount to pay', amount), field('Legal entity', ent), field('Pay from', cbank),
+        field('Pay to (approved account)', sbank), field('Value date', vdate))], 'Create payment instruction', async () => {
+      const res = await api('POST', '/v1/payments', { legal_entity_id: ent.value, supplier_id: supplierID, supplier_bank_id: sbank.value, company_bank_id: cbank.value,
+        value_date: vdate.value, allocations: [{ invoice_id: inv.value, amount: amount.value.trim() }] });
+      created('payment_instruction', res, 'Payment instruction');
+    });
+    await load();
+  },
+
+  async supplier() {
+    const ent = select('legal_entity_id', entityOpts(), { required: true });
+    const code = input('code', { type: 'text', required: true });
+    const name = input('name', { type: 'text', required: true });
+    const tin = input('tax_id', { type: 'text', required: true });
+    formPage('New supplier', 'A procurement manager approves the supplier before it can be invited or paid.', [
+      h('div', { class: 'grid' }, field('Legal entity', ent), field('Supplier code', code), field('Legal name', name), field('Tax ID (TIN)', tin))], 'Create supplier', async () => {
+      const res = await api('POST', '/v1/suppliers', { legal_entity_id: ent.value, code: code.value.trim(), name: name.value.trim(), tax_id: tin.value.trim() });
+      created('supplier', res, 'Supplier');
+    });
+  },
+
+  async supplierbank(supID) {
+    const sups = await docOpts('supplier', 'ACTIVE');
+    const sup = select('supplier_id', sups, { required: true });
+    if (supID) sup.value = supID;
+    const bank = input('bank_name', { type: 'text', required: true });
+    const an = input('account_name', { type: 'text', required: true });
+    const no = input('account_number', { type: 'text', required: true, autocomplete: 'off' });
+    const cur = input('currency', { type: 'text', value: 'ETB', maxlength: '3', required: true });
+    formPage('New supplier bank account', 'Finance verifies and approves bank details before any payment can use them.', [
+      h('div', { class: 'grid' }, field('Supplier', sup), field('Bank', bank), field('Account name', an), field('Account number', no), field('Currency', cur))], 'Add bank account', async () => {
+      const res = await api('POST', `/v1/suppliers/${sup.value}/bank-accounts`, { bank_name: bank.value.trim(), account_name: an.value.trim(), account_number: no.value.trim(), currency: cur.value.trim() });
+      created('supplier_bank_account', res, 'Bank account');
+    });
+  },
+
+  async companybank() {
+    const ent = select('legal_entity_id', entityOpts(), { required: true });
+    const name = input('name', { type: 'text', required: true });
+    const no = input('account_number', { type: 'text', required: true, autocomplete: 'off' });
+    const cur = input('currency', { type: 'text', value: 'ETB', maxlength: '3', required: true });
+    const gl = select('gl_account_id', accountOpts(['ASSET']), { required: true });
+    const clr = select('clearing_account_id', accountOpts(['ASSET']), { required: true });
+    formPage('New company bank account', 'The CFO approves company bank accounts.', [
+      h('div', { class: 'grid' }, field('Legal entity', ent), field('Name', name), field('Account number', no), field('Currency', cur),
+        field('Bank GL account', gl), field('Payments-in-transit account', clr))], 'Register account', async () => {
+      const res = await api('POST', '/v1/company-bank-accounts', { legal_entity_id: ent.value, name: name.value.trim(), account_number: no.value.trim(),
+        currency: cur.value.trim(), gl_account_id: gl.value, clearing_account_id: clr.value });
+      created('company_bank_account', res, 'Company bank account');
+    });
+  },
+
+  async policy() {
+    const ent = select('legal_entity_id', entityOpts(), { required: true });
+    const f = (n, v) => input(n, { inputmode: 'decimal', value: v, required: true });
+    const tol = f('price_tolerance_pct', '0.02'), over = f('over_receipt_pct', '0.05'), vat = f('vat_rate', '0.15');
+    const hv = f('high_value_po_threshold', '5000000'), dual = f('dual_payment_threshold', '500000');
+    const acc = (n, types) => select(n, accountOpts(types), { required: true });
+    const grni = acc('grni_account_id', ['LIABILITY']), ap = acc('ap_account_id', ['LIABILITY']), vin = acc('vat_input_account_id', ['ASSET']), ppv = acc('ppv_account_id', ['EXPENSE']);
+    formPage('Propose P2P policy', 'Tolerances, thresholds and posting accounts. Takes effect only after another person approves it. Rates are tenant configuration, not tax advice.', [
+      h('div', { class: 'grid' }, field('Legal entity', ent), field('Price tolerance (fraction)', tol, '0.02 = 2%'), field('Over-receipt allowance (fraction)', over),
+        field('VAT rate (fraction)', vat), field('High-value PO threshold', hv), field('Dual-approval payment threshold', dual),
+        field('GRNI account', grni), field('Accounts payable account', ap), field('VAT input account', vin), field('Price variance account', ppv))], 'Propose policy', async () => {
+      const res = await api('POST', '/v1/p2p/policies', { legal_entity_id: ent.value, price_tolerance_pct: tol.value, over_receipt_pct: over.value, vat_rate: vat.value,
+        high_value_po_threshold: hv.value, dual_payment_threshold: dual.value, grni_account_id: grni.value, ap_account_id: ap.value, vat_input_account_id: vin.value, ppv_account_id: ppv.value });
+      created('p2p_policy', res, 'Policy');
+    });
+  },
+};
+
+// ---------- journals ----------
+async function renderJournals() {
+  const p2pOnly = h('input', { type: 'checkbox', id: nextId('c'), checked: true });
+  const holder = h('div');
+  page('Journals', 'Subledger documents create draft journals. A finance manager approves them and a controller posts them; neither can be the document’s creator.',
+    h('div', { class: 'toolbar' }, h('div', { class: 'check' }, p2pOnly, h('label', { for: p2pOnly.id }, 'Procure-to-pay journals only'))), holder);
+  const load = async () => {
+    holder.textContent = '';
+    const pref = p2pOnly.checked ? '&source_prefix=P2P_' : '';
+    const sections = [['DRAFT', 'journal.approve', 'approve-batch', 'Approve selected'], ['APPROVED', 'journal.post', 'post-batch', 'Post selected']];
+    for (const [status, perm, path, label] of sections) {
+      const js = (await api('GET', `/v1/journals?status=${status}${pref}`)).journals;
+      const can = S.can.has(perm);
+      const boxes = new Map();
+      const all = h('input', { type: 'checkbox', 'aria-label': `Select all ${status.toLowerCase()} journals` });
+      all.addEventListener('change', () => boxes.forEach((b) => { b.checked = all.checked; }));
+      const cols = [
+        can ? { label: all, cell: (j) => { const b = h('input', { type: 'checkbox', 'aria-label': `Select journal ${j.source_ref || j.id.slice(0, 8)}` }); boxes.set(j.id, b); return b; } } : null,
+        { label: 'Source', cell: (j) => `${j.source_type} ${j.source_ref || ''}` },
+        { label: 'Description', cell: (j) => j.description },
+        { label: 'Date', cell: (j) => (j.business_event_at || '').slice(0, 10) },
+        { label: 'Debits', num: true, cell: (j) => money(j.debits) },
+        { label: 'Created by', cell: (j) => j.created_by },
+        status === 'APPROVED' ? { label: 'Approved by', cell: (j) => j.approved_by || '' } : null,
+      ].filter(Boolean);
+      const out = h('div');
+      const btn = can && js.length ? h('button', { type: 'button' }, label) : null;
+      if (btn) btn.addEventListener('click', async () => {
+        clearError();
+        const ids = [...boxes].filter(([, b]) => b.checked).map(([id]) => id);
+        if (!ids.length) { showError(new Error('Select at least one journal.')); return; }
+        btn.disabled = true;
+        try {
+          const res = (await api('POST', `/v1/journals/${path}`, { journal_ids: ids })).results;
+          const ok = res.filter((r) => r.ok).length;
+          await load();
+          const failed = res.filter((r) => !r.ok);
+          holder.prepend(h('p', { class: failed.length ? 'alert' : 'notice', role: 'status' }, `${ok} of ${res.length} journals done.`,
+            failed.map((r) => h('span', {}, h('br'), `${r.journal_id.slice(0, 8)}: ${r.error}`))));
+          say(`${ok} of ${res.length} journals done.`);
+        } catch (e) { btn.disabled = false; showError(e); }
+      });
+      holder.append(h('h2', { class: 'section' }, status === 'DRAFT' ? 'Waiting for approval' : 'Approved, waiting to post'),
+        ...[table(`${status === 'DRAFT' ? 'Draft' : 'Approved'} journals (${js.length})`, cols, js, 'None.'), btn ? h('div', { class: 'actions' }, btn) : null, out].filter(Boolean));
+    }
+  };
+  p2pOnly.addEventListener('change', () => load().catch(showError));
+  await load();
+}
+
+// ---------- bank ----------
+async function renderBank() {
+  const parts = [];
+  if (S.can.has('bank.import')) {
+    const banks = (await api('GET', '/v1/p2p/company_bank_account?status=ACTIVE')).items;
+    const file = h('input', { type: 'file', name: 'statement', accept: 'application/json,.json', required: true });
+    const preview = h('div');
+    let raw = null;
+    file.addEventListener('change', async () => {
+      preview.textContent = '';
+      raw = null;
+      const f = file.files[0];
+      if (!f) return;
+      if (f.size > 900000) { showError(new Error('Statement file is too large (limit 900 kB).')); return; }
+      raw = await f.text();
+      try {
+        const st = JSON.parse(raw);
+        preview.append(table(`Statement ${st.statement_no || ''} — ${(st.lines || []).length} lines`, [
+          { label: 'Date', cell: (l) => l.booking_date }, { label: 'Reference', cell: (l) => l.reference }, { label: 'Counterparty', cell: (l) => l.counterparty },
+          { label: 'Amount', num: true, cell: (l) => money(l.amount) }], st.lines || []));
+        if (st.company_bank_id && !banks.some((b) => b.id === st.company_bank_id)) showError(new Error('The file names a bank account that is not an active company account.'));
+      } catch { showError(new Error('The file is not valid JSON.')); raw = null; }
+    });
+    const btn = h('button', { type: 'button' }, 'Import statement');
+    btn.addEventListener('click', async () => {
+      clearError();
+      if (!raw) { showError(new Error('Choose a statement file first.')); file.focus(); return; }
+      btn.disabled = true;
+      try {
+        const res = await api('POST', '/v1/bank-statements', undefined, raw);
+        say('Statement imported.');
+        await renderBank();
+        $('view').insertBefore(h('p', { class: 'notice', role: 'status' }, `Statement imported (${res.id.slice(0, 8)}). The file’s SHA-256 digest is recorded with the import.`), $('view').children[1]);
+      } catch (e) { btn.disabled = false; showError(e); }
+    });
+    parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Import a statement'),
+      h('p', { class: 'hint' }, 'Upload the bank’s statement file in SERK JSON form (company_bank_id, statement_no, statement_date, opening_balance, closing_balance, lines[booking_date, amount, reference, counterparty]). The exact bytes are hashed and recorded.'),
+      field('Statement file', file), preview, h('div', { class: 'actions' }, btn)));
+  }
+  const sts = (await api('GET', '/v1/p2p/bank_statement')).items;
+  parts.push(table(`Statements (${sts.length})`, [
+    { label: 'Statement', cell: (s) => s.number }, { label: 'Account', cell: (s) => s.label }, { label: 'Status', cell: (s) => chip(s.status) },
+    { label: 'Closing balance', num: true, cell: (s) => money(s.amount) }, { label: 'Imported by', cell: (s) => s.created_by },
+    { label: 'Action', cell: (s) => (S.can.has('bank.reconcile') && s.status === 'OPEN' ? reconcileButton(s) : '') },
+  ], sts, 'No statements imported yet.'));
+  page('Bank statements', 'Import statements and reconcile them automatically against released payments. Unmatched lines are left for investigation, never forced.', ...parts);
+}
+function reconcileButton(s) {
+  const b = h('button', { type: 'button', 'aria-label': `Reconcile statement ${s.number}` }, 'Reconcile');
+  b.addEventListener('click', async () => {
+    clearError();
+    b.disabled = true;
+    try {
+      const r = await api('POST', `/v1/bank-statements/${s.id}/reconcile`);
+      await renderBank();
+      const v = $('view');
+      v.insertBefore(h('div', { class: 'panel', role: 'status' }, h('p', { class: 'notice' }, `Statement ${s.number}: ${r.matched.length} matched, ${r.unmatched.length} left for investigation. Settlement journals are drafts for finance to approve.`),
+        r.unmatched.length ? table('Unmatched lines', [{ label: 'Line', cell: (u) => u.line_no }, { label: 'Amount', num: true, cell: (u) => money(u.amount) },
+          { label: 'Reason', cell: (u) => u.reason || '' }], r.unmatched) : null), v.children[1]);
+      say(`${r.matched.length} matched, ${r.unmatched.length} unmatched.`);
+    } catch (e) { b.disabled = false; showError(e); }
+  });
+  return b;
+}
+
+// ---------- reports ----------
+async function renderRecon() {
+  const ent = select('legal_entity_id', entityOpts());
+  const out = h('div');
+  const load = async () => {
+    out.textContent = '';
+    if (!ent.value) return;
+    const checks = (await api('GET', `/v1/entities/${ent.value}/p2p-reconciliation`)).checks;
+    for (const c of checks) c._class = c.difference !== '0' ? 'diff' : null;
+    const breaks = checks.filter((c) => c._class).length;
+    out.append(h('p', { class: breaks ? 'alert' : 'notice', role: 'status' }, breaks ? `${breaks} reconciliation difference(s) need investigation.` : 'Every subledger agrees with the general ledger.'),
+      table('Subledger to general ledger', [
+        { label: 'Check', cell: (c) => c.check }, { label: 'Subledger', num: true, cell: (c) => money(c.subledger) },
+        { label: 'General ledger', num: true, cell: (c) => money(c.gl) }, { label: 'Difference', num: true, cell: (c) => money(c.difference) },
+        { label: 'Unposted / unmatched', num: true, cell: (c) => String(c.unposted_or_unmatched) }], checks));
+  };
+  ent.addEventListener('change', () => load().catch(showError));
+  page('Reconciliation', 'GRNI, accounts payable, payments in transit and bank movements compared with posted general-ledger balances.', h('div', { class: 'toolbar' }, field('Legal entity', ent)), out);
+  await load();
+}
+
+async function renderCost() {
+  const proj = select('project_id', projectOpts());
+  const out = h('div');
+  const load = async () => {
+    out.textContent = '';
+    if (!proj.value) return;
+    const rows = (await api('GET', `/v1/projects/${proj.value}/cost-report`)).cost_codes;
+    out.append(table('Budget, commitments and actuals by cost code', [
+      { label: 'Cost code', cell: (r) => r.cost_code }, { label: 'Budget', num: true, cell: (r) => money(r.budget) },
+      { label: 'Committed', num: true, cell: (r) => money(r.committed) }, { label: 'Reserved', num: true, cell: (r) => money(r.reserved) },
+      { label: 'Received', num: true, cell: (r) => money(r.received) }, { label: 'Invoiced', num: true, cell: (r) => money(r.invoiced) },
+      { label: 'Actual (posted)', num: true, cell: (r) => money(r.actual_posted) }, { label: 'Available', num: true, cell: (r) => money(r.available) }], rows, 'No budgeted cost codes.'));
+  };
+  proj.addEventListener('change', () => load().catch(showError));
+  page('Project cost report', 'Approved BOQ budget against commitments (approved POs), receipts, invoices and posted actuals.', h('div', { class: 'toolbar' }, field('Project', proj)), out);
+  await load();
+}
+
+// ---------- boot ----------
+$('signout').addEventListener('click', () => signOut());
+window.addEventListener('hashchange', route);
+route();

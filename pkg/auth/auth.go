@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -103,8 +104,13 @@ type Role struct {
 var DefaultRoles = map[string]Role{
 	"accountant": {Name: "accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead,
 		PermBankReconcile, PermP2PRead}},
+	// Treasury prepares and releases payments (two different officers: the
+	// database refuses release by the preparer). It does not import bank
+	// statements: the evidence that settles a payment comes from someone
+	// independent of the payment (review 3, H2).
 	"treasury_officer": {Name: "treasury_officer", Permissions: []Permission{PermFXManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead,
-		PermPaymentPrepare, PermPaymentRelease, PermBankImport, PermBankAcctManage, PermP2PRead}},
+		PermPaymentPrepare, PermPaymentRelease, PermBankAcctManage, PermP2PRead}},
+	"bank_statement_officer": {Name: "bank_statement_officer", Permissions: []Permission{PermBankImport, PermScopeTenantWide, PermP2PRead}},
 	"finance_manager": {Name: "finance_manager", Permissions: []Permission{PermJournalApprove, PermJournalRead, PermFXRead, PermFXApprove,
 		PermFXPolicyApprove, PermWBSApprove, PermScopeTenantWide, PermWorkflowRead, PermAPApproveException, PermPaymentApprove,
 		PermSupplierBankApprove, PermP2PRead}},
@@ -131,8 +137,25 @@ var DefaultRoles = map[string]Role{
 	"ap_supervisor":       {Name: "ap_supervisor", Permissions: []Permission{PermAPApprove, PermP2PRead}},
 }
 
+// Principal kinds, as asserted by the identity provider (token claim
+// "pkind"). Only KindHuman principals may approve or release payments; an
+// absent or unknown kind is never treated as human.
+const (
+	KindHuman   = "human"
+	KindService = "service"
+	KindAI      = "ai"
+)
+
+// ReservedPermissionPrefix marks permissions that only the platform derives
+// from verified identity attributes (e.g. "principal.human"); a role can never
+// grant them.
+const ReservedPermissionPrefix = "principal."
+
 // Principal is the authenticated caller bound to exactly one tenant.
 type Principal struct {
+	// Kind is the identity provider's assertion of what the principal is
+	// (KindHuman, KindService, KindAI); "" means unknown.
+	Kind     string
 	UserID   string
 	TenantID string
 	Roles    []string
@@ -198,6 +221,9 @@ func (a *Authorizer) Permissions(p Principal) []Permission {
 	for _, r := range p.Roles {
 		if role, ok := a.roles[r]; ok {
 			for _, perm := range role.Permissions {
+				if strings.HasPrefix(string(perm), ReservedPermissionPrefix) {
+					continue // never grantable through a role
+				}
 				set[perm] = struct{}{}
 			}
 		}
@@ -218,7 +244,7 @@ func (a *Authorizer) Has(p Principal, perm Permission) bool {
 			continue
 		}
 		for _, x := range role.Permissions {
-			if x == perm {
+			if x == perm && !strings.HasPrefix(string(x), ReservedPermissionPrefix) {
 				return true
 			}
 		}

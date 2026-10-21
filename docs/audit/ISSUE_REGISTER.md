@@ -64,3 +64,37 @@ Owner for every item in this release: SERK engineering (this delivery). Branch
 | IR-L2 | Low | OPEN | Subject-hash string format fragile; some columns not covered (not exploitable today: immutable/append-only). | Planned: canonical `jsonb` hash of all business columns per subject type. | — | — | Becomes exploitable only if a covered table gains a new mutable column; the catalog test should be extended to flag that. |
 | IRV-M1/M2 | Medium | **CLOSED** | Re-verification of 0010: fx_snapshots approval record rewritable on a genuine withdraw or reject; workflow history forgeable through `system:%` actors and unbound evidence. | 0012 (see ADVERSARIAL_RESULTS §7). | `TestIndependentReverify_Q1_FXSnapshotAuthorityOnTransition`, `_Q5_WorkflowHistoryBinding` (failed before) | `independent-reverify-{before,after}.txt` | — |
 | IRV-L1..L3 | Low | **CLOSED** | Forgeable consumption labels; close/reopen/close collision; unverified `body_hash`. | 0012: trigger-depth-only `approval_use`, lookup by attested fields, SQL-digest `body_hash`. | `TestIndependentReverify_Q2_*`, `_Q3_*` | same | — |
+
+## Journey A (procure-to-pay) — independent reviews 3 and 4
+
+Review 3 examined commit a1f337c (migration 0013). Review 4 re-verified the 0014 fixes.
+- Reports: `docs/security/INDEPENDENT_REVIEW_3_2026-10-21.md` and `docs/security/INDEPENDENT_REVIEW_4_2026-10-22.md`.
+- The reviewers' probes are kept as regression tests: `internal/kernel/review3_regression_test.go` (TestR3_*) and `review4_regression_test.go` (TestR4_*).
+- Before/after evidence: `docs/security/evidence/independent-review-{3,4}-{before,after}.txt`.
+- Both reviews were done by AI agents, not human reviewers.
+
+| ID | Sev. | Status | Finding | Fix | Test |
+|---|---|---|---|---|---|
+| R3-H1 | High | **CLOSED** | Creator columns were free text on suppliers, supplier/company bank accounts, P2P policies, quotes and POs. A checker could insert a row "made by" someone else and approve it alone. | 0014: a deferred constraint trigger consumes the named creator's own creation attestation at commit; the kernel attests every create. | TestR3_07, TestR4_01 |
+| R3-H2 | High | **CLOSED** | Statement lines were not bound to the attested file, and treasury could both release and import. The releaser could "settle" their own payment. | 0014: the API parses the file; the attestation context carries the parsed-content digest, which SQL recomputes at commit. Importer and reconciler must be independent of the payment. New `bank_statement_officer` role. | TestR3_09, TestR4_02 (Go/SQL digest differential), TestR4_03 |
+| R3-M1 | Medium | **CLOSED** | Lines could be appended to a bound DRAFT subledger journal; nothing re-checked it at approve or post. | 0014: `journals.created_txid` (forced by the database; no tenant INSERT privilege since 0015). Lines are written only by the generating transaction; the binding is re-checked at approve and post. Commitments include over-receipt. | TestR3_01, TestR4_06 |
+| R3-M2 | Medium | **CLOSED** | "Human only" was a regular expression on the user id. | 0014/0015: the IdP `pkind` claim adds the platform-signed `principal.human` marker, which roles cannot grant. The marker is required on every payment attestation the actor presents. | TestR3_08, TestJourneyA_PaymentControls, TestR4_08 |
+| R3-M3 | Medium | **CLOSED** | A PO line could post receipts to the bank GL account. | 0014/0015: control accounts (bank, clearing, GRNI, AP, VAT input, PPV, of any policy version) are refused on PO lines, in both directions. | TestR3_12, TestR4_09 |
+| R3-L1 | Low | **CLOSED** | Back-dated statements skipped the continuity check. | 0014: date order is enforced. | TestR3_10 |
+| R3-L2 | Low | **CLOSED** | Splitting a payment avoided dual approval. | 0014: the dual-approval threshold also applies to each paid invoice's total. | TestR3_13 |
+| R3-L3 | Low | **CLOSED** | The preparer could release; importer and reconciler were not separated. | 0014/0015: trigger checks (case-insensitive). | TestR3_13, TestR4_04 |
+| R3-X1 | Medium | **CLOSED** | Found during remediation: a successor policy could change the GRNI/AP accounts. This splits balances and breaks expected accounting. | 0014 (insert) and 0015 (approval). | TestR3_14, TestR4_07 |
+| R3-I | Info | **CLOSED** | Numbers truncated after 999,999; quotes accepted after the due time. | 0014. | TestR3_13, TestR3_14 |
+| R4-MA | Medium | **CLOSED** | Quote lines (and PO lines) could be appended later without attestation, changing the totals of a "recorded" quote. | 0015: child lines are accepted only in the transaction holding the header's creation attestation. | TestR4_01 |
+| R4-MB | Medium | **CLOSED** | A NULL `matched_by` bypassed reconciler separation, and NULL-actor `approval_use` accepted anyone's attestation. | 0015: `CHECK` that a MATCHED line names its reconciler; separation refuses NULL. | TestR4_04 |
+| R4-LA | Low | **CLOSED** | The R3-X1 rule was bypassed by a draft proposed before the first approval. | 0015: re-checked at approval against the last policy in force. | TestR4_07 |
+| R4-LB | Low | **CLOSED** | Concurrent imports forked the balance chain. | 0015: imports are serialised per bank account (row lock). The second import waits, then fails continuity. | TestR4_05 (rewritten so the harness does not deadlock on the now-correct lock wait) |
+| R4-LC | Low | **CLOSED** | The human marker was not tied to the consumed attestation. | 0015: every payment attestation of the actor in the transaction must carry it. | TestR4_08 |
+| R4-LD | Low | **CLOSED** | Retired policy accounts were not treated as control accounts. | 0015. | TestR4_09 |
+| R4-I1 | Info | **CLOSED** | `created_txid` was insertable through the table-level INSERT grant. | 0015: column-level INSERT on every other column, plus a forcing trigger. | TestR4_06 |
+| R4-I2 | Info | **CLOSED** | The parser accepted NUL characters, zero amounts, out-of-range amounts and duplicate JSON keys. | Kernel parser. | TestParseStatementRefusesAmbiguousOrInvalidFiles |
+| R4-I3 | Info | **CLOSED** | The TestR3_09 raw-match probe passed for the wrong reason. | The probe now asserts the database independence rule. | TestR3_09 |
+| R4-I4 | Info | OPEN | User ids are compared exactly (now case-insensitively in the new separation checks). Safe only if the IdP issues one canonical id per person. | Requirement on IdP integration (GATEA-02/07). | — |
+| R4-I5 | Info | OPEN | Lines appended *inside* the generating transaction are blocked at approval, leaving that journal stuck. Only the kernel's own transaction can do this. | Accepted: not reachable from tenant SQL because the transition attestation is bound to the API transaction. | TestR4_06 (observation) |
+| R-BANKFEED | Medium | OPEN | The authenticity of a statement file depends on how it is obtained. | Bank-signed host-to-host feed (needs bank integration). | — |
+| R-SPLIT-SUPPLIER | Low | OPEN | Dual approval is not aggregated across several invoices from one supplier. | Rolling per-supplier threshold. | — |

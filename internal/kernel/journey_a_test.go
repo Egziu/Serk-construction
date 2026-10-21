@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 // different person and every number reconciled to the ledger.
 
 type p2pCast struct {
-	estimator, commercial, siteEng, pm, buyer, procMgr, store, apClerk, apSup, treasury, finMgr, cfo, controller, accountant auth.Principal
+	estimator, commercial, siteEng, pm, buyer, procMgr, store, apClerk, apSup, treasury, treasury2, bankOfficer, finMgr, cfo, controller, accountant auth.Principal
 }
 
 type p2pWorld struct {
@@ -33,6 +34,9 @@ type p2pWorld struct {
 	sup      [3]string
 	supBank  string
 }
+
+// newP2PWorldHook runs between proposing and approving the first policy.
+var newP2PWorldHook = func(w *p2pWorld) {}
 
 func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }
 
@@ -50,7 +54,8 @@ func newP2PWorld(t *testing.T) *p2pWorld {
 	now := time.Now()
 	proj := []string{f.project}
 	mk := func(id string, mfa bool, projects []string, roles ...string) auth.Principal {
-		p := auth.Principal{UserID: id, TenantID: f.tenant, Roles: roles, ProjectIDs: projects, IssuedAt: now.Add(-time.Minute)}
+		// Every cast member is a person (identity-provider assertion).
+		p := auth.Principal{UserID: id, TenantID: f.tenant, Roles: roles, ProjectIDs: projects, IssuedAt: now.Add(-time.Minute), Kind: auth.KindHuman}
 		if mfa {
 			p.MFA, p.AuthTime = true, now
 		}
@@ -62,6 +67,7 @@ func newP2PWorld(t *testing.T) *p2pWorld {
 		buyer: mk("u-buyer", false, proj, "procurement_officer"), procMgr: mk("u-proc-manager", false, proj, "procurement_manager"),
 		store: mk("u-storekeeper", false, proj, "storekeeper"), apClerk: mk("u-ap-clerk", false, proj, "ap_clerk"),
 		apSup: mk("u-ap-supervisor", false, proj, "ap_supervisor"), treasury: mk("u-treasury", true, nil, "treasury_officer"),
+		treasury2: mk("u-treasury-2", true, nil, "treasury_officer"), bankOfficer: mk("u-bank-officer", false, nil, "bank_statement_officer"),
 		finMgr: mk("u-finance-manager", true, nil, "finance_manager"), cfo: mk("u-cfo", true, nil, "cfo"),
 		controller: mk("u-controller", false, nil, "controller"), accountant: mk("u-accountant", false, nil, "accountant"),
 	}
@@ -97,6 +103,7 @@ func newP2PWorld(t *testing.T) *p2pWorld {
 		OverReceiptPct: dec("0.05"), VATRate: dec("0.15"), HighValuePOThreshold: dec("5000000"), DualPaymentThreshold: dec("500000"),
 		GRNIAccountID: w.acct["2100"], APAccountID: w.acct["2000"], VATInputAccountID: w.acct["1300"], PPVAccountID: w.acct["5100"]})
 	must(t, "policy", err)
+	newP2PWorldHook(w) // review 4 probe hook (no-op by default)
 	must(t, "policy approve", f.svc.DecideP2PPolicy(f.ctx, c.cfo, w.policy, true))
 	// Suppliers (buyer creates, procurement manager approves).
 	for i, code := range []string{"ABC-STEEL", "HABESHA-CEMENT", "SAFARI-BUILD"} {
@@ -194,6 +201,30 @@ func (w *p2pWorld) financePost(t *testing.T, ids ...string) {
 
 func today() time.Time { return time.Now().UTC().Truncate(24 * time.Hour) }
 
+// stmt renders a statement file in the SERK interchange format; each line is
+// {amount, reference, counterparty} booked on the statement date.
+func stmt(bank, no string, date time.Time, opening, closing string, lines ...[3]string) []byte {
+	type line struct {
+		BookingDate  string `json:"booking_date"`
+		Amount       string `json:"amount"`
+		Reference    string `json:"reference"`
+		Counterparty string `json:"counterparty"`
+	}
+	f := struct {
+		CompanyBankID  string `json:"company_bank_id"`
+		StatementNo    string `json:"statement_no"`
+		StatementDate  string `json:"statement_date"`
+		OpeningBalance string `json:"opening_balance"`
+		ClosingBalance string `json:"closing_balance"`
+		Lines          []line `json:"lines"`
+	}{bank, no, date.Format("2006-01-02"), opening, closing, []line{}}
+	for _, l := range lines {
+		f.Lines = append(f.Lines, line{date.Format("2006-01-02"), l[0], l[1], l[2]})
+	}
+	b, _ := json.Marshal(f)
+	return b
+}
+
 func TestJourneyA_BOQToBankReconciliationToGL(t *testing.T) {
 	w := newP2PWorld(t)
 	f, c := w.f, w.cast
@@ -238,7 +269,7 @@ func TestJourneyA_BOQToBankReconciliationToGL(t *testing.T) {
 		if st != "APPROVED" {
 			t.Fatalf("second approval status %s", st)
 		}
-		jid, err := f.svc.ReleasePayment(f.ctx, c.treasury, id)
+		jid, err := f.svc.ReleasePayment(f.ctx, c.treasury2, id) // never the preparer
 		must(t, "release", err)
 		d, _ := f.svc.GetP2PDoc(f.ctx, c.treasury, "payment_instruction", id)
 		return d.Number, jid
@@ -248,14 +279,12 @@ func TestJourneyA_BOQToBankReconciliationToGL(t *testing.T) {
 	w.financePost(t, j5, j6)
 
 	// Bank statement: both payments, a customer receipt and a bank charge.
-	st, err := f.svc.ImportBankStatement(f.ctx, c.treasury, StatementInput{CompanyBankID: w.bank, StatementNo: "CBE-2026-10-001", StatementDate: today(),
-		OpeningBalance: dec("50000000"), ClosingBalance: dec("47812600"),
-		Lines: []StatementLine{
-			{today(), dec("-1709475"), "TRF " + pay1 + " ABC STEEL", "ABC STEEL PLC"},
-			{today(), dec("300000"), "CUSTOMER RECEIPT IPC-07", "MINISTRY OF ROADS"},
-			{today(), dec("-777400"), pay2 + "/ABC", "ABC STEEL PLC"},
-			{today(), dec("-525"), "SERVICE CHARGE", "CBE"}},
-		Raw: []byte("synthetic statement CBE-2026-10-001 " + pay1 + pay2)})
+	// Imported by the statement officer, independent of both payments.
+	st, err := f.svc.ImportBankStatement(f.ctx, c.bankOfficer, stmt(w.bank, "CBE-2026-10-001", today(), "50000000", "47812600",
+		[3]string{"-1709475", "TRF " + pay1 + " ABC STEEL", "ABC STEEL PLC"},
+		[3]string{"300000", "CUSTOMER RECEIPT IPC-07", "MINISTRY OF ROADS"},
+		[3]string{"-777400", pay2 + "/ABC", "ABC STEEL PLC"},
+		[3]string{"-525", "SERVICE CHARGE", "CBE"}))
 	must(t, "import", err)
 	rec, err := f.svc.AutoReconcile(f.ctx, c.accountant, st)
 	must(t, "reconcile", err)
