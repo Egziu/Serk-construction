@@ -101,3 +101,27 @@ An independent review agent reviewed 0007/0008 at HEAD 81ab48b with read-only ac
 | L4: caller-supplied approval timestamps | Low | HardeningControls | DB time set in the trigger | — |
 | L2: subject-hash format and coverage (`reopen_reason`, cost-code `valid_to`, …) | Low | not exploitable now (the columns are immutable or append-only) | **open**: canonical `jsonb` hash of all business columns planned | — |
 | Info: non-constant-time HMAC compare in SQL; 224 pgcrypto/btree_gist functions executable | Info | — | **accepted**: timing is not observable through SQL at useful resolution; the extension functions are side-effect free | — |
+
+## 7. Independent re-verification of 0010 (executed)
+
+A second, fresh review agent re-checked 0010 on a copy of 32a220e.
+
+- **Result:** 0010 closed H1, H2 (except fx_snapshots), M1, M2, M4, L1 and L3, and broke no legitimate flow (88/88 kernel tests passed).
+- **Report:** `docs/security/INDEPENDENT_REVIEW_2_2026-10-21.md`.
+- **Before:** `evidence/independent-reverify-before.txt` has **8 "OPEN:" lines**.
+- **After migration 0012:** `evidence/independent-reverify-after.txt` has **0**. Every first- and second-review probe PASSES.
+
+| Finding | Sev. | Fix (0012) |
+|---|---|---|
+| M-1: fx_snapshots approval record rewritable during a genuine withdraw or reject | Medium | `authority_frozen` with a per-transition allow-list; decision time is DB time; MFA and variance flags come only from evidence |
+| M-2: workflow history accepted `system:%` actors without evidence, and accepted any evidence of the actor | Medium | each history kind is bound to its own evidence on **this** instance:<br>• STARTED needs `workflow.start` on the instance's subject and definition<br>• DECIDED, STEP_COMPLETED, COMPLETED, EFFECT and REJECTED need `workflow.decide` on the instance<br>• CANCELLED needs `workflow.cancel`<br>• timer kinds need the instance state the timer just produced |
+| L-1: `approval_use` was callable directly with a forged consumption label | Low | `approval_use` runs only at trigger depth > 0 (the tenant login cannot create triggers or functions); readers look evidence up by attested fields (`approval_consumed_in_tx`), never by label |
+| L-2: close, reopen, close in one transaction | Low | same lookup, using the latest matching consumption |
+| L-3: `body_hash` not verified in SQL | Low | a new definition's `body_hash` must equal `workflow_body_digest(body)`; the kernel stores and verifies that digest (legacy hashes still accepted on load) |
+| `workflow_decide_definition` evidence check ran at depth 0 | — | moved into the `workflow_definitions_attest` UPDATE trigger |
+
+**Residual (Info):**
+- The lock replaces `closed_by` with the locker. This is attested and intended.
+- JSON number forms (`1e0`, `-0`) decode to the signed values.
+- A nonce from a rolled-back transaction can be replayed within its TTL for exactly the same authorised change. This is by design; see the design doc §5.
+- EFFECT_FAILED history needs a recorded failure on the instance, but no evidence. It is informational only.

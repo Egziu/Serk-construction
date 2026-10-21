@@ -63,8 +63,13 @@ func (s *Service) parseStored(d postgres.WorkflowDefinitionRow) (workflow.Defini
 	if err != nil {
 		return workflow.Definition{}, err
 	}
+	// Since 0012 body_hash is the database digest of the stored jsonb text,
+	// which is exactly the bytes PostgreSQL returns for the body column.
+	// Definitions stored before 0012 carry the hash of the Go canonical
+	// encoding; both are accepted, nothing else is.
+	stored := sha256.Sum256(d.Body)
 	sum := sha256.Sum256(canonical)
-	if "sha256:"+hex.EncodeToString(sum[:]) != d.BodyHash {
+	if "sha256:"+hex.EncodeToString(stored[:]) != d.BodyHash && "sha256:"+hex.EncodeToString(sum[:]) != d.BodyHash {
 		return workflow.Definition{}, fmt.Errorf("%w: stored definition does not match its hash", workflow.ErrInvalid)
 	}
 	return def, nil
@@ -94,11 +99,10 @@ func (s *Service) ProposeWorkflowDefinition(ctx context.Context, p auth.Principa
 	if err != nil {
 		return postgres.WorkflowDefinitionRow{}, err
 	}
-	canonical, err := json.Marshal(def) // stored canonical form, hashed
+	canonical, err := json.Marshal(def) // canonical form; the database digests it as stored
 	if err != nil {
 		return postgres.WorkflowDefinitionRow{}, err
 	}
-	sum := sha256.Sum256(canonical)
 	var out postgres.WorkflowDefinitionRow
 	err = s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
@@ -112,7 +116,7 @@ func (s *Service) ProposeWorkflowDefinition(ctx context.Context, p auth.Principa
 			return err
 		}
 		out, err = postgres.InsertWorkflowDefinition(ctx, tx, postgres.WorkflowDefinitionRow{TenantID: p.TenantID, Key: def.Key,
-			Subject: def.Subject, Mandatory: def.Mandatory, Body: canonical, BodyHash: "sha256:" + hex.EncodeToString(sum[:]), ProposedBy: p.UserID})
+			Subject: def.Subject, Mandatory: def.Mandatory, Body: canonical, BodyHash: digest, ProposedBy: p.UserID})
 		if err != nil {
 			return err
 		}

@@ -1,0 +1,56 @@
+### Re-verification probes run BY THE SECOND REVIEWER on a copy of 32a220e (+ untracked 0011), 2026-10-21
+    zz_reverify_test.go:47: before: approved_by=u-approver rejected_by=NULL decided_at=2026-10-21 23:54:44.465647+03 mfa=f exc=f
+    zz_reverify_test.go:48: OPEN: withdraw (genuine fx.snapshot.withdraw attestation) rewrites approved_by/rejected_by/decided_at/approver_mfa/variance_exception
+    zz_reverify_test.go:52: after: status=DISPUTED approved_by=u-forged-approver rejected_by=u-forged-rejecter decided_at=2001-01-01 00:00:00+03 mfa=t exc=t
+    zz_reverify_test.go:55: OPEN: reject (genuine attestation) also sets approver_mfa=true/variance_exception=true on a REJECTED snapshot
+    zz_reverify_test.go:59: after reject: status=REJECTED mfa=t exc=t
+--- FAIL: TestReverify_Q1_FXSnapshotAuthorityOnTransition (0.09s)
+    zz_reverify_test.go:71: held: tenant login sets ended_by on an ACTIVE instance without ending it: store: database invariant violated: end details are recorded only when the instance ends
+    zz_reverify_test.go:73: held: tenant login cancels with an invented ended_by: store: database invariant violated: privilege: workflow.cancel of workflow_instance 889ba1c2-2ff1-4582-bee3-548570d462f6 requires a verified approval attestation for u-wf-admin
+--- PASS: TestReverify_Q1_WorkflowInstanceEndedBy (0.10s)
+    zz_reverify_test.go:96: close with pre-forged marker: err=<nil>
+    zz_reverify_test.go:99: close record: close actor=u-poster linked attestation: action=journal.approve actor=u-approver subject=journal:6c9b8681-6bed-4366-9f63-12f830fa5c45
+    zz_reverify_test.go:101: OPEN: close record linked to unrelated evidence via a forged consumption marker (close actor=u-poster linked attestation: action=journal.approve actor=u-approver subject=journal:6c9b8681-6bed-4366-9f63-12f830fa5c45)
+    zz_reverify_test.go:106: held: direct call of fiscal_period_close_record (depth 0): store: database invariant violated: privilege: period close records are written only by the period transition
+    zz_reverify_test.go:108: held: tenant creates a function: store: database invariant violated: privilege: permission denied for schema public
+    zz_reverify_test.go:109: held: tenant creates a temp table: store: database invariant violated: privilege: permission denied to create temporary tables in database "serk_review2"
+    zz_reverify_test.go:110: held: tenant disables a trigger: store: database invariant violated: privilege: must be owner of table wbs_versions
+    zz_reverify_test.go:111: held: tenant inserts approval_consumptions directly: store: database invariant violated: privilege: permission denied for table approval_consumptions
+--- FAIL: TestReverify_Q2_Q3_ForgedConsumptionMarker (0.07s)
+    zz_reverify_test.go:132: after tx1: J=POSTED R=POSTED
+    zz_reverify_test.go:134: OPEN: J marked REVERSED in a later tx with a forged consumption marker (unrelated evidence)
+    zz_reverify_test.go:145: final: J=REVERSED
+--- FAIL: TestReverify_Q2_ReversedViaForgedMarker (0.08s)
+    zz_reverify_test.go:171: held: evidence consumed inside a released savepoint is reused: store: database invariant violated: privilege: journal.approve of journal 1437a0af-4da7-446d-94f3-9b13e6a1ea6f requires a verified approval attestation for u-approver
+    zz_reverify_test.go:188: rollback-to-savepoint then reuse: err=<nil> consumptions=1 status=APPROVED (expected: one effective approval)
+    zz_reverify_test.go:192: held: wbs.decide APPROVED evidence still valid after a node was added in the same tx: store: database invariant violated: privilege: wbs_version a31f80fa-acb7-46c3-87f0-811c184f5ad4 changed after the approval was attested
+    zz_reverify_test.go:209: tenant2 sees 0 approval_consumptions rows
+--- PASS: TestReverify_Q2_SavepointsAndLiveHash (0.08s)
+    zz_reverify_test.go:220: held: supersede v1, approve v2 inside a savepoint, roll the savepoint back, commit: store: database invariant violated: privilege: superseding a WBS version requires an approved successor at commit
+    zz_reverify_test.go:238: held: SET CONSTRAINTS ALL IMMEDIATE then supersede without approved successor: store: database invariant violated: privilege: superseding a WBS version requires an approved successor at commit
+    zz_reverify_test.go:249: approved WBS versions: 0258f33e-272b-4436-91f0-36ac542e5a80=DRAFT,cbb93dbf-c4b1-4ff2-990a-867ea688f66e=APPROVED
+    zz_reverify_test.go:257: held: retire p1 + approve p2 + REJECT p2 in the same tx: store: database invariant violated: illegal fx policy transition APPROVED -> REJECTED
+    zz_reverify_test.go:274: policies: 1=APPROVED,2=PENDING
+--- PASS: TestReverify_Q4_DeferredSuccessorChecks (0.11s)
+    zz_reverify_test.go:286: OPEN: COMPLETED history entry by an invented 'system:' actor, no evidence
+    zz_reverify_test.go:288: OPEN: DECIDED history entry for u-cfo with no evidence, actor spelled 'system:u-cfo'
+    zz_reverify_test.go:291: OPEN: DECIDED history entry for u-approver on instance W using u-approver's evidence for an unrelated journal
+    zz_reverify_test.go:299: history of W: STARTED/u-preparer, COMPLETED/system:kernel, DECIDED/system:u-cfo, DECIDED/u-approver
+--- FAIL: TestReverify_Q5_WorkflowHistoryBinding (0.09s)
+    zz_reverify_test.go:307: OPEN: definition inserted with the attested body but an arbitrary body_hash
+    zz_reverify_test.go:320: stored: v7 body_hash=sha256:00000000 digest=sha256:bbb776fc
+--- FAIL: TestReverify_Q2_DefinitionBodyHashColumn (0.05s)
+    zz_reverify_test.go:338: v as 1.0: err=store: database invariant violated: privilege: approval attestation: malformed field v stored=
+    zz_reverify_test.go:338: v as 1e0: err=<nil> stored=ctx='' perms={journal.approve} auth_time=NULL
+    zz_reverify_test.go:338: auth_time as -0: err=<nil> stored=ctx='' perms={journal.approve} auth_time=NULL
+    zz_reverify_test.go:338: duplicate ctx key with a different first value: err=<nil> stored=ctx='' perms={journal.approve} auth_time=NULL
+    zz_reverify_test.go:338: perms duplicated element: err=store: database invariant violated: privilege: approval attestation: bad signature stored=
+    zz_reverify_test.go:338: unicode escape in actor: err=<nil> stored=ctx='' perms={journal.approve} auth_time=NULL
+--- PASS: TestReverify_Q6_CanonicalNumberForms (0.07s)
+    zz_reverify_test.go:360: lock by second person: err=<nil>; period: LOCKED closed_by=u-controller-2; records: CLOSE/u-poster, LOCK/u-controller-2
+--- PASS: TestReverify_Q1_LockRewritesClosedBy (0.06s)
+    zz_reverify_test.go:389: close/reopen/close in one tx: err=store: database invariant violated: fiscal_period_closes_attestation_key
+--- PASS: TestReverify_Q3_CloseReopenCloseOneTx (0.05s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	0.849s
+FAIL
