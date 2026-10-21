@@ -3,8 +3,8 @@
 **Generated from the live catalog**, not transcribed from migrations: the tables
 below are the verbatim output of `psql -At -f docs/security/privilege_matrix.sql`
 run as superuser against a freshly migrated PostgreSQL 16.15 database
-(`serk_full`, migrations 0001–0008; 0007 sha256 `a1ad3fd966a9dc23…`, 0008 sha256 `e6c85f6115d6f7be…`)
-at commit 1371d63. Re-generate after every migration; the invariants are enforced
+(`serk_full`, migrations 0001–0012)
+at commit 74fb7d4. Re-generate after every migration; the invariants are enforced
 by `internal/kernel/privilege_test.go` (`TestPrivileges_*`), which fails the build if
 they regress.
 
@@ -16,6 +16,7 @@ they regress.
 | Outbox relay | `serk_relay` member of `serk_publisher` | yes | outbox SELECT + delivery-bookkeeping columns, processed_events | Cross-tenant event delivery; no business tables, no approval functions. |
 | Workflow timer | `serk_timer` member of `serk_scheduler` | yes | EXECUTE `workflow_due_tenants(int)` only | Learns which tenants have due timers; then acts as each tenant through the tenant runtime path. |
 | Readiness probe | `serk_health` | yes | nothing | `SELECT 1`. |
+| Metrics scraper | `serk_metrics` member of `serk_monitor` | yes | EXECUTE `ops_health_metrics()` only | Aggregate health numbers; no table, no tenant data (0011). |
 | Migrator / provisioner | schema owner (`postgres` in the test cluster; `<owner>` DSN in deploy/docker-compose.prod.yml) | yes, used only by `serk-migrate` | owner of all objects, CREATEROLE | Applies migrations, provisions tenant roles and installs per-tenant approval verification keys. Owner can disable triggers — see residual R-DBA. |
 | Database administrator / superuser | `postgres` | operator only | everything | Out of band; can override every control (residual R-DBA). |
 | Authenticator, reporting user, analyst, backup account, break-glass | **do not exist yet** | — | — | NOT IMPLEMENTED. Required by directive §2.1/§3.1; tracked as open items. A backup account would use `pg_basebackup`/REPLICATION, never `serk_app`. |
@@ -66,12 +67,13 @@ Column grants are shown as `UPDATE(col,…)` when the role lacks table-level UPD
 |---|---|---|---|---|---|
 | accounts | SELECT INSERT · UPDATE(name,active,cost_coding) | — | — | — | yes |
 | approval_attestations | SELECT | — | — | — | yes |
+| approval_consumptions | SELECT | — | — | — | yes |
 | approval_keys | — | — | — | — | no |
 | audit_heads | — | — | — | — | enabled |
 | audit_log | SELECT INSERT | — | — | — | yes |
 | cost_codes | SELECT INSERT · UPDATE(status,valid_to) | — | — | — | yes |
 | currencies | SELECT | — | — | — | no |
-| fiscal_period_closes | SELECT INSERT | — | — | — | yes |
+| fiscal_period_closes | SELECT | — | — | — | yes |
 | fiscal_periods | SELECT INSERT · UPDATE(status,closed_by,closed_at,reopen_reason,reopened_by) | — | — | — | yes |
 | fx_policies | SELECT INSERT · UPDATE(status,approved_by,approved_at) | — | — | — | yes |
 | fx_snapshots | SELECT INSERT · UPDATE(approval_status,approved_by,decided_at,decision_reason,rejected_by,variance_exception,approver_mfa) | — | — | — | yes |
@@ -84,6 +86,7 @@ Column grants are shown as `UPDATE(col,…)` when the role lacks table-level UPD
 | processed_events | — | SELECT INSERT | — | — | no |
 | projects | SELECT INSERT · UPDATE(name,status) | — | — | — | yes |
 | schema_migrations | — | — | — | — | no |
+| session_revocations | SELECT INSERT | — | — | — | yes |
 | tenant_db_roles | — | — | — | — | no |
 | tenants | SELECT | — | — | — | yes |
 | wbs_nodes | SELECT INSERT | — | — | — | yes |
@@ -97,32 +100,39 @@ Column grants are shown as `UPDATE(col,…)` when the role lacks table-level UPD
 
 ## Functions callable by application roles (excluding trigger functions, which cannot be called directly)
 
-| function | security | serk_app | serk_publisher | serk_scheduler | PUBLIC |
-|---|---|---|---|---|---|
-| approval_authorize(jsonb) | **DEFINER** | EXECUTE | — | — | — |
-| approval_key_install(uuid,text,bytea) | **DEFINER** | — | — | — | — |
-| audit_log_verify(uuid) | **DEFINER** | EXECUTE | — | — | — |
-| current_tenant() | **DEFINER** | EXECUTE | EXECUTE | — | — |
-| provision_tenant_role(uuid,name) | **DEFINER** | — | — | — | — |
-| workflow_decide_definition(uuid,text,text,text) | **DEFINER** | EXECUTE | — | — | — |
-| workflow_due_tenants(integer) | **DEFINER** | — | — | EXECUTE | — |
-| approval_canonical(jsonb) | invoker | EXECUTE | — | — | — |
-| approval_in_tx(text,text,text,text) | invoker | EXECUTE | — | — | — |
-| approval_require(text,text,text,text,text[],boolean) | invoker | EXECUTE | — | — | — |
-| approval_subject_hash(text,text) | invoker | EXECUTE | — | — | — |
-| assert_currency_precision(numeric,character,text) | invoker | EXECUTE | — | — | — |
-| audit_hash(text,bigint,bigint,uuid,timestamp with time zone,text,text,text,text,text,jsonb) | invoker | EXECUTE | — | — | — |
-| currency_minor_units(character) | invoker | EXECUTE | — | — | — |
-| fiscal_period_tb(fiscal_periods) | invoker | EXECUTE | — | — | — |
-| fx_assert_eligible(uuid,uuid,integer,character,character,uuid,timestamp with time zone,timestamp with time zone) | invoker | EXECUTE | — | — | — |
-| journal_balance_assert(uuid) | invoker | EXECUTE | — | — | — |
-| ledger_integrity_scan() | invoker | EXECUTE | — | — | — |
-| workflow_approvals(uuid,integer) | invoker | EXECUTE | — | — | — |
-| workflow_assert_governing(workflow_instances) | invoker | EXECUTE | — | — | — |
-| workflow_check_start(workflow_definitions,workflow_instances) | invoker | EXECUTE | — | — | — |
-| workflow_excluded(workflow_instances,integer) | invoker | EXECUTE | — | — | — |
-| workflow_gate_lock(uuid,text,boolean) | invoker | EXECUTE | — | — | — |
-| workflow_require_effect(uuid,text,uuid,text,text) | invoker | EXECUTE | — | — | — |
+| function | security | serk_app | serk_publisher | serk_scheduler | serk_monitor | PUBLIC |
+|---|---|---|---|---|---|---|
+| approval_authorize(jsonb) | **DEFINER** | EXECUTE | — | — | — | — |
+| approval_key_install(uuid,text,bytea) | **DEFINER** | — | — | — | — | — |
+| approval_use(text,text,text,text,text[],boolean,text,text) | **DEFINER** | EXECUTE | — | — | — | — |
+| audit_log_verify(uuid) | **DEFINER** | EXECUTE | — | — | — | — |
+| current_tenant() | **DEFINER** | EXECUTE | EXECUTE | — | — | — |
+| fiscal_period_close_record(uuid,text,text,text,text) | **DEFINER** | EXECUTE | — | — | — | — |
+| ops_health_metrics() | **DEFINER** | — | — | — | EXECUTE | — |
+| provision_tenant_role(uuid,name) | **DEFINER** | — | — | — | — | — |
+| workflow_decide_definition(uuid,text,text,text) | **DEFINER** | EXECUTE | — | — | — | — |
+| workflow_due_tenants(integer) | **DEFINER** | — | — | EXECUTE | — | — |
+| approval_canonical(jsonb) | invoker | EXECUTE | — | — | — | — |
+| approval_consumed_in_tx(text[],text,text,text) | invoker | EXECUTE | — | — | — | — |
+| approval_in_tx(text,text,text,text) | invoker | EXECUTE | — | — | — | — |
+| approval_require(text,text,text,text,text[],boolean) | invoker | EXECUTE | — | — | — | — |
+| approval_subject_hash(text,text) | invoker | EXECUTE | — | — | — | — |
+| assert_currency_precision(numeric,character,text) | invoker | EXECUTE | — | — | — | — |
+| audit_hash(text,bigint,bigint,uuid,timestamp with time zone,text,text,text,text,text,jsonb) | invoker | EXECUTE | — | — | — | — |
+| authority_frozen(jsonb,jsonb,text[],text[],text) | invoker | EXECUTE | — | — | — | — |
+| currency_minor_units(character) | invoker | EXECUTE | — | — | — | — |
+| fiscal_period_tb(fiscal_periods) | invoker | EXECUTE | — | — | — | — |
+| fx_assert_eligible(uuid,uuid,integer,character,character,uuid,timestamp with time zone,timestamp with time zone) | invoker | EXECUTE | — | — | — | — |
+| journal_balance_assert(uuid) | invoker | EXECUTE | — | — | — | — |
+| ledger_integrity_scan() | invoker | EXECUTE | — | — | — | — |
+| session_is_revoked(text,text,timestamp with time zone) | invoker | EXECUTE | — | — | — | — |
+| workflow_approvals(uuid,integer) | invoker | EXECUTE | — | — | — | — |
+| workflow_assert_governing(workflow_instances) | invoker | EXECUTE | — | — | — | — |
+| workflow_body_digest(jsonb) | invoker | EXECUTE | — | — | — | — |
+| workflow_check_start(workflow_definitions,workflow_instances) | invoker | EXECUTE | — | — | — | — |
+| workflow_excluded(workflow_instances,integer) | invoker | EXECUTE | — | — | — | — |
+| workflow_gate_lock(uuid,text,boolean) | invoker | EXECUTE | — | — | — | — |
+| workflow_require_effect(uuid,text,uuid,text,text) | invoker | EXECUTE | — | — | — | — |
 
 ## SECURITY DEFINER functions: owner and pinned search_path
 
@@ -130,9 +140,12 @@ Column grants are shown as `UPDATE(col,…)` when the role lacks table-level UPD
 |---|---|---|
 | approval_authorize(jsonb) | postgres | search_path=pg_catalog, public |
 | approval_key_install(uuid,text,bytea) | postgres | search_path=pg_catalog, public |
+| approval_use(text,text,text,text,text[],boolean,text,text) | postgres | search_path=pg_catalog, public |
 | audit_log_chain() | postgres | search_path=pg_catalog, public |
 | audit_log_verify(uuid) | postgres | search_path=pg_catalog, public |
 | current_tenant() | postgres | search_path=pg_catalog, public |
+| fiscal_period_close_record(uuid,text,text,text,text) | postgres | search_path=pg_catalog, public |
+| ops_health_metrics() | postgres | search_path=pg_catalog, public |
 | provision_tenant_role(uuid,name) | postgres | search_path=pg_catalog, public |
 | workflow_decide_definition(uuid,text,text,text) | postgres | search_path=pg_catalog, public |
 | workflow_due_tenants(integer) | postgres | search_path=pg_catalog, public |

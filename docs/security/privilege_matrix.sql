@@ -24,13 +24,14 @@ ORDER BY c.relname;
 \echo
 \echo '## Functions callable by application roles (excluding trigger functions, which cannot be called directly)'
 \echo
-\echo '| function | security | serk_app | serk_publisher | serk_scheduler | PUBLIC |'
-\echo '|---|---|---|---|---|---|'
-SELECT format('| %s | %s | %s | %s | %s | %s |', p.oid::regprocedure,
+\echo '| function | security | serk_app | serk_publisher | serk_scheduler | serk_monitor | PUBLIC |'
+\echo '|---|---|---|---|---|---|---|'
+SELECT format('| %s | %s | %s | %s | %s | %s | %s |', p.oid::regprocedure,
   CASE WHEN p.prosecdef THEN '**DEFINER**' ELSE 'invoker' END,
   CASE WHEN has_function_privilege('serk_app', p.oid, 'EXECUTE') THEN 'EXECUTE' ELSE '—' END,
   CASE WHEN has_function_privilege('serk_publisher', p.oid, 'EXECUTE') THEN 'EXECUTE' ELSE '—' END,
   CASE WHEN has_function_privilege('serk_scheduler', p.oid, 'EXECUTE') THEN 'EXECUTE' ELSE '—' END,
+  CASE WHEN has_function_privilege('serk_monitor', p.oid, 'EXECUTE') THEN 'EXECUTE' ELSE '—' END,
   CASE WHEN EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) x WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN 'EXECUTE' ELSE '—' END)
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public' AND p.prorettype <> 'trigger'::regtype

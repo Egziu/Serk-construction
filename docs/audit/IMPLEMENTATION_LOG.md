@@ -177,3 +177,30 @@ no longer act blocks new starts on its subject until cancelled or expired;
 resuming skips pre-approval steps for journals approved outside the current
 version; `now()` is transaction start time. The database still cannot verify
 end-user identity (T-3a).
+
+## 11. 0.3.0-gate-a-hardening: approval provenance, least privilege, operations
+
+| Commit | Work | Evidence |
+|---|---|---|
+| ff1aeca | Adversarial reproduction of GATEA-APPROVAL-01: tests fail on ea3533c because the forged approvals succeed | `docs/security/evidence/approval-forgery-before.txt` |
+| eb8094d | 0007: HMAC attestations verified in SQL; `*_attest` triggers; kernel signs every authority transition | `approval-forgery-after.txt` |
+| 1371d63 | 0008: no PUBLIC EXECUTE; pinned DEFINER `search_path`; privilege tests | `docs/security/DB_PRIVILEGE_MATRIX.md` |
+| 81ab48b | Security docs; PITR drill script and executed drill | `docs/operations/BACKUP_PITR_RESTORE_PROOF.md` |
+| b314922 | 0009: session revocation; R-10 (per-schema default privileges are a no-op) | `TestSessions_*`, `TestAPISessionRevocationAcrossReplicas` |
+| 32a220e | 0010: 9 gaps from independent review 1 (2 High) | `independent-review-{before,after}.txt` |
+| bae7eeb | 0011 plus `internal/obs`: metrics, trace context, alert rules, alert drill | `docs/operations/evidence/alert-drill-2026-10-21.txt` |
+| 8a2948b | Offline supply-chain checks; build-list SBOM | `docs/release/evidence/` |
+| 74fb7d4 | 0012: 8 open probes from independent review 2 | `independent-reverify-{before,after}.txt` |
+
+**Mutation checks of the new controls.** Each control was removed in turn and the suite re-run. All mutants were killed except M9, which is equivalent: the consumption primary key still refuses reuse.
+
+- **M1–M5:** signature skip, journal gate no-op, stored-hash-only, MFA freshness ignored, decision ctx check removed.
+- **M6:** 0008 revoke loop removed.
+- **M7:** 0009 global default privileges removed.
+- **M8:** authority freeze no-op.
+- **M10:** live hash recheck removed.
+- **M11:** deferred successor check removed.
+- **Consumption write removed.**
+
+**Process note.** The first review agent stopped before running anything, and its output was discarded. Only executed reviews are counted.
+

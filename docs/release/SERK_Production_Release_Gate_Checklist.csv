@@ -1,0 +1,36 @@
+ID,Priority,Gate,Acceptance criterion,Current status,Actual evidence path,Owner,Blocker / note
+GATEA-01,P0,Gate A,Direct tenant-SQL forged-approver attempts blocked,PASS,docs/security/evidence/approval-forgery-before.txt; docs/security/evidence/approval-forgery-after.txt; docs/security/evidence/independent-review-before.txt; docs/security/evidence/independent-review-after.txt; docs/security/evidence/independent-reverify-before.txt; docs/security/evidence/independent-reverify-after.txt; docs/security/ADVERSARIAL_RESULTS.md,SERK engineering (this delivery); human owner UNASSIGNED,R-SIGNER (API/secret compromise = signing authority); R-DBA (owner/superuser); R-MAKER
+GATEA-02,P0,Gate A,Verified step-up MFA bound to exact approval action,BLOCKED,docs/security/evidence/approval-forgery-after.txt; docs/security/APPROVAL_ATTESTATION_DESIGN.md,SERK engineering (this delivery); human owner UNASSIGNED,No live OIDC provider with step-up (acr/amr) available in this environment
+GATEA-03,P0,Gate A,Workflow publication only through validated authorized path,PASS,docs/security/evidence/independent-reverify-after.txt; docs/audit/evidence/final-test-run.log,SERK engineering (this delivery); human owner UNASSIGNED,R-SIGNER
+GATEA-04,P0,Gate A,FX human approval provenance enforced in SQL trust boundary,PASS,docs/security/evidence/approval-forgery-before.txt; docs/security/evidence/independent-reverify-after.txt,SERK engineering (this delivery); human owner UNASSIGNED,R-SIGNER
+GATEA-05,P0,Gate A,Old SC-01 to SC-14 accounting/security tests rerun,PASS,docs/audit/evidence/final-test-run.log,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEA-06,P0,Gate A,"Database roles, functions and grants least privilege",PASS,docs/security/DB_PRIVILEGE_MATRIX.md,SERK engineering (this delivery); human owner UNASSIGNED,authenticator/reporting/analyst/backup/break-glass roles do not exist yet
+GATEA-07,P1,Gate A,Session revocation and role removal become effective,BLOCKED,docs/audit/evidence/final-test-run.log,SERK engineering (this delivery); human owner UNASSIGNED,"No real OIDC provider (JWKS rotation, back-channel logout) reachable"
+GATEA-08,P1,Gate A,Staging deployment operational with TLS and vault secrets,BLOCKED,,SERK engineering (this delivery); human owner UNASSIGNED,"No Docker, staging hosts, DNS, TLS certificates or vault in this environment"
+GATEA-09,P1,Gate A,Real backup restore/PITR drill completed,PASS,docs/operations/BACKUP_PITR_RESTORE_PROOF.md; docs/operations/evidence/pitr-drill-2026-10-21.txt,SERK engineering (this delivery); human owner UNASSIGNED,not production-scale; archive on same disk; no encryption/offsite; RPO/RTO targets need business sign-off
+GATEA-10,P1,Gate A,Distributed abuse and fail-closed access controls,BLOCKED,,SERK engineering (this delivery); human owner UNASSIGNED,No edge proxy / multi-replica load environment
+GATEA-11,P1,Gate A,"OpenTelemetry, SLOs and alerts work",BLOCKED,docs/operations/OBSERVABILITY_SLOS.md; docs/operations/evidence/alert-drill-2026-10-21.txt,SERK engineering (this delivery); human owner UNASSIGNED,No Prometheus/Alertmanager/OTel collector available; OTel SDK not in pinned deps
+GATEA-12,P1,Gate A,"Cold source build, go.sum trust, govulncheck, SBOM",BLOCKED,docs/release/SECURITY_AND_SUPPLY_CHAIN_EVIDENCE.md; docs/release/evidence/supply-chain-local-2026-10-21.txt; docs/release/evidence/sbom-local.cdx.json,SERK engineering (this delivery); human owner UNASSIGNED,No network to proxy.golang.org / sum.golang.org / vuln.go.dev; no CI runner
+GATEA-13,P1,Gate A,Validated migrated FK and legacy financial data exceptions,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,No legacy/customer data set provided
+GATEB-01,P1,Gate B,"Canonical entities, project scopes, WBS and cost codes",NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEB-02,P1,Gate B,Versioned BOQ estimation and approved baseline,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEB-03,P1,Gate B,PR RFQ technical commercial approval PO implemented,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEB-04,P1,Gate B,GRN partial delivery invoice 3-way matching to AP,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEB-05,P1,Gate B,Inventory FIFO/WAC integrated with project/GL,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEB-06,P1,Gate B,Contracts variations retention and IPC workflows,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEB-07,P1,Gate B,Accessible user-facing ERP core screens,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEC-01,P1,Gate C,Journey A BOQ to payment controlled bank reconciliation,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEC-02,P1,Gate C,Journey B measurement to IPC AR and receipt,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATED-01,P2,Gate D,"Offline field capture, duplicate sync and revocation",NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATED-02,P2,Gate D,Project scheduling CPM baseline variance EVM,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATED-03,P2,Gate D,"Equipment, work hours maintenance job cost",NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATED-04,P2,Gate D,Quality HSE and safety exception flows,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEE-01,P2,Gate E,Document control revision and IFC model mapping,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEE-02,P2,Gate E,Payroll locality policies independently reviewed,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEE-03,P2,Gate E,Multi-entity project reporting and consolidation,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEF-01,P2,Gate F,AI has no kernel write or approval capabilities,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEF-02,P2,Gate F,Evidence-backed AI and prompt-injection handling,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,
+GATEP-01,P0,Gate P,Independent external penetration test accepted,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,Requires independent human parties / signed records; an AI agent cannot provide or sign these
+GATEP-02,P0,Gate P,Load soak chaos and recovery tested,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,Requires independent human parties / signed records; an AI agent cannot provide or sign these
+GATEP-03,P0,Gate P,Finance tax legal and data policy signed,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,Requires independent human parties / signed records; an AI agent cannot provide or sign these
+GATEP-04,P0,Gate P,Authorized engineering security ops product GO/NO-GO,NOT TESTED,,SERK engineering (this delivery); human owner UNASSIGNED,Requires independent human parties / signed records; an AI agent cannot provide or sign these
