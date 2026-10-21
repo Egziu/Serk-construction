@@ -7,11 +7,14 @@ package testdb
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
@@ -104,4 +107,21 @@ func (e *Env) dropRoles() {
 		_, _ = e.Admin.Exec(e.Ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename=$1`, r)
 		_, _ = e.Admin.Exec(e.Ctx, `DROP ROLE IF EXISTS `+r)
 	}
+}
+
+// LoginRole creates a temporary LOGIN role that is a member of group and
+// returns its DSN (dropped at cleanup).
+func (e *Env) LoginRole(t *testing.T, group string) string {
+	t.Helper()
+	name := "serk_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
+	pw := strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := e.Admin.Exec(e.Ctx, fmt.Sprintf(`CREATE ROLE %s LOGIN NOSUPERUSER INHERIT PASSWORD '%s' IN ROLE %s`, name, pw, pgx.Identifier{group}.Sanitize())); err != nil {
+		t.Fatalf("create login role: %v", err)
+	}
+	e.mu.Lock()
+	e.roles = append(e.roles, name)
+	e.mu.Unlock()
+	u, _ := url.Parse(e.BaseDSN)
+	u.User = url.UserPassword(name, pw)
+	return u.String()
 }

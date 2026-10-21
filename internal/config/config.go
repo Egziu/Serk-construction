@@ -49,6 +49,11 @@ type Config struct {
 	PreAuthPerMinute   int
 	AuthFailuresPerMin int
 	TrustedProxies     []netip.Prefix
+
+	// Workflow timers (SLA escalation, expiry). Enabled when SchedulerDSN is
+	// set: a login that is a member of serk_scheduler only.
+	SchedulerDSN          string
+	WorkflowTimerInterval int // seconds
 }
 
 // ErrInvalid wraps every validation failure.
@@ -125,6 +130,14 @@ func Load(src Source) (Config, error) {
 		return Config{}, err
 	}
 	c.HealthDSN = string(health)
+	sched, err := src.secret("SERK_SCHEDULER_DSN")
+	if err != nil {
+		return Config{}, err
+	}
+	c.SchedulerDSN = string(sched)
+	if c.WorkflowTimerInterval, err = src.num("SERK_WORKFLOW_TIMER_INTERVAL_SECONDS", 30); err != nil {
+		return Config{}, err
+	}
 	if c.RatePerMinute, err = src.num("SERK_RATE_PER_MIN", 300); err != nil {
 		return Config{}, err
 	}
@@ -185,6 +198,9 @@ func (c Config) Validate() error {
 		bad("SERK_HEALTH_DSN is required (a login role with no table privileges)")
 	} else if prod {
 		checkDSN(c.HealthDSN, "SERK_HEALTH_DSN", bad)
+	}
+	if c.SchedulerDSN != "" && prod {
+		checkDSN(c.SchedulerDSN, "SERK_SCHEDULER_DSN", bad)
 	}
 	for tenant, dsn := range c.DedicatedDSNs {
 		if prod {

@@ -407,3 +407,27 @@ BEGIN
     EXECUTE format('CREATE POLICY tenant_isolation ON %I USING (tenant_id = current_tenant()) WITH CHECK (tenant_id = current_tenant())', t);
   END LOOP;
 END$$;
+
+-- ---------------------------------------------------------------------------
+-- Timer scheduling: which tenants have due instances. The timer worker logs
+-- in as a member of serk_scheduler and learns ONLY tenant ids; it then acts
+-- inside each tenant through that tenant's own role (kernel.RunWorkflowTimers).
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_scheduler') THEN
+    CREATE ROLE serk_scheduler NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  -- The definer function below reads across tenants as the schema owner;
+  -- FORCE RLS applies to the owner too, so it gets a read-only policy.
+  EXECUTE format('CREATE POLICY owner_timer_scan ON workflow_instances FOR SELECT TO %I USING (true)', current_user);
+END$$;
+
+CREATE OR REPLACE FUNCTION workflow_due_tenants(max_tenants integer) RETURNS SETOF uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+  SELECT DISTINCT tenant_id FROM workflow_instances
+   WHERE status = 'ACTIVE' AND (expires_at <= now() OR (sla_due_at <= now() AND escalated_at IS NULL))
+   LIMIT LEAST(GREATEST(max_tenants, 1), 10000)
+$$;
+REVOKE ALL ON FUNCTION workflow_due_tenants(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION workflow_due_tenants(integer) TO serk_scheduler;

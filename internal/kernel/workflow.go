@@ -870,3 +870,27 @@ func (s *Service) WorkflowMetrics(ctx context.Context, p auth.Principal, since t
 	})
 	return out, err
 }
+
+// TenantLister yields tenants with due timers (postgres.DueWorkflowTenants
+// on the scheduler login).
+type TenantLister func(ctx context.Context) ([]string, error)
+
+// RunDueWorkflowTimers runs one timer pass for every tenant with due work.
+// A failing tenant does not stop the others; the first error is returned.
+func (s *Service) RunDueWorkflowTimers(ctx context.Context, due TenantLister) (TimerResult, error) {
+	tenants, err := due(ctx)
+	if err != nil {
+		return TimerResult{}, err
+	}
+	var total TimerResult
+	var first error
+	for _, t := range tenants {
+		r, err := s.RunWorkflowTimers(ctx, t, 100)
+		total.Escalated += r.Escalated
+		total.Expired += r.Expired
+		if err != nil && first == nil {
+			first = fmt.Errorf("tenant %s: %w", t, err)
+		}
+	}
+	return total, first
+}

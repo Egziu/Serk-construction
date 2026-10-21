@@ -3,6 +3,7 @@ package kernel
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -450,11 +451,24 @@ func TestWorkflow_TimersEscalateOnceAndExpire(t *testing.T) {
 		t.Fatal(err)
 	}
 	restarted := New(f.app, auth.NewAuthorizer(nil, true))
-	if res, err := restarted.RunWorkflowTimers(f.ctx, f.tenant, 0); err != nil || res != (TimerResult{}) {
+	// The scheduler login learns which tenants have due work — and nothing else.
+	sched, err := pgx.Connect(f.ctx, f.db.LoginRole(t, "serk_scheduler"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sched.Close(f.ctx)
+	lister := func(ctx context.Context) ([]string, error) { return postgres.DueWorkflowTenants(ctx, sched, 1000) }
+	if _, err := sched.Exec(f.ctx, `SELECT count(*) FROM workflow_instances`); err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("scheduler login read workflow instances: %v", err)
+	}
+	if res, err := restarted.RunDueWorkflowTimers(f.ctx, lister); err != nil || res != (TimerResult{}) {
 		t.Fatalf("nothing due yet: %+v %v", res, err)
 	}
 	f.backdate(t, w.ID, "sla_due_at")
-	if res, err := restarted.RunWorkflowTimers(f.ctx, f.tenant, 0); err != nil || res.Escalated != 1 {
+	if due, err := lister(f.ctx); err != nil || !slices.Contains(due, f.tenant) {
+		t.Fatalf("due tenants %v %v", due, err)
+	}
+	if res, err := restarted.RunDueWorkflowTimers(f.ctx, lister); err != nil || res.Escalated != 1 {
 		t.Fatalf("escalation: %+v %v", res, err)
 	}
 	if res, _ := restarted.RunWorkflowTimers(f.ctx, f.tenant, 0); res.Escalated != 0 {

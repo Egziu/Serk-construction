@@ -21,6 +21,7 @@ import (
 	"github.com/serk-group/serk-construction/pkg/fx"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 	"github.com/serk-group/serk-construction/pkg/money"
+	"github.com/serk-group/serk-construction/pkg/workflow"
 )
 
 const (
@@ -81,6 +82,19 @@ func New(cfg Config) *Server {
 	s.mux.Handle("POST /v1/fx/convert", s.authed(s.convert))
 	s.mux.Handle("POST /v1/periods/{id}/close", s.authed(s.closePeriod))
 	s.mux.Handle("POST /v1/periods/{id}/reopen", s.authed(s.reopenPeriod))
+	s.mux.Handle("POST /v1/workflow/definitions", s.authed(s.proposeWorkflowDefinition))
+	s.mux.Handle("GET /v1/workflow/definitions", s.authed(s.listWorkflowDefinitions))
+	s.mux.Handle("POST /v1/workflow/definitions/{id}/publish", s.authed(s.decideWorkflowDefinition(true)))
+	s.mux.Handle("POST /v1/workflow/definitions/{id}/reject", s.authed(s.decideWorkflowDefinition(false)))
+	s.mux.Handle("POST /v1/workflow/definitions/{id}/simulate", s.authed(s.simulateWorkflow))
+	s.mux.Handle("POST /v1/workflow/instances", s.authed(s.startWorkflow))
+	s.mux.Handle("GET /v1/workflow/instances", s.authed(s.listWorkflowInstances))
+	s.mux.Handle("GET /v1/workflow/instances/{id}", s.authed(s.getWorkflowInstance))
+	s.mux.Handle("POST /v1/workflow/instances/{id}/approve", s.authed(s.decideWorkflow(true)))
+	s.mux.Handle("POST /v1/workflow/instances/{id}/reject", s.authed(s.decideWorkflow(false)))
+	s.mux.Handle("POST /v1/workflow/instances/{id}/cancel", s.authed(s.cancelWorkflow))
+	s.mux.Handle("GET /v1/workflow/tasks", s.authed(s.workflowTasks))
+	s.mux.Handle("GET /v1/workflow/metrics", s.authed(s.workflowMetrics))
 	return s
 }
 
@@ -391,6 +405,14 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusUnauthorized, "step_up_required", "recent multi-factor authentication required")
 	case errors.Is(err, auth.ErrUnauthenticated):
 		writeErr(w, http.StatusUnauthorized, "unauthenticated", "authentication required")
+	case errors.Is(err, kernel.ErrWorkflowRequired):
+		writeErr(w, http.StatusConflict, "workflow_required", err.Error())
+	case errors.Is(err, kernel.ErrSubjectChanged):
+		writeErr(w, http.StatusConflict, "subject_changed", err.Error())
+	case errors.Is(err, kernel.ErrWorkflowState):
+		writeErr(w, http.StatusConflict, "invalid_state", uuidRe.ReplaceAllString(err.Error(), "<id>"))
+	case errors.Is(err, workflow.ErrInvalid), errors.Is(err, workflow.ErrConditionCurrency):
+		writeErr(w, http.StatusUnprocessableEntity, "validation", err.Error())
 	case errors.Is(err, auth.ErrSoD):
 		writeErr(w, http.StatusConflict, "segregation_of_duties", err.Error())
 	case errors.Is(err, auth.ErrForbidden):

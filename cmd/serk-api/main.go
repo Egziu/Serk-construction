@@ -14,6 +14,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/serk-group/serk-construction/internal/config"
 	"github.com/serk-group/serk-construction/internal/httpapi"
@@ -66,9 +69,42 @@ func main() {
 	svc := kernel.New(router, auth.NewAuthorizer(nil, cfg.SoDStrict))
 	h := httpapi.New(httpapi.Config{Verifier: verifier, Kernel: svc, Store: router, Logger: log, RatePerMinute: cfg.RatePerMinute,
 		Abuse: httpapi.AbuseConfig{PreAuthPerMinute: cfg.PreAuthPerMinute, AuthFailuresPerMinute: cfg.AuthFailuresPerMin, TrustedProxies: cfg.TrustedProxies}})
+	if cfg.SchedulerDSN != "" {
+		sched, err := pgxpool.New(ctx, cfg.SchedulerDSN)
+		if err != nil {
+			log.Error("scheduler database", "err", err)
+			os.Exit(1)
+		}
+		defer sched.Close()
+		go runWorkflowTimers(ctx, svc, sched, time.Duration(cfg.WorkflowTimerInterval)*time.Second, log)
+	} else {
+		log.Warn("workflow timers disabled (SERK_SCHEDULER_DSN not set): SLA escalation and expiry will not run")
+	}
 	log.Info("starting", "env", cfg.Env, "auth", map[bool]string{true: "oidc", false: "hs256"}[cfg.OIDCIssuer != ""])
 	if err := httpapi.Listen(ctx, cfg.Listen, h, log); err != nil {
 		log.Error("server", "err", err)
 		os.Exit(1)
+	}
+}
+
+// runWorkflowTimers escalates and expires workflow steps. State is in the
+// database, so a restart loses nothing; several API replicas may run it
+// concurrently (instances are claimed with SKIP LOCKED).
+func runWorkflowTimers(ctx context.Context, svc *kernel.Service, sched *pgxpool.Pool, every time.Duration, log *slog.Logger) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	lister := func(ctx context.Context) ([]string, error) { return postgres.DueWorkflowTenants(ctx, sched, 1000) }
+	for {
+		res, err := svc.RunDueWorkflowTimers(ctx, lister)
+		if err != nil && ctx.Err() == nil {
+			log.Error("workflow timers", "err", err)
+		} else if res.Escalated+res.Expired > 0 {
+			log.Info("workflow timers", "escalated", res.Escalated, "expired", res.Expired)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
 	}
 }

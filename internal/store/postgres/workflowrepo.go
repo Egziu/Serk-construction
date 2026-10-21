@@ -11,14 +11,20 @@ import (
 
 // WorkflowDefinitionRow is a stored workflow definition version.
 type WorkflowDefinitionRow struct {
-	ID, TenantID, Key, Subject, Status    string
-	Version                               int
-	Mandatory                             bool
-	Body                                  json.RawMessage
-	BodyHash                              string
-	ProposedBy, DecidedBy, DecisionReason string
-	ProposedAt                            time.Time
-	DecidedAt                             *time.Time
+	ID             string          `json:"id"`
+	TenantID       string          `json:"-"`
+	Key            string          `json:"key"`
+	Subject        string          `json:"subject"`
+	Status         string          `json:"status"`
+	Version        int             `json:"version"`
+	Mandatory      bool            `json:"mandatory"`
+	Body           json.RawMessage `json:"body"`
+	BodyHash       string          `json:"body_hash"`
+	ProposedBy     string          `json:"proposed_by"`
+	DecidedBy      string          `json:"decided_by,omitempty"`
+	DecisionReason string          `json:"decision_reason,omitempty"`
+	ProposedAt     time.Time       `json:"proposed_at"`
+	DecidedAt      *time.Time      `json:"decided_at,omitempty"`
 }
 
 const wfDefCols = `id::text, tenant_id::text, key, subject, status, version, mandatory, body, body_hash, proposed_by,
@@ -127,17 +133,29 @@ type InstanceFacts struct {
 
 // WorkflowInstance is a running or finished instance.
 type WorkflowInstance struct {
-	ID, TenantID, DefinitionID, DefinitionKey string
-	DefinitionVersion                         int
-	SubjectType, SubjectID, Status            string
-	Facts                                     InstanceFacts
-	Route                                     []RouteStepRow
-	CurrentStep                               int
-	InitiatedBy                               string
-	StartedAt, StepStartedAt                  time.Time
-	SLADueAt, ExpiresAt, EscalatedAt, EndedAt *time.Time
-	EndedBy, EndReason, LastError             string
-	EffectFailures, Version                   int
+	ID                string         `json:"id"`
+	TenantID          string         `json:"-"`
+	DefinitionID      string         `json:"definition_id"`
+	DefinitionKey     string         `json:"definition_key"`
+	DefinitionVersion int            `json:"definition_version"`
+	SubjectType       string         `json:"subject_type"`
+	SubjectID         string         `json:"subject_id"`
+	Status            string         `json:"status"`
+	Facts             InstanceFacts  `json:"facts"`
+	Route             []RouteStepRow `json:"route"`
+	CurrentStep       int            `json:"current_step"`
+	InitiatedBy       string         `json:"initiated_by"`
+	StartedAt         time.Time      `json:"started_at"`
+	StepStartedAt     time.Time      `json:"step_started_at"`
+	SLADueAt          *time.Time     `json:"sla_due_at,omitempty"`
+	ExpiresAt         *time.Time     `json:"expires_at,omitempty"`
+	EscalatedAt       *time.Time     `json:"escalated_at,omitempty"`
+	EndedAt           *time.Time     `json:"ended_at,omitempty"`
+	EndedBy           string         `json:"ended_by,omitempty"`
+	EndReason         string         `json:"end_reason,omitempty"`
+	LastError         string         `json:"last_error,omitempty"`
+	EffectFailures    int            `json:"effect_failures"`
+	Version           int            `json:"version"`
 }
 
 // OpenStep returns the step awaiting decisions, if any.
@@ -445,4 +463,26 @@ func QueryWorkflowMetrics(ctx context.Context, tx pgx.Tx, since time.Time) (Work
 		Scan(&m.Started, &m.Active, &m.Completed, &m.Rejected, &m.Expired, &m.Cancelled, &m.Overdue, &m.WithFailures, &m.Escalated,
 			&m.AvgCycleSeconds, &m.P90CycleSeconds, &m.FirstPassRate, &m.ExceptionRate, &m.DecisionsPerItem)
 	return m, err
+}
+
+// DueWorkflowTenants lists tenants with due workflow timers. It runs on the
+// scheduler login (member of serk_scheduler), which can learn tenant ids and
+// nothing else.
+func DueWorkflowTenants(ctx context.Context, q interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}, max int) ([]string, error) {
+	rows, err := q.Query(ctx, `SELECT t::text FROM workflow_due_tenants($1) AS t`, max)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
