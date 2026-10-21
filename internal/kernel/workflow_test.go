@@ -292,7 +292,10 @@ func TestWorkflow_DatabaseRefusesForgedTrail(t *testing.T) {
 	attested := map[string]struct {
 		p    auth.Principal
 		actx string
-	}{"decide a later step": {f.post, "1:APPROVE"}, "preparer approves": {prepApprover, "0:APPROVE"}}
+	}{"decide a later step": {f.post, "1:APPROVE"}, "preparer approves": {prepApprover, "0:APPROVE"},
+		// 0010 binds an effect to its executor's verified decision; with that
+		// evidence present the quorum guard is still what refuses it.
+		"effect before quorum": {f.appr, "0:APPROVE"}}
 	for name, a := range attacks {
 		var err error
 		if as, ok := attested[name]; ok {
@@ -398,7 +401,7 @@ func TestWorkflow_EffectFailureRollsBackAndIsRecorded(t *testing.T) {
 	if _, err := f.svc.ClosePeriod(f.ctx, f.post, per, false); !errors.Is(err, ErrWorkflowRequired) {
 		t.Fatalf("direct re-close: %v", err)
 	}
-	err = f.rawAs(f.post, "period.close", "fiscal_period", per, "", `UPDATE fiscal_periods SET status='CLOSED', closed_by=$2 WHERE id=$1::uuid`, per, f.post.UserID)
+	err = f.rawAs(f.post, "period.close", "fiscal_period", per, "CLOSED", `UPDATE fiscal_periods SET status='CLOSED', closed_by=$2 WHERE id=$1::uuid`, per, f.post.UserID)
 	if err == nil || !strings.Contains(err.Error(), "mandatory approval workflow") {
 		t.Fatalf("raw re-close reusing an old effect: %v", err)
 	}

@@ -102,8 +102,13 @@ func (s *Service) ProposeWorkflowDefinition(ctx context.Context, p auth.Principa
 	var out postgres.WorkflowDefinitionRow
 	err = s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
-		bodyHash := "sha256:" + hex.EncodeToString(sum[:])
-		if err := s.authorize(ctx, tx, p, "workflow.define", "workflow_definition_body", bodyHash, def.Key); err != nil {
+		// The attestation names the SQL digest of exactly the body that will be
+		// stored; the database recomputes it from the inserted row (0010).
+		digest, err := postgres.WorkflowBodyDigest(ctx, tx, canonical)
+		if err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, tx, p, "workflow.define", "workflow_definition_body", digest, def.Key); err != nil {
 			return err
 		}
 		out, err = postgres.InsertWorkflowDefinition(ctx, tx, postgres.WorkflowDefinitionRow{TenantID: p.TenantID, Key: def.Key,

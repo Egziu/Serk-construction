@@ -140,7 +140,9 @@ func TestReverify_RV5_EffectAfterExpiryRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.backdate(t, w.ID, "expires_at")
-	err := f.rawAs(f.appr, "journal.approve", "journal", jid, "",
+	// Genuine decision evidence for the executor (0010 binds effects to it),
+	// so that the expiry guard is what refuses the effect.
+	err := f.rawAs(f.appr, "workflow.decide", "workflow_instance", w.ID, "0:APPROVE",
 		`INSERT INTO workflow_effects(tenant_id,instance_id,step_index,action,subject_type,subject_id,executed_by) VALUES ($1::uuid,$2::uuid,0,'journal.approve','journal',$3::uuid,'u-approver')`, f.tenant, w.ID, jid)
 	if err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("effect after expiry: %v", err)

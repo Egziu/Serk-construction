@@ -53,7 +53,11 @@ func (s *Service) DecideWBSVersion(ctx context.Context, p auth.Principal, versio
 		if err := auth.CheckMakerChecker(p, v.CreatedBy, "WBS version"); err != nil {
 			return err
 		}
-		if err := s.authorize(ctx, tx, p, "wbs.decide", "wbs_version", versionID, ""); err != nil {
+		outcome := "REJECTED"
+		if approve {
+			outcome = "APPROVED"
+		}
+		if err := s.authorize(ctx, tx, p, "wbs.decide", "wbs_version", versionID, outcome); err != nil {
 			return err
 		}
 		if err := postgres.DecideWBSVersion(ctx, tx, v, approve, p.UserID); err != nil {

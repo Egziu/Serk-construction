@@ -1,0 +1,50 @@
+### Independent review probes, run BY THE REVIEWER at HEAD 81ab48b; the shared worktree also contained the then-uncommitted 0009 (session revocation), so migrations 0001-0009 were applied, 2026-10-21
+### Reviewer: independent agent (did not write 0007); probes kept as internal/kernel/attestation_review_test.go
+### command (reviewer): SERK_TEST_ADMIN_DSN=postgres://postgres@/serk_review... go test -count=1 ./internal/kernel -run '...|Review' -v
+=== RUN   TestReview_R1_OptionalDefinitionCannotBypassMandatory
+--- PASS: TestReview_R1_OptionalDefinitionCannotBypassMandatory (0.24s)
+=== RUN   TestReview_R2_ForgedRouteOrFactsRefused
+--- PASS: TestReview_R2_ForgedRouteOrFactsRefused (0.07s)
+=== RUN   TestReview_R3_DirectRetirementRefused
+--- PASS: TestReview_R3_DirectRetirementRefused (0.05s)
+=== RUN   TestReview_R4_ApprovedJournalIsNeverStranded
+--- PASS: TestReview_R4_ApprovedJournalIsNeverStranded (0.18s)
+=== RUN   TestReview_R5_ExpiredStepCannotBeDecided
+--- PASS: TestReview_R5_ExpiredStepCannotBeDecided (0.07s)
+=== RUN   TestReview_R6_SupersededVersionCannotAct
+--- PASS: TestReview_R6_SupersededVersionCannotAct (0.07s)
+=== RUN   TestReview_R7_QuorumMustExcludeMaker
+--- PASS: TestReview_R7_QuorumMustExcludeMaker (0.03s)
+=== RUN   TestReview_R8_GateHoldsDuringVersionSwitch
+--- PASS: TestReview_R8_GateHoldsDuringVersionSwitch (0.47s)
+=== RUN   TestReview_R9_FinishedInstanceIsImmutable
+--- PASS: TestReview_R9_FinishedInstanceIsImmutable (0.07s)
+=== RUN   TestReview_R11_ConsoleLeaksNothing
+--- PASS: TestReview_R11_ConsoleLeaksNothing (0.08s)
+=== RUN   TestReview_Q1_AuthorityColumnsWithoutStatusChange
+    zz_review_test.go:38: GAP CONFIRMED: tenant login rewrites closed_by/closed_at of a CLOSED period
+    zz_review_test.go:40: closed_by now: u-someone-else
+    zz_review_test.go:49: GAP CONFIRMED: closer reopens own close after closed_by was rewritten (SoD bypass)
+    zz_review_test.go:58: GAP CONFIRMED: tenant login inserts a forged fiscal_period_closes record (actor u-cfo, REOPEN)
+    zz_review_test.go:72: GAP CONFIRMED: tenant login rewrites approved_by/approved_at of an APPROVED WBS version
+    zz_review_test.go:74: wbs approved_by now: u-forged-checker
+    zz_review_test.go:81: GAP CONFIRMED: tenant login writes posted_by/posted_at on an APPROVED journal (no status change)
+--- FAIL: TestReview_Q1_AuthorityColumnsWithoutStatusChange (0.07s)
+=== RUN   TestReview_Q2_InTransactionBinding
+    zz_review_test.go:92: GAP CONFIRMED: journal.approve evidence still valid after lines were added in the same tx
+    zz_review_test.go:105: journal status APPROVED, lines 5
+    zz_review_test.go:123: GAP CONFIRMED: WBS v1 SUPERSEDED while successor v2 is REJECTED (same wbs.decide evidence)
+    zz_review_test.go:134: approved WBS versions for project: 0
+    zz_review_test.go:142: GAP CONFIRMED: FX policy v1 RETIRED while successor v2 is REJECTED (same fx.policy.decide evidence)
+    zz_review_test.go:153: approved TRANSACTION policies for entity: 0
+    zz_review_test.go:159: GAP CONFIRMED: one workflow.define evidence inserts two definitions whose body does not hash to body_hash
+--- FAIL: TestReview_Q2_InTransactionBinding (0.08s)
+=== RUN   TestReview_Q3_CanonicalAmbiguity
+    zz_review_test.go:195: GAP CONFIRMED: re-parsed attestation accepted with the original signature; evidence row: "ctx='\x1fjournal.approve' perms={0} auth_time=NULL"
+--- FAIL: TestReview_Q3_CanonicalAmbiguity (0.05s)
+=== RUN   TestReview_Q5_ExpiryUsesTransactionStart
+    zz_review_test.go:221: GAP CONFIRMED: attestation accepted after its exp (wall clock) because now() is the tx start
+--- FAIL: TestReview_Q5_ExpiryUsesTransactionStart (5.05s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	6.571s
+FAIL

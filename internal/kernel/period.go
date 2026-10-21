@@ -71,7 +71,11 @@ func (s *Service) closePeriodTx(ctx context.Context, tx pgx.Tx, p auth.Principal
 		} else if broken != 0 {
 			return fmt.Errorf("%w: audit chain broken at %d", ErrClosePrerequisite, broken)
 		}
-		if err := s.authorize(ctx, tx, p, "period.close", "fiscal_period", periodID, ""); err != nil {
+		target := "CLOSED"
+		if lock {
+			target = "LOCKED"
+		}
+		if err := s.authorize(ctx, tx, p, "period.close", "fiscal_period", periodID, target); err != nil {
 			return err
 		}
 		if err := postgres.CloseFiscalPeriod(ctx, tx, periodID, p.UserID, lock); err != nil {

@@ -104,8 +104,13 @@ func (s Signer) Sign(c Claims) (Attestation, error) {
 	if len(s.Master) < 32 {
 		return Attestation{}, fmt.Errorf("%w: signing secret must be at least 32 bytes", ErrInvalid)
 	}
-	if strings.ContainsRune(c.Actor+c.Action+c.SubjectID+c.SubjectHash+c.Context+strings.Join(c.Perms, ""), '\x1f') {
+	if strings.ContainsRune(c.Tenant+c.Actor+c.Action+c.SubjectType+c.SubjectID+c.SubjectHash+c.Context+s.KeyID+strings.Join(c.Perms, ""), '\x1f') {
 		return Attestation{}, fmt.Errorf("%w: separator in a field", ErrInvalid)
+	}
+	for _, p := range c.Perms {
+		if p == "" || strings.ContainsRune(p, ',') {
+			return Attestation{}, fmt.Errorf("%w: empty permission or comma in a permission", ErrInvalid)
+		}
 	}
 	now := time.Now
 	if s.Now != nil {

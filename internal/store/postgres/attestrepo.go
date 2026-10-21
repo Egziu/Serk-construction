@@ -36,3 +36,12 @@ func InstallApprovalKey(ctx context.Context, admin *pgx.Conn, tenantID, keyID st
 	_, err := admin.Exec(ctx, `SELECT approval_key_install($1::uuid, $2, $3)`, tenantID, keyID, key)
 	return err
 }
+
+// WorkflowBodyDigest is the database's digest of a definition body as it will
+// be stored (jsonb normalisation), the subject of a workflow.define
+// attestation.
+func WorkflowBodyDigest(ctx context.Context, tx pgx.Tx, body []byte) (string, error) {
+	var d string
+	err := tx.QueryRow(ctx, `SELECT workflow_body_digest($1::jsonb)`, string(body)).Scan(&d)
+	return d, err
+}

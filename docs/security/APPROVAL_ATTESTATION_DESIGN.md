@@ -101,8 +101,20 @@ The deeper guards from 0002 and 0006 still run after these triggers: segregation
   - alerting on `ALTER TABLE … DISABLE TRIGGER` through pgaudit or event triggers;
   - a dedicated non-superuser migrator.
   - Enterprise or high-risk tenants should be evaluated for a dedicated database.
-- **R-CLOCK (Low).** `now()` is the transaction start time, so a long transaction can accept an attestation up to its own duration past `exp`. Statement timeouts bound this.
+- **R-CLOCK: closed by 0010.** Expiry is checked against `clock_timestamp()` both at registration and at use.
 - **R-POLICY-VERSION (Low).** For workflow-governed subjects, the attestation is bound to the definition through `workflow_instance` (definition id) and through `body_hash` for definitions. Ledger approvals carry no explicit "policy version" claim, because the policy is the code at that commit.
+
+## 3a. Hardening after independent review (0010)
+
+- **Single use.** Each piece of evidence authorises exactly one transition. `approval_use()` records the use in `approval_consumptions`, whose primary key is the nonce. At the moment of use it also re-checks the live subject hash and the expiry.
+- **Authority columns.** Columns such as `approved_by`, `posted_by` and `closed_by` change only in the transition that sets them. Their timestamps are database time.
+- **Decision outcome.** The outcome is part of `ctx` for WBS, FX policy and period close/lock. Supersede and retire also require an APPROVED successor at commit, enforced by a deferred constraint trigger.
+- **Definition bodies.** A definition body is bound by an SQL digest of exactly the stored `jsonb`.
+- **Close records, history and effects.**
+  - Close records are written only by a definer function, called from the period transition and tied to the consumed attestation.
+  - History entries that narrate authority need the actor's evidence in the transaction.
+  - A workflow effect needs its executor's verified APPROVE decision on that instance and step.
+- **Strict format.** The attestation JSON must have the exact key set and exact types.
 
 ## 4. Key rotation
 

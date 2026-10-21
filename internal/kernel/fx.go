@@ -108,7 +108,11 @@ func (s *Service) DecideFXPolicy(ctx context.Context, p auth.Principal, policyID
 		if err := auth.CheckMakerChecker(p, pol.CreatedBy, "FX policy"); err != nil {
 			return err
 		}
-		if err := s.authorize(ctx, tx, p, "fx.policy.decide", "fx_policy", policyID, ""); err != nil {
+		outcome := "REJECTED"
+		if approve {
+			outcome = "APPROVED"
+		}
+		if err := s.authorize(ctx, tx, p, "fx.policy.decide", "fx_policy", policyID, outcome); err != nil {
 			return err
 		}
 		if err := postgres.DecideFXPolicy(ctx, tx, pol, approve, p.UserID); err != nil {

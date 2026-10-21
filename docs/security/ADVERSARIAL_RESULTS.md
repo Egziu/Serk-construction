@@ -80,6 +80,24 @@ Each mutant was applied to the migration, the suite was run, and the original wa
   - real IdP-issued MFA (GATEA-07 BLOCKED).
 - **Concurrency of attestation use** (two transactions racing the same nonce) relies on the primary-key uniqueness. It has no dedicated race test yet.
 
-## 6. Independent review
+## 6. Independent review (executed)
 
-Pending at the time of writing. The result will be appended here verbatim, including findings that were not fixed.
+An independent review agent reviewed 0007/0008 at HEAD 81ab48b with read-only access to the repository and a disposable database. A first agent stopped before running anything, and its output was discarded, not counted.
+
+- Report: `docs/security/INDEPENDENT_REVIEW_2026-10-21.md` (verbatim).
+- Before: `evidence/independent-review-before.txt` has **11 "GAP CONFIRMED" lines**. These are real failures of the reviewer's tests, which assert the secure behaviour.
+- After migration 0010: `evidence/independent-review-after.txt` has **0** such lines. All probes and every earlier attestation test PASS.
+
+| Finding | Sev. | Reproduced by | Fix (0010) | Mutation check |
+|---|---|---|---|---|
+| H1: `closed_by`/`closed_at` rewritable on a CLOSED period, so the closer could reopen their own close (SoD bypass) | High | Q1 probe | `authority_frozen`: authority columns change only in the transition that sets them | M8 (freeze no-op): Q1 fails |
+| H2: WBS `approved_by`/`approved_at` rewritable; `posted_by` writable on an APPROVED journal | High | Q1 probe | same | M8 |
+| M1: decision outcome not bound (a REJECT superseded/retired the predecessor; close evidence allowed LOCK) | Medium | Q2 probe | `ctx` = target status, checked; supersede/retire need a successor APPROVE attestation **and** a deferred commit-time check | M11 (deferred check removed): SupersedeNeedsApprovedSuccessorAtCommit fails |
+| M2: definition body not bound in SQL; one evidence inserted two definitions | Medium | Q2 probe | `workflow_body_digest(body)` computed by SQL is the attested subject; `ctx` = key; single use | consumption mutant |
+| M3: tenant-insertable `fiscal_period_closes`/`workflow_history`; effects without evidence | Medium | Q1 probe + HardeningControls | close records only via a definer function tied to consumed evidence (INSERT revoked); authority history kinds and effects need the actor's verified decision in the transaction | HardeningControls |
+| M4: evidence reusable within the transaction; content checked only at registration | Medium | Q2 probe (lines added after authorize) | `approval_use()`: single use (`approval_consumptions`); live subject hash and expiry re-checked at use | M10 (no recheck): Q2 fails; consumption-write removed: 4 tests fail. M9 (unconsumed filter removed) **survives** because the consumption primary key still refuses reuse (equivalent mutant) |
+| L1: canonical message re-parsable (U+001F in field, dropped field, JSON types) | Low | Q3 probe | exact key set and JSON types; no U+001F; no comma in perms; the signer refuses them too | HardeningControls (strict shape) |
+| L3: expiry vs transaction start | Low | Q5 probe | `clock_timestamp()` at registration and use | Q5 |
+| L4: caller-supplied approval timestamps | Low | HardeningControls | DB time set in the trigger | — |
+| L2: subject-hash format and coverage (`reopen_reason`, cost-code `valid_to`, …) | Low | not exploitable now (the columns are immutable or append-only) | **open**: canonical `jsonb` hash of all business columns planned | — |
+| Info: non-constant-time HMAC compare in SQL; 224 pgcrypto/btree_gist functions executable | Info | — | **accepted**: timing is not observable through SQL at useful resolution; the extension functions are side-effect free | — |
