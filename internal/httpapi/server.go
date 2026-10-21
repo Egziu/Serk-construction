@@ -33,7 +33,7 @@ const (
 type Config struct {
 	Verifier      TokenVerifier
 	Kernel        *kernel.Service
-	Store         *postgres.Store
+	Store         interface{ Ping(context.Context) error }
 	Logger        *slog.Logger
 	RatePerMinute int // per-principal command budget; 0 = default 300
 }

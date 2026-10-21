@@ -3,7 +3,6 @@ package kernel
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -12,21 +11,22 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
+	"github.com/serk-group/serk-construction/internal/testdb"
 	"github.com/serk-group/serk-construction/pkg/auth"
 	"github.com/serk-group/serk-construction/pkg/fx"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 	"github.com/serk-group/serk-construction/pkg/money"
 )
 
-// Integration tests need a real PostgreSQL. Set:
-//   SERK_TEST_ADMIN_DSN  — schema owner (runs migrations and bootstrap)
-//   SERK_TEST_APP_DSN    — application role (RLS enforced)
-// Tests are skipped when the admin DSN is absent.
+// Integration tests need a real PostgreSQL: SERK_TEST_ADMIN_DSN (schema owner
+// with CREATEROLE). Each tenant is provisioned with its own database role and
+// the kernel reaches it through the production Router (SC-04).
 
 type fixture struct {
 	ctx      context.Context
 	svc      *Service
-	app      *postgres.Store
+	app      *postgres.Router
+	db       *testdb.Env
 	admin    *pgx.Conn
 	tenant   string
 	tenant2  string
@@ -45,39 +45,19 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	adminDSN := os.Getenv("SERK_TEST_ADMIN_DSN")
-	appDSN := os.Getenv("SERK_TEST_APP_DSN")
-	if adminDSN == "" || appDSN == "" {
-		t.Skip("SERK_TEST_ADMIN_DSN / SERK_TEST_APP_DSN not set; skipping PostgreSQL integration tests")
-	}
-	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, adminDSN)
-	if err != nil {
-		t.Fatalf("admin connect: %v", err)
-	}
-	t.Cleanup(func() { _ = admin.Close(ctx) })
-	if _, err := postgres.Migrate(ctx, admin); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	app, err := postgres.Open(ctx, appDSN)
-	if err != nil {
-		t.Fatalf("app connect: %v", err)
-	}
-	t.Cleanup(app.Close)
-
-	f := &fixture{ctx: ctx, app: app, admin: admin, accounts: map[string]string{}}
+	env := testdb.Setup(t)
+	ctx, admin, app := env.Ctx, env.Admin, env.Router
+	f := &fixture{ctx: ctx, app: app, admin: admin, db: env, accounts: map[string]string{}}
 	f.svc = New(app, auth.NewAuthorizer(nil, true))
 	f.tenant, f.tenant2 = uuid.NewString(), uuid.NewString()
 
-	// Bootstrap both tenants through the admin connection using the same
-	// tenant-scoped transaction discipline as the application.
-	adminStore := adminStoreFor(t, adminDSN)
+	// Bootstrap both tenants as the operator: provision the tenant and its
+	// database role, then create reference data.
+	adminStore := env.AdminStore
 	for _, tid := range []string{f.tenant, f.tenant2} {
 		tid := tid
+		env.ProvisionTenant(t, tid, "tenant-"+tid[:8])
 		err := adminStore.WithTenant(ctx, tid, func(ctx context.Context, tx pgx.Tx) error {
-			if err := postgres.CreateTenant(ctx, tx, tid, "tenant-"+tid[:8]); err != nil {
-				return err
-			}
 			le, err := postgres.CreateLegalEntity(ctx, tx, tid, "SERK ETHIOPIA PLC", "ET", "ETB", "USD")
 			if err != nil {
 				return err
@@ -170,16 +150,6 @@ func (f *fixture) snapshot(t *testing.T, base, quote money.Currency, rate string
 func fxLine(account string, side ledger.Side, usd, etb, snap string) ledger.Line {
 	m := money.MustNew(usd, "USD")
 	return ledger.Line{AccountID: account, Side: side, Amount: money.MustNew(etb, "ETB"), TxnAmount: &m, FXSnapshotID: snap}
-}
-
-func adminStoreFor(t *testing.T, dsn string) *postgres.Store {
-	t.Helper()
-	s, err := postgres.Open(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("admin store: %v", err)
-	}
-	t.Cleanup(s.Close)
-	return s
 }
 
 func (f *fixture) journal(key string, lines ...ledger.Line) ledger.Journal {

@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/serk-group/serk-construction/internal/kernel"
 	"github.com/serk-group/serk-construction/internal/store/postgres"
+	"github.com/serk-group/serk-construction/internal/testdb"
 	"github.com/serk-group/serk-construction/pkg/auth"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 )
@@ -32,35 +32,11 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	adminDSN, appDSN := os.Getenv("SERK_TEST_ADMIN_DSN"), os.Getenv("SERK_TEST_APP_DSN")
-	if adminDSN == "" || appDSN == "" {
-		t.Skip("integration DSNs not set")
-	}
-	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, adminDSN)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = admin.Close(ctx) })
-	if _, err := postgres.Migrate(ctx, admin); err != nil {
-		t.Fatal(err)
-	}
-	adminStore, err := postgres.Open(ctx, adminDSN)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(adminStore.Close)
-	app, err := postgres.Open(ctx, appDSN)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(app.Close)
-
+	db := testdb.Setup(t)
+	ctx := db.Ctx
 	e := &env{t: t, tenant: uuid.NewString(), accounts: map[string]string{}}
-	err = adminStore.WithTenant(ctx, e.tenant, func(ctx context.Context, tx pgx.Tx) error {
-		if err := postgres.CreateTenant(ctx, tx, e.tenant, "api-test"); err != nil {
-			return err
-		}
+	db.ProvisionTenant(t, e.tenant, "api-test")
+	err := db.AdminStore.WithTenant(ctx, e.tenant, func(ctx context.Context, tx pgx.Tx) error {
 		le, err := postgres.CreateLegalEntity(ctx, tx, e.tenant, "SERK ET", "ET", "ETB", "")
 		if err != nil {
 			return err
@@ -81,8 +57,8 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := kernel.New(app, auth.NewAuthorizer(nil, true))
-	h := New(Config{Verifier: testVerifier, Kernel: svc, Store: app, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RatePerMinute: 50})
+	svc := kernel.New(db.Router, auth.NewAuthorizer(nil, true))
+	h := New(Config{Verifier: testVerifier, Kernel: svc, Store: db.Router, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RatePerMinute: 50})
 	e.srv = httptest.NewServer(h)
 	t.Cleanup(e.srv.Close)
 	return e

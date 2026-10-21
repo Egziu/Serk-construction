@@ -22,19 +22,22 @@ var (
 	ErrTenantContext       = errors.New("store: tenant context missing or invalid")
 )
 
-// Store wraps a connection pool for the application role.
+// Store wraps one connection pool authenticated as one database role. In
+// production a Router holds one Store per tenant (each as that tenant's
+// role); a Store opened directly is for the operator/bootstrap path.
 type Store struct {
 	pool *pgxpool.Pool
 }
 
-// Open connects to PostgreSQL. The DSN should authenticate as the application
-// role (serk_app or a login role that is a member of it), never a superuser.
-func Open(ctx context.Context, dsn string) (*Store, error) {
+// Open connects to PostgreSQL with a 16-connection pool.
+func Open(ctx context.Context, dsn string) (*Store, error) { return openStore(ctx, dsn, 16) }
+
+func openStore(ctx context.Context, dsn string, maxConns int32) (*Store, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
-	cfg.MaxConns = 16
+	cfg.MaxConns = maxConns
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.HealthCheckPeriod = 30 * time.Second
 	// Every session starts with no tenant; the only way to see rows is an
@@ -60,9 +63,23 @@ func (s *Store) Close() { s.pool.Close() }
 // Ping checks liveness.
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
-// WithTenant runs fn inside a transaction bound to a tenant. The tenant id is
-// set with SET LOCAL semantics so it cannot leak to another transaction on the
-// pooled connection, and RLS policies evaluate against it.
+// bindTenant marks the transaction with the tenant (SET LOCAL, for
+// diagnostics only — authorization no longer reads it) and verifies the
+// connection's database identity. A mapped role serving another tenant is a
+// routing defect and fails closed. An unmapped session (operator/superuser
+// bootstrap) is allowed; RLS shows an unmapped non-superuser nothing.
+func bindTenant(ctx context.Context, tx pgx.Tx, tenantID string) error {
+	var dbTenant *string
+	if err := tx.QueryRow(ctx, `SELECT set_config('app.tenant_id', $1, true), current_tenant()::text`, tenantID).Scan(new(string), &dbTenant); err != nil {
+		return err
+	}
+	if dbTenant != nil && *dbTenant != tenantID {
+		return fmt.Errorf("%w: connection belongs to a different tenant", ErrTenantContext)
+	}
+	return nil
+}
+
+// WithTenant runs fn inside a transaction bound to a tenant.
 func (s *Store) WithTenant(ctx context.Context, tenantID string, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	if _, err := uuid.Parse(tenantID); err != nil {
 		return fmt.Errorf("%w: %q", ErrTenantContext, tenantID)
@@ -72,7 +89,7 @@ func (s *Store) WithTenant(ctx context.Context, tenantID string, fn func(ctx con
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after Commit
-	if _, err := tx.Exec(ctx, `SELECT set_config('app.tenant_id', $1, true)`, tenantID); err != nil {
+	if err := bindTenant(ctx, tx, tenantID); err != nil {
 		return err
 	}
 	if err := fn(ctx, tx); err != nil {
@@ -95,7 +112,7 @@ func (s *Store) BeginTenant(ctx context.Context, tenantID string) (pgx.Tx, error
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `SELECT set_config('app.tenant_id', $1, true)`, tenantID); err != nil {
+	if err := bindTenant(ctx, tx, tenantID); err != nil {
 		_ = tx.Rollback(ctx)
 		return nil, err
 	}

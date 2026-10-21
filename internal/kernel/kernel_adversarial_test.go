@@ -31,8 +31,6 @@ func TestJournalBoundToLegalEntity(t *testing.T) {
 	}
 	// A second entity (KES) with an inactive account and a USD-only account.
 	var le2, inactive, usdOnly, kesAcct string
-	adminStore := adminStoreFor(t, "postgres://postgres@/serk_construction_test?host=/tmp&port=5433")
-	_ = adminStore
 	err := f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
 		if le2, err = postgres.CreateLegalEntity(ctx, tx, f.tenant, "SERK KENYA LTD", "KE", "KES", ""); err != nil {

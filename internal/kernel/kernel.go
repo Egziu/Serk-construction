@@ -20,13 +20,13 @@ import (
 
 // Service executes kernel commands.
 type Service struct {
-	store *postgres.Store
+	store postgres.TenantDB
 	authz *auth.Authorizer
 	now   func() time.Time
 }
 
 // New builds a Service.
-func New(store *postgres.Store, authz *auth.Authorizer) *Service {
+func New(store postgres.TenantDB, authz *auth.Authorizer) *Service {
 	return &Service{store: store, authz: authz, now: func() time.Time { return time.Now().UTC() }}
 }
 
