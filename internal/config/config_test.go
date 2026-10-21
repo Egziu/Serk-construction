@@ -22,16 +22,18 @@ func src(env map[string]string, files map[string]string) Source {
 const (
 	goodSecret  = "3f9a1c7e5b2d8f4a6c0e9b1d7f3a5c8e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a"
 	goodSecret2 = "a8c2e4f6b1d3f5a7c9e0b2d4f6a8c1e3b5d7f9a0c2e4b6d8f1a3c5e7b9d2f4a6"
+	goodSecret3 = "71c4e9a2f6b08d3e5a7c1f9b2d4e6a8c0f3b5d7e9a1c4f6b8d0e2a5c7f9b1d3e"
 )
 
 func prodEnv() map[string]string {
 	return map[string]string{
-		"SERK_DB_BASE_DSN":      "postgres://db.internal:5432/serk?sslmode=verify-full",
-		"SERK_TENANT_DB_SECRET": goodSecret,
-		"SERK_HEALTH_DSN":       "postgres://serk_health:" + goodSecret2 + "@db.internal:5432/serk?sslmode=verify-full",
-		"SERK_OIDC_ISSUER":      "https://id.serk.example/realms/serk",
-		"SERK_OIDC_JWKS_URL":    "https://id.serk.example/realms/serk/protocol/openid-connect/certs",
-		"SERK_OIDC_AUDIENCE":    "serk-construction",
+		"SERK_DB_BASE_DSN":          "postgres://db.internal:5432/serk?sslmode=verify-full",
+		"SERK_TENANT_DB_SECRET":     goodSecret,
+		"SERK_APPROVAL_SIGNING_KEY": goodSecret3,
+		"SERK_HEALTH_DSN":           "postgres://serk_health:" + goodSecret2 + "@db.internal:5432/serk?sslmode=verify-full",
+		"SERK_OIDC_ISSUER":          "https://id.serk.example/realms/serk",
+		"SERK_OIDC_JWKS_URL":        "https://id.serk.example/realms/serk/protocol/openid-connect/certs",
+		"SERK_OIDC_AUDIENCE":        "serk-construction",
 	}
 }
 
@@ -76,10 +78,12 @@ func TestProductionRules(t *testing.T) {
 		return err
 	}
 	cases := map[string]func(m map[string]string){
-		"base DSN with credentials": func(m map[string]string) { m["SERK_DB_BASE_DSN"] = "postgres://u:p@db/serk?sslmode=verify-full" },
-		"sslmode=require":           func(m map[string]string) { m["SERK_DB_BASE_DSN"] = "postgres://db/serk?sslmode=require" },
-		"short tenant secret":       func(m map[string]string) { m["SERK_TENANT_DB_SECRET"] = "abc" },
-		"low-variety secret":        func(m map[string]string) { m["SERK_TENANT_DB_SECRET"] = strings.Repeat("ab", 20) },
+		"base DSN with credentials":    func(m map[string]string) { m["SERK_DB_BASE_DSN"] = "postgres://u:p@db/serk?sslmode=verify-full" },
+		"sslmode=require":              func(m map[string]string) { m["SERK_DB_BASE_DSN"] = "postgres://db/serk?sslmode=require" },
+		"short tenant secret":          func(m map[string]string) { m["SERK_TENANT_DB_SECRET"] = "abc" },
+		"low-variety secret":           func(m map[string]string) { m["SERK_TENANT_DB_SECRET"] = strings.Repeat("ab", 20) },
+		"missing approval key":         func(m map[string]string) { delete(m, "SERK_APPROVAL_SIGNING_KEY") },
+		"approval key = tenant secret": func(m map[string]string) { m["SERK_APPROVAL_SIGNING_KEY"] = m["SERK_TENANT_DB_SECRET"] },
 		"HS256 in production": func(m map[string]string) {
 			delete(m, "SERK_OIDC_ISSUER")
 			delete(m, "SERK_OIDC_JWKS_URL")
@@ -112,7 +116,7 @@ func TestProductionRules(t *testing.T) {
 func TestDevelopmentRelaxations(t *testing.T) {
 	_, err := Load(src(map[string]string{
 		"SERK_ENV": "development", "SERK_DB_BASE_DSN": "postgres://localhost:5432/serk?sslmode=disable",
-		"SERK_TENANT_DB_SECRET": goodSecret, "SERK_TOKEN_SECRET": goodSecret2,
+		"SERK_TENANT_DB_SECRET": goodSecret, "SERK_TOKEN_SECRET": goodSecret2, "SERK_APPROVAL_SIGNING_KEY": goodSecret3,
 		"SERK_HEALTH_DSN": "postgres://serk_health:x@localhost/serk?sslmode=disable",
 	}, nil))
 	if err != nil {

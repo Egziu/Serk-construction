@@ -134,7 +134,7 @@ func TestSC02_DatabaseRejectsIneligibleFXAndRechecksAtPost(t *testing.T) {
 	if err := f.svc.ApproveJournal(f.ctx, f.appr, res.JournalID); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.rawExec(`UPDATE fx_sources SET status='RETIRED' WHERE source_id='NBE'`); err != nil {
+	if err := f.rawAs(f.appr, "fx.source.retire", "fx_source", "NBE", "", `UPDATE fx_sources SET status='RETIRED' WHERE source_id='NBE'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.svc.PostJournal(f.ctx, f.post, res.JournalID); !errors.Is(err, postgres.ErrInvariant) {
@@ -206,7 +206,8 @@ func TestSC03_FXMakerChecker(t *testing.T) {
 	if _, err := f.svc.ApproveFXSnapshot(f.ctx, f.cfo, jump, ""); !errors.Is(err, ErrReasonRequired) {
 		t.Fatalf("exception approved without reason: %v", err)
 	}
-	if err := f.rawExec(`UPDATE fx_snapshots SET approval_status='APPROVED', approved_by='u-cfo', decided_at=now() WHERE snapshot_id=$1::uuid`, jump); !errors.Is(err, postgres.ErrInvariant) {
+	if err := f.rawAs(f.cfo, "fx.snapshot.approve", "fx_snapshot", jump, "",
+		`UPDATE fx_snapshots SET approval_status='APPROVED', approved_by='u-cfo', decided_at=now() WHERE snapshot_id=$1::uuid`, jump); !errors.Is(err, postgres.ErrInvariant) {
 		t.Fatalf("raw out-of-tolerance approval without exception flags accepted: %v", err)
 	}
 	res, err := f.svc.ApproveFXSnapshot(f.ctx, f.cfo, jump, "NBE devaluation notice 2026/10")

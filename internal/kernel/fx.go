@@ -57,6 +57,9 @@ func (s *Service) ApproveFXSource(ctx context.Context, p auth.Principal, sourceI
 		if err := auth.CheckMakerChecker(p, src.CreatedBy, "FX source"); err != nil {
 			return err
 		}
+		if err := s.authorize(ctx, tx, p, "fx.source.approve", "fx_source", sourceID, ""); err != nil {
+			return err
+		}
 		if err := postgres.SetFXSourceStatus(ctx, tx, sourceID, "PENDING", "APPROVED", p.UserID); err != nil {
 			return err
 		}
@@ -103,6 +106,9 @@ func (s *Service) DecideFXPolicy(ctx context.Context, p auth.Principal, policyID
 			return err
 		}
 		if err := auth.CheckMakerChecker(p, pol.CreatedBy, "FX policy"); err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, tx, p, "fx.policy.decide", "fx_policy", policyID, ""); err != nil {
 			return err
 		}
 		if err := postgres.DecideFXPolicy(ctx, tx, pol, approve, p.UserID); err != nil {
@@ -206,6 +212,9 @@ func (s *Service) approveFXSnapshotTx(ctx context.Context, tx pgx.Tx, p auth.Pri
 				res.VarianceException = true
 			}
 		}
+		if err := s.authorize(ctx, tx, p, "fx.snapshot.approve", "fx_snapshot", id, ""); err != nil {
+			return err
+		}
 		if err := postgres.DecideFXSnapshot(ctx, tx, id, postgres.FXDecision{From: fx.StatusPending, To: fx.StatusApproved, By: p.UserID,
 			Reason: reason, VarianceException: res.VarianceException, ApproverMFA: res.VarianceException && p.MFA}); err != nil {
 			return err
@@ -261,6 +270,13 @@ func (s *Service) decideNegativeTx(ctx context.Context, tx pgx.Tx, p auth.Princi
 		}
 		if snap.ApprovalStatus != from {
 			return fmt.Errorf("%w: snapshot is %s", fx.ErrSnapshotState, snap.ApprovalStatus)
+		}
+		act := "fx.snapshot.reject"
+		if to == fx.StatusDisputed {
+			act = "fx.snapshot.withdraw"
+		}
+		if err := s.authorize(ctx, tx, p, act, "fx_snapshot", id, ""); err != nil {
+			return err
 		}
 		if err := postgres.DecideFXSnapshot(ctx, tx, id, postgres.FXDecision{From: from, To: to, By: p.UserID, Reason: reason}); err != nil {
 			return err

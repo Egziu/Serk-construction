@@ -35,6 +35,7 @@ type Config struct {
 
 	DBBaseDSN      string            // postgres URL without user info
 	TenantDBSecret []byte            // derives per-tenant role passwords
+	ApprovalSecret []byte            // signs approval attestations (GATEA-APPROVAL-01); distinct from TenantDBSecret
 	HealthDSN      string            // privilege-less role for readiness
 	DedicatedDSNs  map[string]string // tenant -> DSN (DEDICATED_DB tier)
 
@@ -122,6 +123,9 @@ func Load(src Source) (Config, error) {
 	if c.TenantDBSecret, err = src.secret("SERK_TENANT_DB_SECRET"); err != nil {
 		return Config{}, err
 	}
+	if c.ApprovalSecret, err = src.secret("SERK_APPROVAL_SIGNING_KEY"); err != nil {
+		return Config{}, err
+	}
 	if c.HS256Secret, err = src.secret("SERK_TOKEN_SECRET"); err != nil {
 		return Config{}, err
 	}
@@ -193,6 +197,11 @@ func (c Config) Validate() error {
 	}
 	if err := checkSecret(c.TenantDBSecret, prod); err != "" {
 		bad("SERK_TENANT_DB_SECRET %s", err)
+	}
+	if err := checkSecret(c.ApprovalSecret, prod); err != "" {
+		bad("SERK_APPROVAL_SIGNING_KEY %s", err)
+	} else if string(c.ApprovalSecret) == string(c.TenantDBSecret) {
+		bad("SERK_APPROVAL_SIGNING_KEY must differ from SERK_TENANT_DB_SECRET")
 	}
 	if c.HealthDSN == "" {
 		bad("SERK_HEALTH_DSN is required (a login role with no table privileges)")

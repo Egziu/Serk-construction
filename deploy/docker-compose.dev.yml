@@ -30,6 +30,7 @@ services:
       SERK_HEALTH_DSN: postgres://serk_health:dev-only-health-password@db:5432/serk_construction?sslmode=disable
       SERK_TENANT_DB_SECRET: dev-only-tenant-db-secret-0123456789abcdefABCDEF
       SERK_TOKEN_SECRET: dev-only-hs256-token-secret-0123456789abcdefABCDEF
+      SERK_APPROVAL_SIGNING_KEY: dev-only-approval-signing-key-0123456789abcdefABCDEF
       SERK_SCHEDULER_DSN: postgres://serk_timer:dev-only-timer-password@db:5432/serk_construction?sslmode=disable
       SERK_LISTEN: ":8080"
     ports: ["127.0.0.1:8080:8080"]

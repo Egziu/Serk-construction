@@ -102,6 +102,10 @@ func (s *Service) ProposeWorkflowDefinition(ctx context.Context, p auth.Principa
 	var out postgres.WorkflowDefinitionRow
 	err = s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
+		bodyHash := "sha256:" + hex.EncodeToString(sum[:])
+		if err := s.authorize(ctx, tx, p, "workflow.define", "workflow_definition_body", bodyHash, def.Key); err != nil {
+			return err
+		}
 		out, err = postgres.InsertWorkflowDefinition(ctx, tx, postgres.WorkflowDefinitionRow{TenantID: p.TenantID, Key: def.Key,
 			Subject: def.Subject, Mandatory: def.Mandatory, Body: canonical, BodyHash: "sha256:" + hex.EncodeToString(sum[:]), ProposedBy: p.UserID})
 		if err != nil {
@@ -146,6 +150,9 @@ func (s *Service) DecideWorkflowDefinition(ctx context.Context, p auth.Principal
 		status, ev := "REJECTED", "workflow.definition.rejected"
 		if publish {
 			status, ev = "PUBLISHED", "workflow.definition.published"
+		}
+		if err := s.authorize(ctx, tx, p, "workflow.decide_definition", "workflow_definition", id, status); err != nil {
+			return err
 		}
 		if err := postgres.DecideWorkflowDefinition(ctx, tx, id, status, p.UserID, reason); err != nil {
 			return err
@@ -388,6 +395,9 @@ func (s *Service) StartWorkflow(ctx context.Context, p auth.Principal, key, subj
 		if err != nil {
 			return err
 		}
+		if err := s.authorize(ctx, tx, p, "workflow.start", def.Subject, subjectID, d.ID); err != nil {
+			return err
+		}
 		out, err = postgres.InsertWorkflowInstance(ctx, tx, postgres.WorkflowInstance{TenantID: p.TenantID, DefinitionID: d.ID,
 			SubjectType: def.Subject, SubjectID: subjectID, Facts: sf.facts, Route: route, InitiatedBy: p.UserID})
 		if err != nil {
@@ -576,6 +586,9 @@ func (s *Service) DecideWorkflow(ctx context.Context, p auth.Principal, instance
 		decision := "REJECT"
 		if approve {
 			decision = "APPROVE"
+		}
+		if err := s.authorize(ctx, tx, p, "workflow.decide", "workflow_instance", w.ID, fmt.Sprintf("%d:%s", w.CurrentStep, decision)); err != nil {
+			return err
 		}
 		if err := postgres.InsertWorkflowDecision(ctx, tx, p.TenantID, w.ID, postgres.WorkflowDecision{StepIndex: w.CurrentStep, StepID: step.ID,
 			DecidedBy: p.UserID, Decision: decision, Reason: reason, MFA: stepUp == nil}); err != nil {
@@ -773,6 +786,9 @@ func (s *Service) CancelWorkflow(ctx context.Context, p auth.Principal, instance
 		}
 		if w.Status != "ACTIVE" {
 			return fmt.Errorf("%w: instance is %s", ErrWorkflowState, w.Status)
+		}
+		if err := s.authorize(ctx, tx, p, "workflow.cancel", "workflow_instance", w.ID, ""); err != nil {
+			return err
 		}
 		if err := postgres.EndWorkflow(ctx, tx, w, "CANCELLED", p.UserID, reason); err != nil {
 			return err

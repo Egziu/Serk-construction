@@ -52,7 +52,8 @@ func TestReverify_RV1_ResumeKeepsWholeQuorumExcluded(t *testing.T) {
 	if _, err := f.svc.DecideWorkflow(f.ctx, dual, w2.ID, true, ""); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("co-approver posted after resume: %v", err)
 	}
-	err = f.rawExec(`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'post','u-dual','APPROVE')`, f.tenant, w2.ID)
+	err = f.rawAs(dual, "workflow.decide", "workflow_instance", w2.ID, "0:APPROVE",
+		`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'post','u-dual','APPROVE')`, f.tenant, w2.ID)
 	if err == nil || !strings.Contains(err.Error(), "segregation of duties") {
 		t.Fatalf("database accepted the co-approver after resume: %v", err)
 	}
@@ -134,11 +135,13 @@ func TestReverify_RV5_EffectAfterExpiryRefused(t *testing.T) {
 	f.publish(t, journalPostingDef)
 	jid := f.draftJournal(t, f.balanced(key("rv5")))
 	w, _ := f.svc.StartWorkflow(f.ctx, f.prep, "journal.posting", jid)
-	if err := f.rawExec(`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'review','u-approver','APPROVE')`, f.tenant, w.ID); err != nil {
+	if err := f.rawAs(f.appr, "workflow.decide", "workflow_instance", w.ID, "0:APPROVE",
+		`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'review','u-approver','APPROVE')`, f.tenant, w.ID); err != nil {
 		t.Fatal(err)
 	}
 	f.backdate(t, w.ID, "expires_at")
-	err := f.rawExec(`INSERT INTO workflow_effects(tenant_id,instance_id,step_index,action,subject_type,subject_id,executed_by) VALUES ($1::uuid,$2::uuid,0,'journal.approve','journal',$3::uuid,'u-approver')`, f.tenant, w.ID, jid)
+	err := f.rawAs(f.appr, "journal.approve", "journal", jid, "",
+		`INSERT INTO workflow_effects(tenant_id,instance_id,step_index,action,subject_type,subject_id,executed_by) VALUES ($1::uuid,$2::uuid,0,'journal.approve','journal',$3::uuid,'u-approver')`, f.tenant, w.ID, jid)
 	if err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("effect after expiry: %v", err)
 	}

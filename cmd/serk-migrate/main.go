@@ -5,7 +5,8 @@
 //	                                               create the tenant, its database role and mapping
 //
 // Environment: SERK_ADMIN_DSN (or SERK_ADMIN_DSN_FILE), the schema owner with
-// CREATEROLE. provision-tenant also needs SERK_TENANT_DB_SECRET(_FILE), the
+// CREATEROLE. provision-tenant also needs SERK_APPROVAL_SIGNING_KEY(_FILE) (the
+// approval attestation secret) and SERK_TENANT_DB_SECRET(_FILE), the
 // same secret the API derives tenant passwords from.
 package main
 
@@ -20,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
+	"github.com/serk-group/serk-construction/pkg/attest"
 )
 
 func secret(name string) string {
@@ -55,12 +57,18 @@ func main() {
 		name := fs.String("name", "", "tenant display name")
 		_ = fs.Parse(os.Args[2:])
 		sec := secret("SERK_TENANT_DB_SECRET")
-		if *tenant == "" || *name == "" || len(sec) < 32 {
-			fmt.Fprintln(os.Stderr, "--tenant, --name and a SERK_TENANT_DB_SECRET of at least 32 bytes are required")
+		approval := secret("SERK_APPROVAL_SIGNING_KEY")
+		if *tenant == "" || *name == "" || len(sec) < 32 || len(approval) < 32 || approval == sec {
+			fmt.Fprintln(os.Stderr, "--tenant, --name, SERK_TENANT_DB_SECRET and a different SERK_APPROVAL_SIGNING_KEY (each >= 32 bytes) are required")
 			os.Exit(2)
 		}
 		if err := postgres.ProvisionTenant(ctx, conn, *tenant, *name, postgres.TenantPassword([]byte(sec), *tenant)); err != nil {
 			fmt.Fprintln(os.Stderr, "provision:", err)
+			os.Exit(1)
+		}
+		// The database stores only the derived per-tenant verification key.
+		if err := postgres.InstallApprovalKey(ctx, conn, *tenant, "v1", attest.TenantKey([]byte(approval), *tenant)); err != nil {
+			fmt.Fprintln(os.Stderr, "approval key:", err)
 			os.Exit(1)
 		}
 		role, _ := postgres.RoleName(*tenant)

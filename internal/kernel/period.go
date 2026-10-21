@@ -71,6 +71,9 @@ func (s *Service) closePeriodTx(ctx context.Context, tx pgx.Tx, p auth.Principal
 		} else if broken != 0 {
 			return fmt.Errorf("%w: audit chain broken at %d", ErrClosePrerequisite, broken)
 		}
+		if err := s.authorize(ctx, tx, p, "period.close", "fiscal_period", periodID, ""); err != nil {
+			return err
+		}
 		if err := postgres.CloseFiscalPeriod(ctx, tx, periodID, p.UserID, lock); err != nil {
 			return err
 		}
@@ -109,6 +112,9 @@ func (s *Service) ReopenPeriod(ctx context.Context, p auth.Principal, periodID, 
 		}
 		if per.ClosedBy == p.UserID {
 			return fmt.Errorf("%w: the user who closed a period cannot reopen it", auth.ErrSoD)
+		}
+		if err := s.authorize(ctx, tx, p, "period.reopen", "fiscal_period", periodID, ""); err != nil {
+			return err
 		}
 		if err := postgres.ReopenFiscalPeriod(ctx, tx, periodID, p.UserID, reason); err != nil {
 			return err

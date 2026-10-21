@@ -22,6 +22,7 @@ import (
 	"github.com/serk-group/serk-construction/internal/httpapi"
 	"github.com/serk-group/serk-construction/internal/kernel"
 	"github.com/serk-group/serk-construction/internal/store/postgres"
+	"github.com/serk-group/serk-construction/pkg/attest"
 	"github.com/serk-group/serk-construction/pkg/auth"
 )
 
@@ -66,7 +67,7 @@ func main() {
 		verifier = httpapi.HS256Verifier{Secret: cfg.HS256Secret, Issuer: cfg.TokenIssuer, Audience: cfg.TokenAudience}
 	}
 
-	svc := kernel.New(router, auth.NewAuthorizer(nil, cfg.SoDStrict))
+	svc := kernel.New(router, auth.NewAuthorizer(nil, cfg.SoDStrict)).UseApprovalSigner(attest.Signer{Master: cfg.ApprovalSecret})
 	h := httpapi.New(httpapi.Config{Verifier: verifier, Kernel: svc, Store: router, Logger: log, RatePerMinute: cfg.RatePerMinute,
 		Abuse: httpapi.AbuseConfig{PreAuthPerMinute: cfg.PreAuthPerMinute, AuthFailuresPerMinute: cfg.AuthFailuresPerMin, TrustedProxies: cfg.TrustedProxies}})
 	if cfg.SchedulerDSN != "" {

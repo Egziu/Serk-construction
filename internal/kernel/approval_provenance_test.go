@@ -196,3 +196,23 @@ func fxSourceNBE() postgres.FXSource {
 func defaultPolicy() fx.Policy {
 	return fx.Policy{RateType: fx.RateOfficial, SourcePriority: []string{"NBE"}, MaxStaleness: 30 * 24 * time.Hour, AllowInverse: true}
 }
+
+// authorizeIn records a genuine attestation for p inside tx — what the
+// kernel does before a sensitive write. Defense-in-depth tests use it to get
+// past the attestation boundary and prove the deeper database guards still
+// hold for a correctly attested person.
+func (f *fixture) authorizeIn(ctx context.Context, tx pgx.Tx, p auth.Principal, action, subjectType, subjectID, actx string) error {
+	return f.svc.authorize(ctx, tx, p, action, subjectType, subjectID, actx)
+}
+
+// rawAs runs one raw statement as the tenant login after a genuine
+// attestation for p.
+func (f *fixture) rawAs(p auth.Principal, action, subjectType, subjectID, actx, stmt string, args ...any) error {
+	return f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		if err := f.authorizeIn(ctx, tx, p, action, subjectType, subjectID, actx); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, stmt, args...)
+		return err
+	})
+}

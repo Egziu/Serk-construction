@@ -128,7 +128,7 @@ func TestWorkflow_MandatoryJournalWorkflowReplacesDirectPath(t *testing.T) {
 		t.Fatalf("direct approve under a mandatory workflow: %v", err)
 	}
 	// …and so is the database path, even for the application role.
-	err := f.rawExec(`UPDATE journals SET status='APPROVED', approved_by='u-approver', approved_at=now() WHERE id=$1::uuid`, jid)
+	err := f.rawAs(f.appr, "journal.approve", "journal", jid, "", `UPDATE journals SET status='APPROVED', approved_by='u-approver', approved_at=now() WHERE id=$1::uuid`, jid)
 	if err == nil || !strings.Contains(err.Error(), "requires its mandatory approval workflow") {
 		t.Fatalf("raw approve under a mandatory workflow: %v", err)
 	}
@@ -209,7 +209,10 @@ func TestWorkflow_HighValueNeedsQuorumOfDistinctExecutivesWithMFA(t *testing.T) 
 	// The database refuses a decision on an MFA step that does not record MFA
 	// (the flag is asserted by the application: this catches code paths that
 	// forget the check, not a compromised application — see THREAT_MODEL).
-	err = f.rawExec(`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision,mfa) VALUES ($1::uuid,$2::uuid,1,'executive','u-cfo','APPROVE',false)`,
+	staleCFO := f.cfo
+	staleCFO.AuthTime = time.Now().Add(-time.Hour)
+	err = f.rawAs(staleCFO, "workflow.decide", "workflow_instance", w.ID, "1:APPROVE",
+		`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision,mfa) VALUES ($1::uuid,$2::uuid,1,'executive','u-cfo','APPROVE',true)`,
 		f.tenant, w.ID)
 	if err == nil || !strings.Contains(err.Error(), "multi-factor") {
 		t.Fatalf("database accepted an executive decision without MFA: %v", err)
@@ -238,7 +241,8 @@ func TestWorkflow_HighValueNeedsQuorumOfDistinctExecutivesWithMFA(t *testing.T) 
 	if _, err := f.svc.DecideWorkflow(f.ctx, cfoPoster, w.ID, true, ""); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("executive posted: %v", err)
 	}
-	err = f.rawExec(`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,2,'post',$3,'APPROVE')`,
+	err = f.rawAs(cfoPoster, "workflow.decide", "workflow_instance", w.ID, "2:APPROVE",
+		`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,2,'post',$3,'APPROVE')`,
 		f.tenant, w.ID, a.cfo2.UserID)
 	if err == nil || !strings.Contains(err.Error(), "segregation of duties") {
 		t.Fatalf("database accepted an excluded decision: %v", err)
@@ -261,6 +265,7 @@ func TestWorkflow_DatabaseRefusesForgedTrail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	prepApprover := auth.Principal{UserID: f.prep.UserID, TenantID: f.tenant, Roles: []string{"accountant", "finance_manager"}}
 	attacks := map[string]struct {
 		sql  string
 		args []any
@@ -275,15 +280,26 @@ func TestWorkflow_DatabaseRefusesForgedTrail(t *testing.T) {
 		"escalate early":            {`UPDATE workflow_instances SET escalated_at=now() WHERE id=$1::uuid`, []any{w.ID}, "after its SLA"},
 		"expire early":              {`UPDATE workflow_instances SET status='EXPIRED' WHERE id=$1::uuid`, []any{w.ID}, "after its deadline"},
 		"reject without a decision": {`UPDATE workflow_instances SET status='REJECTED' WHERE id=$1::uuid`, []any{w.ID}, "REJECT decision"},
-		"decide a later step": {`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,1,'post','u-x','APPROVE')`,
+		"decide a later step": {`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,1,'post','u-poster','APPROVE')`,
 			[]any{f.tenant, w.ID}, "open step"},
 		"preparer approves": {`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'review',$3,'APPROVE')`,
 			[]any{f.tenant, w.ID, f.prep.UserID}, "segregation of duties"},
 		"edit a published definition": {`UPDATE workflow_definitions SET body = body || '{"mandatory": false}' WHERE id=$1::uuid`, []any{def.ID}, "privilege"},
 		"delete history":              {`DELETE FROM workflow_history WHERE instance_id=$1::uuid`, []any{w.ID}, "privilege"},
 	}
+	// Decision attacks run with a genuine attestation so that they reach the
+	// deeper guards (open step, segregation of duties).
+	attested := map[string]struct {
+		p    auth.Principal
+		actx string
+	}{"decide a later step": {f.post, "1:APPROVE"}, "preparer approves": {prepApprover, "0:APPROVE"}}
 	for name, a := range attacks {
-		err := f.rawExec(a.sql, a.args...)
+		var err error
+		if as, ok := attested[name]; ok {
+			err = f.rawAs(as.p, "workflow.decide", "workflow_instance", w.ID, as.actx, a.sql, a.args...)
+		} else {
+			err = f.rawExec(a.sql, a.args...)
+		}
 		if err == nil || !strings.Contains(err.Error(), a.want) {
 			t.Errorf("%s: %v (want %q)", name, err, a.want)
 		}
@@ -294,7 +310,7 @@ func TestWorkflow_DatabaseRefusesForgedTrail(t *testing.T) {
 		t.Fatal(err)
 	}
 	j2 := f.draftJournal(t, f.balanced(key("wf-forge-2")))
-	err = f.rawExec(`UPDATE journals SET status='APPROVED', approved_by='u-approver', approved_at=now() WHERE id=$1::uuid`, j2)
+	err = f.rawAs(f.appr, "journal.approve", "journal", j2, "", `UPDATE journals SET status='APPROVED', approved_by='u-approver', approved_at=now() WHERE id=$1::uuid`, j2)
 	if err == nil || !strings.Contains(err.Error(), "mandatory approval workflow") {
 		t.Fatalf("approval without its own effect: %v", err)
 	}
@@ -382,7 +398,7 @@ func TestWorkflow_EffectFailureRollsBackAndIsRecorded(t *testing.T) {
 	if _, err := f.svc.ClosePeriod(f.ctx, f.post, per, false); !errors.Is(err, ErrWorkflowRequired) {
 		t.Fatalf("direct re-close: %v", err)
 	}
-	err = f.rawExec(`UPDATE fiscal_periods SET status='CLOSED', closed_by=$2 WHERE id=$1::uuid`, per, f.post.UserID)
+	err = f.rawAs(f.post, "period.close", "fiscal_period", per, "", `UPDATE fiscal_periods SET status='CLOSED', closed_by=$2 WHERE id=$1::uuid`, per, f.post.UserID)
 	if err == nil || !strings.Contains(err.Error(), "mandatory approval workflow") {
 		t.Fatalf("raw re-close reusing an old effect: %v", err)
 	}
@@ -407,7 +423,7 @@ func TestWorkflow_SubjectChangedAfterStartIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.rawExec(`UPDATE journal_lines SET memo='edited after routing' WHERE journal_id=$1::uuid AND line_no=1`, jid); err != nil {
+	if err := f.addBalancedLines(jid); err != nil { // lines slipped in after routing
 		t.Fatal(err)
 	}
 	if _, err := f.svc.DecideWorkflow(f.ctx, f.appr, w.ID, true, ""); !errors.Is(err, ErrSubjectChanged) {

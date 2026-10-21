@@ -59,7 +59,8 @@ func TestReview_R1_OptionalDefinitionCannotBypassMandatory(t *testing.T) {
 		t.Fatalf("pre-existing optional instance acted under a mandatory one: %v", err)
 	}
 	// And in SQL: an effect row from the optional instance cannot be written.
-	err = f.rawExec(`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'aa','u-approver','APPROVE')`, f.tenant, early.ID)
+	err = f.rawAs(f.appr, "workflow.decide", "workflow_instance", early.ID, "0:APPROVE",
+		`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'aa','u-approver','APPROVE')`, f.tenant, early.ID)
 	if err == nil || !strings.Contains(err.Error(), "mandatory workflow governs") {
 		t.Fatalf("database accepted a decision on a non-governing instance: %v", err)
 	}
@@ -75,8 +76,9 @@ func TestReview_R2_ForgedRouteOrFactsRefused(t *testing.T) {
 	def := f.publish(t, strictDef)
 	jid := f.draftJournal(t, f.balanced(key("r2")))
 	ins := func(facts, route string) error {
-		return f.rawExec(`INSERT INTO workflow_instances(tenant_id,definition_id,subject_type,subject_id,facts,route,initiated_by)
-			VALUES ($1::uuid,$2::uuid,'journal',$3::uuid,$4::jsonb,$5::jsonb,'mallory')`, f.tenant, def.ID, jid, facts, route)
+		// A correctly attested initiator: route and facts are still checked.
+		return f.rawAs(f.prep, "workflow.start", "journal", jid, def.ID, `INSERT INTO workflow_instances(tenant_id,definition_id,subject_type,subject_id,facts,route,initiated_by)
+			VALUES ($1::uuid,$2::uuid,'journal',$3::uuid,$4::jsonb,$5::jsonb,'u-preparer')`, f.tenant, def.ID, jid, facts, route)
 	}
 	goodFacts := `{"amount":"115000.00","currency":"ETB","project_id":"` + f.project + `","created_by":"u-preparer","fingerprint":"x"}`
 	weakRoute := `[{"id":"review","permission":"journal.approve","approvals":1,"distinct_from":[],"effect":"journal.approve"},
@@ -181,7 +183,8 @@ func TestReview_R5_ExpiredStepCannotBeDecided(t *testing.T) {
 	if _, err := f.svc.DecideWorkflow(f.ctx, f.appr, w.ID, true, ""); !errors.Is(err, ErrWorkflowState) {
 		t.Fatalf("decision after expiry: %v", err)
 	}
-	err := f.rawExec(`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'review','u-approver','APPROVE')`, f.tenant, w.ID)
+	err := f.rawAs(f.appr, "workflow.decide", "workflow_instance", w.ID, "0:APPROVE",
+		`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'review','u-approver','APPROVE')`, f.tenant, w.ID)
 	if err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("database accepted a decision after expiry: %v", err)
 	}
@@ -243,12 +246,18 @@ func TestReview_R8_GateHoldsDuringVersionSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := f.authorizeIn(f.ctx, pub, f.cfo, "workflow.decide_definition", "workflow_definition", v2.ID, "PUBLISHED"); err != nil {
+		_ = pub.Rollback(f.ctx)
+		t.Fatal(err)
+	}
 	if err := postgres.DecideWorkflowDefinition(f.ctx, pub, v2.ID, "PUBLISHED", f.cfo.UserID, ""); err != nil {
+		_ = pub.Rollback(f.ctx)
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- f.rawExec(`UPDATE journals SET status='APPROVED', approved_by='u-approver', approved_at=now() WHERE id=$1::uuid`, jid)
+		done <- f.rawAs(f.appr, "journal.approve", "journal", jid, "",
+			`UPDATE journals SET status='APPROVED', approved_by='u-approver', approved_at=now() WHERE id=$1::uuid`, jid)
 	}()
 	select {
 	case err := <-done:

@@ -6,6 +6,7 @@
 # Before first start create (outside version control):
 #   secrets/postgres_admin_dsn   postgres://<owner>:<pw>@db:5432/serk?sslmode=verify-full (migrations/provisioning only)
 #   secrets/tenant_db_secret     `openssl rand -hex 32`
+#   secrets/approval_signing_key `openssl rand -hex 32` (different; signs approval attestations)
 #   secrets/health_dsn           postgres://serk_health:<pw>@db:5432/serk?sslmode=verify-full
 #   secrets/scheduler_dsn        postgres://serk_timer:<pw>@db:5432/serk?sslmode=verify-full (workflow timers)
 #   secrets/postgres_password    superuser password for the database container
@@ -45,13 +46,14 @@ services:
       SERK_DB_BASE_DSN: postgres://db:5432/serk?sslmode=verify-full
       SERK_HEALTH_DSN_FILE: /run/secrets/health_dsn
       SERK_TENANT_DB_SECRET_FILE: /run/secrets/tenant_db_secret
+      SERK_APPROVAL_SIGNING_KEY_FILE: /run/secrets/approval_signing_key
       SERK_SCHEDULER_DSN_FILE: /run/secrets/scheduler_dsn
       SERK_OIDC_ISSUER: ${SERK_OIDC_ISSUER:?}
       SERK_OIDC_JWKS_URL: ${SERK_OIDC_JWKS_URL:?}
       SERK_OIDC_AUDIENCE: ${SERK_OIDC_AUDIENCE:?}
       SERK_TRUSTED_PROXIES: 172.30.0.0/24
       PGSSLROOTCERT: /run/secrets/db_ca
-    secrets: [health_dsn, tenant_db_secret, scheduler_dsn, db_ca]
+    secrets: [health_dsn, tenant_db_secret, approval_signing_key, scheduler_dsn, db_ca]
     networks: [backend, edge]
     read_only: true
     security_opt: ["no-new-privileges:true"]
@@ -75,6 +77,7 @@ secrets:
   tenant_db_secret: { file: ./secrets/tenant_db_secret }
   health_dsn: { file: ./secrets/health_dsn }
   scheduler_dsn: { file: ./secrets/scheduler_dsn }
+  approval_signing_key: { file: ./secrets/approval_signing_key }
   db_tls_cert: { file: ./secrets/db_tls_cert }
   db_tls_key: { file: ./secrets/db_tls_key }
   db_ca: { file: ./secrets/db_ca }

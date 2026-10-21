@@ -159,6 +159,9 @@ func TestSC08_CloseWaitsForInFlightPostAndIncludesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := f.authorizeIn(ctx, postTx, f.post, "journal.post", "journal", j.JournalID, ""); err != nil {
+		t.Fatal(err)
+	}
 	if err := postgres.PostJournal(ctx, postTx, j.JournalID, f.post.UserID, rec.Version); err != nil {
 		t.Fatal(err)
 	}
@@ -196,6 +199,9 @@ func TestSC08_LineInsertWaitsForInFlightFXWithdrawal(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
+	if err := f.authorizeIn(ctx, tx, f.appr, "fx.snapshot.withdraw", "fx_snapshot", snap, ""); err != nil {
+		t.Fatal(err)
+	}
 	if err := postgres.DecideFXSnapshot(ctx, tx, snap, postgres.FXDecision{From: fx.StatusApproved, To: fx.StatusDisputed, By: f.appr.UserID, Reason: "publication error"}); err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +293,8 @@ func TestSC08_RawFXWithdrawalWaitsForInFlightLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	withdraw := async(func() error {
-		return f.rawExec(`UPDATE fx_snapshots SET approval_status='DISPUTED', decision_reason='raw withdrawal' WHERE snapshot_id=$1::uuid`, snap)
+		return f.rawAs(f.appr, "fx.snapshot.withdraw", "fx_snapshot", snap, "",
+			`UPDATE fx_snapshots SET approval_status='DISPUTED', decision_reason='raw withdrawal' WHERE snapshot_id=$1::uuid`, snap)
 	})
 	mustBlock(t, withdraw, "raw UPDATE withdrawing a rate referenced by an uncommitted line")
 	if err := tx.Commit(ctx); err != nil {

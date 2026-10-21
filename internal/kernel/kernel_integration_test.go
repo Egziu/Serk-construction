@@ -77,10 +77,18 @@ func TestUnbalancedRejectedInGoAndInDatabase(t *testing.T) {
 			($1::uuid,$2::uuid,$5::uuid,1,$3::uuid,'DEBIT',100,'ETB'),($1::uuid,$2::uuid,$5::uuid,2,$4::uuid,'CREDIT',99.99,'ETB')`, jid, f.tenant, f.accounts["5000"], f.accounts["1000"], f.entity); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE journals SET status='APPROVED',approved_by='b',approved_at=now() WHERE id=$1::uuid`, jid); err != nil {
+		// Correctly attested approver and poster: the balance invariant must
+		// still refuse at commit.
+		if err := f.authorizeIn(ctx, tx, f.appr, "journal.approve", "journal", jid, ""); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `UPDATE journals SET status='POSTED',posted_by='c',posted_at=now() WHERE id=$1::uuid`, jid)
+		if _, err := tx.Exec(ctx, `UPDATE journals SET status='APPROVED',approved_by='u-approver',approved_at=now() WHERE id=$1::uuid`, jid); err != nil {
+			return err
+		}
+		if err := f.authorizeIn(ctx, tx, f.post, "journal.post", "journal", jid, ""); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE journals SET status='POSTED',posted_by='u-poster',posted_at=now() WHERE id=$1::uuid`, jid)
 		return err
 	})
 	if !errors.Is(err, postgres.ErrInvariant) {

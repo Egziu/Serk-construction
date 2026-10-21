@@ -14,15 +14,60 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
+	"github.com/serk-group/serk-construction/pkg/attest"
 	"github.com/serk-group/serk-construction/pkg/auth"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 )
 
 // Service executes kernel commands.
 type Service struct {
-	store postgres.TenantDB
-	authz *auth.Authorizer
-	now   func() time.Time
+	store  postgres.TenantDB
+	authz  *auth.Authorizer
+	now    func() time.Time
+	signer *attest.Signer
+}
+
+// UseApprovalSigner configures the approval attestation signer. Without it
+// every sensitive transition fails closed (the database requires a verified
+// attestation for each).
+func (s *Service) UseApprovalSigner(signer attest.Signer) *Service {
+	s.signer = &signer
+	return s
+}
+
+// ErrApprovalSigning: no signer configured, or the subject vanished.
+var ErrApprovalSigning = errors.New("kernel: approval attestation unavailable")
+
+// authorize issues a signed, single-use attestation that p — whose token,
+// permissions, scope and MFA the caller has already verified — authorises
+// action on the subject in its current content, and has PostgreSQL verify
+// and record it in this transaction. Sensitive database transitions are
+// refused without it (GATEA-APPROVAL-01).
+func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p auth.Principal, action, subjectType, subjectID, actx string) error {
+	if s.signer == nil {
+		return fmt.Errorf("%w: no signer configured", ErrApprovalSigning)
+	}
+	hash, err := postgres.SubjectHash(ctx, tx, subjectType, subjectID)
+	if err != nil {
+		return err
+	}
+	if hash == "" {
+		return ErrNotFound
+	}
+	perms := make([]string, 0, 8)
+	for _, perm := range s.authz.Permissions(p) {
+		perms = append(perms, string(perm))
+	}
+	var authTime int64
+	if !p.AuthTime.IsZero() {
+		authTime = p.AuthTime.Unix()
+	}
+	a, err := s.signer.Sign(attest.Claims{Tenant: p.TenantID, Actor: p.UserID, Action: action, SubjectType: subjectType,
+		SubjectID: subjectID, SubjectHash: hash, Context: actx, Perms: perms, MFA: p.MFA && authTime > 0, AuthTime: authTime})
+	if err != nil {
+		return err
+	}
+	return postgres.Authorize(ctx, tx, a.JSON())
 }
 
 // New builds a Service.
@@ -131,6 +176,16 @@ func (s *Service) approveJournalTx(ctx context.Context, tx pgx.Tx, p auth.Princi
 	if err := s.authz.CheckSoDApprove(p, auth.JournalActors{CreatedBy: rec.CreatedBy}); err != nil {
 		return err
 	}
+	// The approver approves the journal as it was created: lines added since
+	// the command was accepted are refused (the attestation then binds this
+	// exact content in the database).
+	if postgres.CommandHash(rec.Journal) != rec.CommandHash {
+		return fmt.Errorf("%w: journal content changed after creation", ledger.ErrBadTransition)
+	}
+
+	if err := s.authorize(ctx, tx, p, "journal.approve", "journal", id, ""); err != nil {
+		return err
+	}
 	if err := postgres.ApproveJournal(ctx, tx, id, p.UserID, rec.Version); err != nil {
 		return err
 	}
@@ -177,6 +232,9 @@ func (s *Service) postJournalTx(ctx context.Context, tx pgx.Tx, p auth.Principal
 	if postgres.CommandHash(rec.Journal) != rec.CommandHash {
 		return fmt.Errorf("%w: journal content changed after creation", ledger.ErrBadTransition)
 	}
+	if err := s.authorize(ctx, tx, p, "journal.post", "journal", id, ""); err != nil {
+		return err
+	}
 	if err := postgres.PostJournal(ctx, tx, id, p.UserID, rec.Version); err != nil {
 		return err
 	}
@@ -207,6 +265,9 @@ func (s *Service) cancelJournalTx(ctx context.Context, tx pgx.Tx, p auth.Princip
 	}
 	if !ledger.CanTransition(rec.Status, ledger.StatusCancelled) {
 		return fmt.Errorf("%w: %s -> CANCELLED", ledger.ErrBadTransition, rec.Status)
+	}
+	if err := s.authorize(ctx, tx, p, "journal.cancel", "journal", id, ""); err != nil {
+		return err
 	}
 	if err := postgres.CancelJournal(ctx, tx, id, rec.Version); err != nil {
 		return err

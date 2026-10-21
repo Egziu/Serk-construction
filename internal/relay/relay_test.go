@@ -21,6 +21,7 @@ import (
 	"github.com/serk-group/serk-construction/internal/kernel"
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/internal/testdb"
+	"github.com/serk-group/serk-construction/pkg/attest"
 	"github.com/serk-group/serk-construction/pkg/auth"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 	"github.com/serk-group/serk-construction/pkg/money"
@@ -82,7 +83,7 @@ func newWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.svc = kernel.New(db.Router, auth.NewAuthorizer(nil, true))
+	w.svc = kernel.New(db.Router, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster})
 	w.prep = auth.Principal{UserID: "prep", TenantID: w.tenant, Roles: []string{"accountant"}}
 	w.appr = auth.Principal{UserID: "appr", TenantID: w.tenant, Roles: []string{"finance_manager"}}
 	w.post = auth.Principal{UserID: "post", TenantID: w.tenant, Roles: []string{"controller"}}

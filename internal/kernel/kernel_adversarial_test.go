@@ -96,13 +96,14 @@ func TestJournalBoundToLegalEntity(t *testing.T) {
 func TestApprovedContentIsFrozen(t *testing.T) {
 	f := newFixture(t)
 	res, _ := f.svc.CreateJournal(f.ctx, f.prep, f.balanced(key("frz")))
-	// Draft lines may still be corrected (business as usual).
+	// Since 0007 even DRAFT line memos are immutable (R-08: an edited memo
+	// left the journal approvable but unpostable). Corrections re-create.
 	err := f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `UPDATE journal_lines SET memo='draft edit' WHERE journal_id=$1::uuid`, res.JournalID)
 		return err
 	})
-	if err != nil {
-		t.Fatalf("draft edit refused: %v", err)
+	if err == nil {
+		t.Fatal("draft memo edited")
 	}
 	if err := f.svc.ApproveJournal(f.ctx, f.appr, res.JournalID); err != nil {
 		t.Fatal(err)
@@ -254,11 +255,19 @@ func TestOutboxAndPeriodsCannotBeTamperedByAppRole(t *testing.T) {
 	if err == nil {
 		t.Fatal("app role suppressed outbox events")
 	}
+	// Even correctly attested people cannot reopen a LOCKED period.
+	per := f.period(t)
 	err = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE fiscal_periods SET status='LOCKED' WHERE name='FY2026-Q4'`); err != nil {
+		if err := f.authorizeIn(ctx, tx, f.post, "period.close", "fiscal_period", per, ""); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `UPDATE fiscal_periods SET status='OPEN' WHERE name='FY2026-Q4'`)
+		if _, err := tx.Exec(ctx, `UPDATE fiscal_periods SET status='LOCKED', closed_by='u-poster' WHERE name='FY2026-Q4'`); err != nil {
+			return err
+		}
+		if err := f.authorizeIn(ctx, tx, f.cfo, "period.reopen", "fiscal_period", per, ""); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE fiscal_periods SET status='OPEN', reopened_by='u-cfo', reopen_reason='attempted reopen of a locked period' WHERE name='FY2026-Q4'`)
 		return err
 	})
 	if !errors.Is(err, postgres.ErrInvariant) {

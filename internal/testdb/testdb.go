@@ -18,7 +18,11 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
+	"github.com/serk-group/serk-construction/pkg/attest"
 )
+
+// ApprovalMaster is the approval-attestation signing secret used by tests only.
+var ApprovalMaster = []byte("serk-test-approval-signing-secret-0123456789abcdef")
 
 // Secret is the tenant-credential derivation secret used by tests only.
 var Secret = []byte("serk-test-tenant-credential-secret-0123456789")
@@ -81,6 +85,9 @@ func (e *Env) ProvisionTenant(t *testing.T, tenantID, name string) {
 	t.Helper()
 	if err := postgres.ProvisionTenant(e.Ctx, e.Admin, tenantID, name, postgres.TenantPassword(Secret, tenantID)); err != nil {
 		t.Fatalf("provision tenant: %v", err)
+	}
+	if err := postgres.InstallApprovalKey(e.Ctx, e.Admin, tenantID, "v1", attest.TenantKey(ApprovalMaster, tenantID)); err != nil {
+		t.Fatalf("install approval key: %v", err)
 	}
 	role, _ := postgres.RoleName(tenantID)
 	e.mu.Lock()

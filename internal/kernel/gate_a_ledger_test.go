@@ -122,9 +122,9 @@ func TestSC01_PostedLineCannotBeReassignedOrMutated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Direct table-level UPDATE privilege is gone; only memo is updatable.
-	if err := f.rawExec(`UPDATE journal_lines SET memo='draft note' WHERE journal_id=$1::uuid`, draft.JournalID); err != nil {
-		t.Fatalf("draft memo edit refused: %v", err)
+	// No UPDATE privilege on journal lines remains (memo too since 0007, R-08).
+	if err := f.rawExec(`UPDATE journal_lines SET memo='draft note' WHERE journal_id=$1::uuid`, draft.JournalID); err == nil {
+		t.Fatal("draft memo edited")
 	}
 }
 

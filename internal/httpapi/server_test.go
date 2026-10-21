@@ -19,6 +19,7 @@ import (
 	"github.com/serk-group/serk-construction/internal/kernel"
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/internal/testdb"
+	"github.com/serk-group/serk-construction/pkg/attest"
 	"github.com/serk-group/serk-construction/pkg/auth"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 )
@@ -60,7 +61,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := kernel.New(db.Router, auth.NewAuthorizer(nil, true))
+	svc := kernel.New(db.Router, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster})
 	e.svc, e.db = svc, db
 	h := New(Config{Verifier: testVerifier, Kernel: svc, Store: db.Router, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RatePerMinute: 50})
 	e.srv = httptest.NewServer(h)
