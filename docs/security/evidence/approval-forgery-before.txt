@@ -1,0 +1,30 @@
+### GATEA-APPROVAL-01 reproduction on commit ea3533c (vulnerable), 2026-10-21T19:51:18Z
+### go version go1.24.7 linux/amd64; PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu
+### connection principal: per-tenant login serk_t_<tenant> (member of serk_app), raw SQL, no kernel
+=== RUN   TestApprovalProvenance_DirectJournalApprovalAndPosting
+    approval_provenance_test.go:69: ATTACK SUCCEEDED: approve a journal as an invented approver
+--- FAIL: TestApprovalProvenance_DirectJournalApprovalAndPosting (0.58s)
+=== RUN   TestApprovalProvenance_ForgedWorkflowTrail
+    approval_provenance_test.go:94: ATTACK SUCCEEDED: fabricated review decision + effect + approval
+    approval_provenance_test.go:103: denied single fabricated decision with mfa=true:               store: database invariant violated: workflow instance is COMPLETED
+    approval_provenance_test.go:105: denied start an instance as an invented initiator:             store: database invariant violated: a journal workflow starts on an existing DRAFT or APPROVED journal
+    approval_provenance_test.go:108: denied cancel an instance as an invented administrator:        store: database invariant violated: workflow instance is COMPLETED and final
+--- FAIL: TestApprovalProvenance_ForgedWorkflowTrail (0.06s)
+=== RUN   TestApprovalProvenance_WorkflowDefinitionPublication
+    approval_provenance_test.go:121: ATTACK SUCCEEDED: insert a definition draft as an invented author
+    approval_provenance_test.go:130: ATTACK SUCCEEDED: publish through workflow_decide_definition as an invented checker
+--- FAIL: TestApprovalProvenance_WorkflowDefinitionPublication (0.04s)
+=== RUN   TestApprovalProvenance_FXApprovals
+    approval_provenance_test.go:142: ATTACK SUCCEEDED: approve an FX source as an invented checker
+--- FAIL: TestApprovalProvenance_FXApprovals (0.03s)
+=== RUN   TestApprovalProvenance_PeriodsAndWBS
+    approval_provenance_test.go:174: ATTACK SUCCEEDED: close a period as an invented controller
+--- FAIL: TestApprovalProvenance_PeriodsAndWBS (0.03s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	0.749s
+FAIL
+    approval_provenance_test.go:72: journal is APPROVED
+    approval_provenance_test.go:111: journal is POSTED
+    approval_provenance_test.go:133: definition is PUBLISHED
+    approval_provenance_test.go:145: store: concurrent modification
+    approval_provenance_test.go:177: kernel: period close prerequisite failed: period is already CLOSED
