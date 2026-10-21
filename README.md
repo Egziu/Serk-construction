@@ -66,7 +66,10 @@ SERK_ENV=development SERK_TOKEN_SECRET=dev-only-hs256-token-secret-0123456789abc
 ```
 
 The development compose file uses published, well-known secrets and is
-refused by the API outside `SERK_ENV=development`. Production uses
+refused by the API outside `SERK_ENV=development`. If migrations do not run
+as a PostgreSQL superuser, run `deploy/02-restrict-advisory-locks.sql` as a
+superuser afterwards (tenant logins must not hold advisory locks or create
+temporary objects). Production uses
 `deploy/docker-compose.prod.yml` (secrets from files, internal database
 network, TLS proxy, OIDC required) — **not yet executed in this environment**.
 

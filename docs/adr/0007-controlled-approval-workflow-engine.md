@@ -46,7 +46,10 @@ its own ad-hoc approval logic.
    `workflow_decisions`, which in turn enforce the step's SoD rules, MFA flag
    and expiry in SQL, independently of the Go code. While a mandatory
    definition governs a subject type, no other definition can start or act
-   for it. Publishing/retiring and the gates serialise on an advisory lock.
+   for it. Publishing/retiring and the gates serialise on an RLS-protected
+   lock row per (tenant, subject type). Definition status changes only
+   through the owner-rights function `workflow_decide_definition()`; the
+   application role cannot UPDATE definitions at all.
    The database recomputes every new instance's route from the definition
    and verifies its facts against the subject, so application code cannot
    start an instance with fewer approvers, missing SoD rules or a skipped
@@ -54,8 +57,9 @@ its own ad-hoc approval logic.
 5. **Nothing is stranded.** A journal that is already APPROVED (rejection
    or cancellation after the approval step, expiry, or approval before the
    workflow was made mandatory) can be routed again; the route resumes after
-   the definition's approval step and the earlier approver is excluded
-   wherever the route refers to that step. Rejection compensation
+   the definition's approval step, and the journal's approver plus every
+   approver of earlier instances of the same subject are excluded wherever
+   the route refers to a step it does not contain. Rejection compensation
    (`journal.cancel`) is open to holders of `journal.approve` or
    `journal.post`.
 6. **Facts are server-derived and pinned.** Routing inputs (amount, currency,

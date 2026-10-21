@@ -128,7 +128,7 @@ func (s *Service) DecideWorkflowDefinition(ctx context.Context, p auth.Principal
 		return err
 	}
 	return s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
-		d, err := postgres.GetWorkflowDefinition(ctx, tx, id, true)
+		d, err := postgres.GetWorkflowDefinition(ctx, tx, id, false) // the database function locks (gate first)
 		if err != nil {
 			return err
 		}
@@ -349,9 +349,18 @@ func (s *Service) SimulateWorkflow(ctx context.Context, p auth.Principal, defini
 func (s *Service) StartWorkflow(ctx context.Context, p auth.Principal, key, subjectID string) (postgres.WorkflowInstance, error) {
 	var out postgres.WorkflowInstance
 	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
-		d, err := postgres.PublishedWorkflowDefinition(ctx, tx, key)
+		// Lock order (as in the database): gate row first, then definition row.
+		peek, err := postgres.PublishedWorkflowDefinition(ctx, tx, key, false)
 		if err != nil {
 			return err
+		}
+		if err := postgres.LockWorkflowGate(ctx, tx, p.TenantID, peek.Subject, false); err != nil {
+			return err
+		}
+		// Re-read under the gate lock: the published version is now stable.
+		d, err := postgres.PublishedWorkflowDefinition(ctx, tx, key, false)
+		if err != nil {
+			return err // retired between the two reads
 		}
 		def, err := s.parseStored(d)
 		if err != nil {
@@ -412,7 +421,8 @@ func (s *Service) notifyOpenStep(ctx context.Context, tx pgx.Tx, p auth.Principa
 
 // excludedFor computes the SoD exclusions of the open step (the database
 // computes the same set independently).
-func excludedFor(w postgres.WorkflowInstance, decisions []postgres.WorkflowDecision) map[string]string {
+// prior lists approvers of earlier instances of the same subject.
+func excludedFor(w postgres.WorkflowInstance, decisions []postgres.WorkflowDecision, prior []string) map[string]string {
 	out := map[string]string{}
 	step, ok := w.OpenStep()
 	if !ok {
@@ -430,9 +440,16 @@ func excludedFor(w postgres.WorkflowInstance, decisions []postgres.WorkflowDecis
 			for _, r := range w.Route {
 				inRoute = inRoute || r.ID == id
 			}
-			if !inRoute && w.Facts.ApprovedBy != "" {
-				// The step ran before this instance (resumed APPROVED journal).
-				out[w.Facts.ApprovedBy] = "approved this journal before the workflow resumed"
+			if !inRoute {
+				// The step is not in this route (it ran before a resumed
+				// instance, or was skipped): exclude whoever approved the
+				// journal and everyone who approved earlier instances.
+				if w.Facts.ApprovedBy != "" {
+					out[w.Facts.ApprovedBy] = "approved this journal before the workflow resumed"
+				}
+				for _, u := range prior {
+					out[u] = "approved an earlier workflow of this subject"
+				}
 			}
 			for i := 0; i < w.CurrentStep; i++ {
 				if w.Route[i].ID != id {
@@ -529,7 +546,11 @@ func (s *Service) DecideWorkflow(ctx context.Context, p auth.Principal, instance
 		if err != nil {
 			return err
 		}
-		if why, bad := excludedFor(w, decisions)[p.UserID]; bad {
+		prior, err := postgres.PriorSubjectApprovers(ctx, tx, w)
+		if err != nil {
+			return err
+		}
+		if why, bad := excludedFor(w, decisions, prior)[p.UserID]; bad {
 			return fmt.Errorf("%w: you %s and may not decide step %q", auth.ErrSoD, why, step.ID)
 		}
 		approvals := 0
@@ -747,6 +768,9 @@ func (s *Service) CancelWorkflow(ctx context.Context, p auth.Principal, instance
 		if err != nil {
 			return err
 		}
+		if s.requireSubjectAccess(p, auth.PermWorkflowAdmin, w.Facts) != nil {
+			return ErrNotFound
+		}
 		if w.Status != "ACTIVE" {
 			return fmt.Errorf("%w: instance is %s", ErrWorkflowState, w.Status)
 		}
@@ -923,7 +947,11 @@ func (s *Service) ListWorkflowTasks(ctx context.Context, p auth.Principal) ([]Wo
 			if err != nil {
 				return err
 			}
-			if _, excluded := excludedFor(w, decisions)[p.UserID]; excluded {
+			prior, err := postgres.PriorSubjectApprovers(ctx, tx, w)
+			if err != nil {
+				return err
+			}
+			if _, excluded := excludedFor(w, decisions, prior)[p.UserID]; excluded {
 				continue
 			}
 			received, mine := 0, false

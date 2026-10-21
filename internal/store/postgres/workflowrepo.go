@@ -42,8 +42,8 @@ func scanWFDef(row pgx.Row) (WorkflowDefinitionRow, error) {
 
 // InsertWorkflowDefinition stores a DRAFT definition as the next version of its key.
 func InsertWorkflowDefinition(ctx context.Context, tx pgx.Tx, d WorkflowDefinitionRow) (WorkflowDefinitionRow, error) {
-	// Serialize version numbering per key.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('wfdef:' || $1 || ':' || $2, 0))`, d.TenantID, d.Key); err != nil {
+	// Serialize version numbering (and publishing) per subject type.
+	if err := LockWorkflowGate(ctx, tx, d.TenantID, d.Subject, true); err != nil {
 		return d, err
 	}
 	return scanWFDef(tx.QueryRow(ctx, `INSERT INTO workflow_definitions(id,tenant_id,key,version,subject,mandatory,body,body_hash,proposed_by)
@@ -61,9 +61,34 @@ func GetWorkflowDefinition(ctx context.Context, tx pgx.Tx, id string, forUpdate 
 	return scanWFDef(tx.QueryRow(ctx, q, id))
 }
 
-// PublishedWorkflowDefinition returns the published version of a key.
-func PublishedWorkflowDefinition(ctx context.Context, tx pgx.Tx, key string) (WorkflowDefinitionRow, error) {
-	return scanWFDef(tx.QueryRow(ctx, `SELECT `+wfDefCols+` FROM workflow_definitions WHERE key=$1 AND status='PUBLISHED' FOR SHARE`, key))
+// PublishedWorkflowDefinition returns the published version of a key;
+// lock=true share-locks the row (take the gate lock first).
+func PublishedWorkflowDefinition(ctx context.Context, tx pgx.Tx, key string, lock bool) (WorkflowDefinitionRow, error) {
+	q := `SELECT ` + wfDefCols + ` FROM workflow_definitions WHERE key=$1 AND status='PUBLISHED'`
+	if lock {
+		q += ` FOR SHARE`
+	}
+	return scanWFDef(tx.QueryRow(ctx, q, key))
+}
+
+// PriorSubjectApprovers lists everyone who approved any step of earlier
+// workflow instances of the same subject.
+func PriorSubjectApprovers(ctx context.Context, tx pgx.Tx, w WorkflowInstance) ([]string, error) {
+	rows, err := tx.Query(ctx, `SELECT DISTINCT d.decided_by FROM workflow_decisions d JOIN workflow_instances i ON i.id = d.instance_id
+		WHERE i.subject_type=$1 AND i.subject_id=$2::uuid AND i.id <> $3::uuid AND d.decision='APPROVE'`, w.SubjectType, w.SubjectID, w.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // MandatoryWorkflowFor returns the published mandatory definition for a subject type, if any.
@@ -75,17 +100,19 @@ func MandatoryWorkflowFor(ctx context.Context, tx pgx.Tx, subject string) (Workf
 	return d, err == nil, err
 }
 
-// DecideWorkflowDefinition publishes or rejects a DRAFT definition.
+// DecideWorkflowDefinition publishes or rejects a DRAFT definition through
+// the database function that alone may change definition status.
 func DecideWorkflowDefinition(ctx context.Context, tx pgx.Tx, id, status, by, reason string) error {
-	ct, err := tx.Exec(ctx, `UPDATE workflow_definitions SET status=$2, decided_by=$3, decision_reason=NULLIF($4,'') WHERE id=$1::uuid AND status='DRAFT'`,
-		id, status, by, reason)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrVersionConflict
-	}
-	return nil
+	_, err := tx.Exec(ctx, `SELECT workflow_decide_definition($1::uuid, $2, $3, $4)`, id, status, by, reason)
+	return err
+}
+
+// LockWorkflowGate takes the per-(tenant, subject type) gate lock: shared
+// for starts and decisions, exclusive for definition changes. Take it before
+// any lock on a definition row (lock order).
+func LockWorkflowGate(ctx context.Context, tx pgx.Tx, tenantID, subject string, exclusive bool) error {
+	_, err := tx.Exec(ctx, `SELECT workflow_gate_lock($1::uuid, $2, $3)`, tenantID, subject, exclusive)
+	return err
 }
 
 // ListWorkflowDefinitions lists definitions, newest first.

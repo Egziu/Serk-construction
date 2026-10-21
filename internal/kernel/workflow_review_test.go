@@ -103,7 +103,7 @@ func TestReview_R3_DirectRetirementRefused(t *testing.T) {
 	f := newFixture(t)
 	def := f.publish(t, strictDef)
 	err := f.rawExec(`UPDATE workflow_definitions SET status='RETIRED' WHERE id=$1::uuid`, def.ID)
-	if err == nil || !strings.Contains(err.Error(), "retired only by publishing its next version") {
+	if err == nil || !strings.Contains(err.Error(), "permission denied") { // no UPDATE privilege at all since RV-6
 		t.Fatalf("direct retirement: %v", err)
 	}
 	if _, err := f.admin.Exec(f.ctx, `UPDATE workflow_definitions SET status='RETIRED' WHERE id=$1::uuid`, def.ID); err == nil {

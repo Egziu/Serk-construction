@@ -153,3 +153,27 @@ guard → R1 fails; Go governing check → R1, R6, governance fail; retirement
 depth check → R3 and forged-trail fail; SQL expiry check → R5 fails; final
 freeze → R9 fails; Go resume exclusion → R4 fails (SQL exclusion still
 refuses independently).
+
+## 10. Second independent review (re-verification of a40566d) and disposition
+A second, separate reviewer re-tested every fix against a live database.
+Verdict: R1, R2, R5, R6, R7, R8, R9, R10, R12 closed; R3 not closed, R4 and
+R11 partial; five new defects. All were fixed and turned into regression
+tests (`internal/kernel/workflow_reverify_test.go`); the five defect tests
+fail on a40566d and pass now (RV-2 is a race and RV-7 an equivalence check,
+both passing before and after).
+
+| # | Sev. | Finding | Fix |
+|---|---|---|---|
+| RV-6 | HIGH | R3 bypass: a tenant login raised `pg_trigger_depth()` with a temporary trigger and retired the mandatory definition. | The application role has **no UPDATE privilege** on `workflow_definitions`; status changes only inside `workflow_decide_definition()` (owner rights, transaction-local marker), which retires a version only while publishing its successor and refuses to publish an older draft over a newer version. `TEMPORARY` revoked from PUBLIC. |
+| RV-1 | HIGH | After resume only the completing approver was excluded; another member of the approval quorum could post alone. | When a route refers to a step it does not contain, the journal's approver **and every approver of earlier instances of the same subject** are excluded — in Go and SQL. |
+| RV-3 | MEDIUM | Another tenant could block this tenant's gate (and the relay) through advisory locks, which ignore RLS. | Gate serialisation moved to an RLS-protected lock row per (tenant, subject); `pg_*advisory*` functions revoked from PUBLIC (granted to `serk_publisher` and the owner; `deploy/02-restrict-advisory-locks.sql` when migrations do not run as superuser). |
+| RV-4 | LOW-MED | CancelWorkflow ignored project scope. | Out-of-scope → not found. |
+| RV-2 | LOW | Start vs publish could deadlock (definition row share lock taken before the gate lock). | Gate lock first everywhere; definition row locks removed (the gate lock makes them unnecessary); 40P01/40001 mapped to a retryable conflict. |
+| RV-5 | LOW | Effect insert and step advance accepted after expiry (tenant SQL only). | Expiry checked in the effects guard and on advance. |
+
+Accepted / documented (not changed): non-sensitive gating steps are not
+forced to exclude the maker (only sensitive steps are); an instance that can
+no longer act blocks new starts on its subject until cancelled or expired;
+resuming skips pre-approval steps for journals approved outside the current
+version; `now()` is transaction start time. The database still cannot verify
+end-user identity (T-3a).

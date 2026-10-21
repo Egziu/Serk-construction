@@ -40,6 +40,32 @@ CREATE TABLE workflow_definitions (
 CREATE UNIQUE INDEX workflow_definitions_one_published ON workflow_definitions(tenant_id, key) WHERE status = 'PUBLISHED';
 CREATE UNIQUE INDEX workflow_definitions_one_mandatory ON workflow_definitions(tenant_id, subject) WHERE status = 'PUBLISHED' AND mandatory;
 
+-- Per-(tenant, subject type) gate lock. Publishing/retiring takes it FOR
+-- UPDATE; subject gates, starts and decisions take it FOR SHARE before they
+-- read which definition governs. A row lock (not an advisory lock) because
+-- row locks obey RLS: one tenant cannot block another tenant's gate.
+CREATE TABLE workflow_gate_locks (
+  tenant_id uuid NOT NULL REFERENCES tenants(id),
+  subject   text NOT NULL CHECK (subject IN ('journal', 'fx_snapshot', 'fiscal_period')),
+  PRIMARY KEY (tenant_id, subject)
+);
+CREATE OR REPLACE FUNCTION workflow_gate_locks_frozen() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'workflow gate lock rows are immutable' USING ERRCODE = 'integrity_constraint_violation';
+END$$;
+CREATE TRIGGER workflow_gate_locks_frozen BEFORE UPDATE OR DELETE ON workflow_gate_locks FOR EACH ROW EXECUTE FUNCTION workflow_gate_locks_frozen();
+
+-- VOLATILE: statements after the lock wait read a fresh snapshot.
+CREATE OR REPLACE FUNCTION workflow_gate_lock(t uuid, stype text, exclusive boolean) RETURNS void LANGUAGE plpgsql VOLATILE AS $$
+BEGIN
+  INSERT INTO workflow_gate_locks(tenant_id, subject) VALUES (t, stype) ON CONFLICT DO NOTHING;
+  IF exclusive THEN
+    PERFORM 1 FROM workflow_gate_locks WHERE tenant_id = t AND subject = stype FOR UPDATE;
+  ELSE
+    PERFORM 1 FROM workflow_gate_locks WHERE tenant_id = t AND subject = stype FOR SHARE;
+  END IF;
+END$$;
+
 CREATE OR REPLACE FUNCTION workflow_definitions_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -67,10 +93,14 @@ BEGIN
     END IF;
     RETURN NEW;
   END IF;
-  -- Publishing and retiring serialize with the subject gates (which take
-  -- the same lock in shared mode), so a gate never runs between a retire and
-  -- the publish that replaces it.
-  PERFORM pg_advisory_xact_lock(hashtextextended('serk.wfgate:' || OLD.tenant_id::text || ':' || OLD.subject, 0));
+  -- Status changes happen only inside workflow_decide_definition() (owner
+  -- rights + a transaction-local marker). The application role has no UPDATE
+  -- privilege on this table, so it can neither retire a definition nor run a
+  -- trigger that does.
+  IF current_user <> (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'workflow_definitions'::regclass)
+     OR COALESCE(current_setting('serk.wf_decide', true), '') = '' THEN
+    RAISE EXCEPTION 'workflow definitions change status only through workflow_decide_definition()' USING ERRCODE = 'insufficient_privilege';
+  END IF;
   IF OLD.status = 'DRAFT' AND NEW.status IN ('PUBLISHED', 'REJECTED') THEN
     IF NEW.decided_by IS NULL OR NEW.decided_by = OLD.proposed_by THEN
       RAISE EXCEPTION 'a workflow definition is published or rejected by someone other than its author' USING ERRCODE = 'check_violation';
@@ -79,18 +109,11 @@ BEGIN
       RAISE EXCEPTION 'rejecting a workflow definition requires a reason' USING ERRCODE = 'check_violation';
     END IF;
     NEW.decided_at := clock_timestamp();
-    IF NEW.status = 'PUBLISHED' THEN
-      -- The previous version of the same key retires in the same statement.
-      UPDATE workflow_definitions SET status = 'RETIRED'
-       WHERE tenant_id = NEW.tenant_id AND key = NEW.key AND status = 'PUBLISHED' AND id <> NEW.id;
-    END IF;
     RETURN NEW;
   END IF;
   IF OLD.status = 'PUBLISHED' AND NEW.status = 'RETIRED' THEN
-    -- Only as part of publishing the next version (the UPDATE issued by this
-    -- trigger runs at depth 2); a direct retirement would silently remove a
-    -- control without maker/checker.
-    IF pg_trigger_depth() < 2 THEN
+    -- Only while publishing the next version of the same key.
+    IF current_setting('serk.wf_decide', true) <> 'retire:' || OLD.key THEN
       RAISE EXCEPTION 'a published workflow is retired only by publishing its next version' USING ERRCODE = 'check_violation';
     END IF;
     RETURN NEW;
@@ -99,6 +122,40 @@ BEGIN
 END$$;
 CREATE TRIGGER workflow_definitions_guard BEFORE INSERT OR UPDATE OR DELETE ON workflow_definitions
   FOR EACH ROW EXECUTE FUNCTION workflow_definitions_guard();
+
+-- The only way to publish or reject a definition. Runs with the owner's
+-- rights; RLS still confines it to the caller's tenant (current_tenant() is
+-- derived from session_user). Publishing retires the previous version of the
+-- key in the same transaction, under the exclusive gate lock.
+CREATE OR REPLACE FUNCTION workflow_decide_definition(p_id uuid, p_status text, p_by text, p_reason text) RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+DECLARE d workflow_definitions%ROWTYPE;
+BEGIN
+  IF p_status NOT IN ('PUBLISHED', 'REJECTED') THEN
+    RAISE EXCEPTION 'a definition is decided PUBLISHED or REJECTED' USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT * INTO d FROM workflow_definitions WHERE id = p_id AND tenant_id = current_tenant();
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'unknown workflow definition' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  PERFORM workflow_gate_lock(d.tenant_id, d.subject, true);
+  SELECT * INTO d FROM workflow_definitions WHERE id = p_id FOR UPDATE;
+  IF d.status <> 'DRAFT' THEN
+    RAISE EXCEPTION 'workflow definition is %', d.status USING ERRCODE = 'check_violation';
+  END IF;
+  IF p_status = 'PUBLISHED' THEN
+    IF EXISTS (SELECT 1 FROM workflow_definitions WHERE tenant_id = d.tenant_id AND key = d.key AND status IN ('PUBLISHED', 'RETIRED') AND version > d.version) THEN
+      RAISE EXCEPTION 'a newer version of % was already published; propose a new version instead', d.key USING ERRCODE = 'check_violation';
+    END IF;
+    PERFORM set_config('serk.wf_decide', 'retire:' || d.key, true);
+    UPDATE workflow_definitions SET status = 'RETIRED' WHERE tenant_id = d.tenant_id AND key = d.key AND status = 'PUBLISHED';
+  END IF;
+  PERFORM set_config('serk.wf_decide', 'decide:' || d.id::text, true);
+  UPDATE workflow_definitions SET status = p_status, decided_by = p_by, decision_reason = NULLIF(p_reason, '') WHERE id = d.id;
+  PERFORM set_config('serk.wf_decide', '', true);
+END$$;
+REVOKE ALL ON FUNCTION workflow_decide_definition(uuid, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION workflow_decide_definition(uuid, text, text, text) TO serk_app;
 
 -- ---------------------------------------------------------------------------
 -- Instances
@@ -199,7 +256,11 @@ BEGIN
         -- The referenced step was skipped because it already happened before
         -- this instance (journal started while APPROVED): exclude whoever
         -- performed it.
-        out := out || COALESCE(NULLIF(i.facts->>'approved_by', ''), '');
+        out := out || COALESCE(NULLIF(i.facts->>'approved_by', ''), '')
+                   || ARRAY(SELECT DISTINCT pd.decided_by FROM workflow_decisions pd
+                             JOIN workflow_instances pi ON pi.id = pd.instance_id
+                            WHERE pi.tenant_id = i.tenant_id AND pi.subject_type = i.subject_type
+                              AND pi.subject_id = i.subject_id AND pi.id <> i.id AND pd.decision = 'APPROVE');
       END IF;
     END IF;
   END LOOP;
@@ -215,7 +276,7 @@ END$$;
 CREATE OR REPLACE FUNCTION workflow_assert_governing(i workflow_instances) RETURNS void LANGUAGE plpgsql VOLATILE AS $$
 DECLARE st text; mand uuid;
 BEGIN
-  PERFORM pg_advisory_xact_lock_shared(hashtextextended('serk.wfgate:' || i.tenant_id::text || ':' || i.subject_type, 0));
+  PERFORM workflow_gate_lock(i.tenant_id, i.subject_type, false);
   SELECT status INTO st FROM workflow_definitions WHERE id = i.definition_id;
   IF st IS DISTINCT FROM 'PUBLISHED' THEN
     RAISE EXCEPTION 'workflow definition version is %; cancel this instance and start the current version', st USING ERRCODE = 'check_violation';
@@ -265,6 +326,9 @@ BEGIN
   SELECT * INTO i FROM workflow_instances WHERE id = NEW.instance_id FOR UPDATE;
   IF NOT FOUND OR i.tenant_id <> NEW.tenant_id OR i.status <> 'ACTIVE' THEN
     RAISE EXCEPTION 'effects run only for an ACTIVE workflow instance' USING ERRCODE = 'check_violation';
+  END IF;
+  IF i.expires_at IS NOT NULL AND i.expires_at <= now() THEN
+    RAISE EXCEPTION 'the open step expired at %', i.expires_at USING ERRCODE = 'check_violation';
   END IF;
   PERFORM workflow_assert_governing(i);
   IF NEW.step_index <> i.current_step OR (i.route->NEW.step_index->>'effect') IS DISTINCT FROM NEW.action
@@ -386,7 +450,10 @@ BEGIN
     RAISE EXCEPTION 'workflow instances are never deleted' USING ERRCODE = 'integrity_constraint_violation';
   END IF;
   IF TG_OP = 'INSERT' THEN
-    SELECT * INTO d FROM workflow_definitions WHERE id = NEW.definition_id FOR SHARE;
+    -- The shared gate lock keeps the definition's status stable until commit
+    -- (publishing/retiring needs the exclusive lock).
+    PERFORM workflow_gate_lock(NEW.tenant_id, NEW.subject_type, false);
+    SELECT * INTO d FROM workflow_definitions WHERE id = NEW.definition_id;
     IF NOT FOUND OR d.tenant_id <> NEW.tenant_id OR d.status <> 'PUBLISHED' THEN
       RAISE EXCEPTION 'instances start only from a PUBLISHED definition' USING ERRCODE = 'check_violation';
     END IF;
@@ -417,6 +484,9 @@ BEGIN
   IF NEW.current_step <> OLD.current_step THEN
     IF NEW.current_step <> OLD.current_step + 1 THEN
       RAISE EXCEPTION 'a workflow advances one step at a time' USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.expires_at IS NOT NULL AND OLD.expires_at <= now() THEN
+      RAISE EXCEPTION 'the open step expired at %', OLD.expires_at USING ERRCODE = 'check_violation';
     END IF;
     need := COALESCE((OLD.route->OLD.current_step->>'approvals')::integer, 1);
     IF workflow_approvals(OLD.id, OLD.current_step) < need THEN
@@ -488,7 +558,7 @@ BEGIN
   -- Shared lock first, then a fresh read: a concurrent publish/retire holds
   -- the lock exclusively, so this read sees either the old or the new
   -- mandatory version, never neither.
-  PERFORM pg_advisory_xact_lock_shared(hashtextextended('serk.wfgate:' || t::text || ':' || stype, 0));
+  PERFORM workflow_gate_lock(t, stype, false);
   SELECT id INTO mand FROM workflow_definitions WHERE tenant_id = t AND subject = stype AND status = 'PUBLISHED' AND mandatory;
   IF mand IS NULL THEN
     RETURN;
@@ -535,14 +605,15 @@ CREATE TRIGGER fiscal_periods_workflow_gate BEFORE UPDATE OF status ON fiscal_pe
 -- Privileges and tenant isolation
 -- ---------------------------------------------------------------------------
 GRANT SELECT, INSERT ON workflow_definitions, workflow_instances, workflow_decisions, workflow_effects, workflow_history TO serk_app;
-GRANT UPDATE (status, decided_by, decided_at, decision_reason) ON workflow_definitions TO serk_app;
+GRANT SELECT, INSERT ON workflow_gate_locks TO serk_app;
+GRANT UPDATE (subject) ON workflow_gate_locks TO serk_app; -- required for FOR SHARE/UPDATE; updates are refused by trigger
 GRANT UPDATE (status, current_step, escalated_at, ended_at, ended_by, end_reason, effect_failures, last_error, version) ON workflow_instances TO serk_app;
 GRANT USAGE ON SEQUENCE workflow_history_id_seq TO serk_app;
 
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['workflow_definitions', 'workflow_instances', 'workflow_decisions', 'workflow_effects', 'workflow_history'] LOOP
+  FOREACH t IN ARRAY ARRAY['workflow_definitions', 'workflow_instances', 'workflow_decisions', 'workflow_effects', 'workflow_history', 'workflow_gate_locks'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('CREATE POLICY tenant_isolation ON %I USING (tenant_id = current_tenant()) WITH CHECK (tenant_id = current_tenant())', t);
@@ -572,3 +643,31 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 $$;
 REVOKE ALL ON FUNCTION workflow_due_tenants(integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION workflow_due_tenants(integer) TO serk_scheduler;
+
+-- Temporary objects are not needed by any SERK login; without TEMP a login
+-- cannot create helper functions/triggers in pg_temp.
+DO $$
+BEGIN
+  EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'cannot revoke TEMPORARY: run deploy/02-restrict-advisory-locks.sql as a superuser';
+END$$;
+
+-- Advisory locks are cluster-wide and ignore RLS: any login could block a
+-- key used by another tenant or by the relay. Only the roles that need them
+-- keep EXECUTE. Revoking privileges on pg_catalog functions needs a
+-- superuser; when migrations run as a non-superuser owner the operator must
+-- run deploy/02-restrict-advisory-locks.sql.
+DO $$
+DECLARE f regprocedure; me text := current_user;
+BEGIN
+  IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+    RAISE NOTICE 'not superuser: run deploy/02-restrict-advisory-locks.sql as a superuser';
+    RETURN;
+  END IF;
+  FOR f IN SELECT p.oid::regprocedure FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'pg_catalog' AND p.proname LIKE 'pg%advisory%' LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', f);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO serk_publisher, %I', f, me);
+  END LOOP;
+END$$;

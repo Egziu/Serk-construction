@@ -137,6 +137,8 @@ func translate(err error) error {
 		return fmt.Errorf("%w: %s", ErrInvariant, pgErr.ConstraintName)
 	case "23514", "23000", "23503", "23P01": // check, integrity, fk, exclusion
 		return fmt.Errorf("%w: %s", ErrInvariant, pgErr.Message)
+	case "40P01", "40001": // deadlock / serialization: safe to retry
+		return fmt.Errorf("%w: %s", ErrVersionConflict, pgErr.Message)
 	case "42501": // insufficient_privilege
 		return fmt.Errorf("%w: privilege: %s", ErrInvariant, pgErr.Message)
 	}
