@@ -99,31 +99,43 @@ func (s *Service) GetJournal(ctx context.Context, p auth.Principal, id string) (
 	return rec, err
 }
 
-// ApproveJournal moves DRAFT -> APPROVED enforcing SoD.
+// ApproveJournal moves DRAFT -> APPROVED enforcing SoD. When a mandatory
+// journal workflow is published the direct path is refused; approval then
+// happens only as the effect of a workflow step.
 func (s *Service) ApproveJournal(ctx context.Context, p auth.Principal, id string) error {
 	if err := s.authz.Require(p, auth.PermJournalApprove, p.TenantID); err != nil {
 		return err
 	}
 	return s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
-		rec, err := postgres.GetJournal(ctx, tx, id, true)
-		if err != nil {
+		if err := refuseIfMandatory(ctx, tx, "journal"); err != nil {
 			return err
 		}
-		if err := s.authz.RequireProject(p, auth.PermJournalApprove, rec.TenantID, rec.ProjectID); err != nil {
-			return err
-		}
-		if !ledger.CanTransition(rec.Status, ledger.StatusApproved) {
-			return fmt.Errorf("%w: %s -> APPROVED", ledger.ErrBadTransition, rec.Status)
-		}
-		if err := s.authz.CheckSoDApprove(p, auth.JournalActors{CreatedBy: rec.CreatedBy}); err != nil {
-			return err
-		}
-		if err := postgres.ApproveJournal(ctx, tx, id, p.UserID, rec.Version); err != nil {
-			return err
-		}
-		payload := map[string]any{"journal_id": id, "project_id": rec.ProjectID, "approved_by": p.UserID, "created_by": rec.CreatedBy}
-		return s.record(ctx, tx, p, "journal.approve", "journal", id, "journal.approved", payload)
+		return s.approveJournalTx(ctx, tx, p, id)
 	})
+}
+
+func (s *Service) approveJournalTx(ctx context.Context, tx pgx.Tx, p auth.Principal, id string) error {
+	if err := s.authz.Require(p, auth.PermJournalApprove, p.TenantID); err != nil {
+		return err
+	}
+	rec, err := postgres.GetJournal(ctx, tx, id, true)
+	if err != nil {
+		return err
+	}
+	if err := s.authz.RequireProject(p, auth.PermJournalApprove, rec.TenantID, rec.ProjectID); err != nil {
+		return err
+	}
+	if !ledger.CanTransition(rec.Status, ledger.StatusApproved) {
+		return fmt.Errorf("%w: %s -> APPROVED", ledger.ErrBadTransition, rec.Status)
+	}
+	if err := s.authz.CheckSoDApprove(p, auth.JournalActors{CreatedBy: rec.CreatedBy}); err != nil {
+		return err
+	}
+	if err := postgres.ApproveJournal(ctx, tx, id, p.UserID, rec.Version); err != nil {
+		return err
+	}
+	payload := map[string]any{"journal_id": id, "project_id": rec.ProjectID, "approved_by": p.UserID, "created_by": rec.CreatedBy}
+	return s.record(ctx, tx, p, "journal.approve", "journal", id, "journal.approved", payload)
 }
 
 // PostJournal moves APPROVED -> POSTED enforcing SoD and the balance
@@ -133,35 +145,68 @@ func (s *Service) PostJournal(ctx context.Context, p auth.Principal, id string) 
 		return err
 	}
 	return s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
-		rec, err := postgres.GetJournal(ctx, tx, id, true)
-		if err != nil {
+		if err := refuseIfMandatory(ctx, tx, "journal"); err != nil {
 			return err
 		}
-		if err := s.authz.RequireProject(p, auth.PermJournalPost, rec.TenantID, rec.ProjectID); err != nil {
-			return err
-		}
-		if !ledger.CanTransition(rec.Status, ledger.StatusPosted) {
-			return fmt.Errorf("%w: %s -> POSTED", ledger.ErrBadTransition, rec.Status)
-		}
-		if err := s.authz.CheckSoDPost(p, auth.JournalActors{CreatedBy: rec.CreatedBy, ApprovedBy: rec.ApprovedBy}); err != nil {
-			return err
-		}
-		if err := rec.Journal.Validate(); err != nil { // re-validate stored lines before posting
-			return err
-		}
-		// What the approver saw must be what posts: the stored command hash
-		// is recomputed from the stored lines (the DB also freezes them).
-		if postgres.CommandHash(rec.Journal) != rec.CommandHash {
-			return fmt.Errorf("%w: journal content changed after creation", ledger.ErrBadTransition)
-		}
-		if err := postgres.PostJournal(ctx, tx, id, p.UserID, rec.Version); err != nil {
-			return err
-		}
-		d, c, _ := rec.Journal.Totals()
-		payload := map[string]any{"journal_id": id, "project_id": rec.ProjectID, "posted_by": p.UserID, "business_event_at": rec.BusinessEventAt,
-			"debits": d, "credits": c, "reversal_of": rec.ReversalOf}
-		return s.record(ctx, tx, p, "journal.post", "journal", id, "journal.posted", payload)
+		return s.postJournalTx(ctx, tx, p, id)
 	})
+}
+
+func (s *Service) postJournalTx(ctx context.Context, tx pgx.Tx, p auth.Principal, id string) error {
+	if err := s.authz.Require(p, auth.PermJournalPost, p.TenantID); err != nil {
+		return err
+	}
+	rec, err := postgres.GetJournal(ctx, tx, id, true)
+	if err != nil {
+		return err
+	}
+	if err := s.authz.RequireProject(p, auth.PermJournalPost, rec.TenantID, rec.ProjectID); err != nil {
+		return err
+	}
+	if !ledger.CanTransition(rec.Status, ledger.StatusPosted) {
+		return fmt.Errorf("%w: %s -> POSTED", ledger.ErrBadTransition, rec.Status)
+	}
+	if err := s.authz.CheckSoDPost(p, auth.JournalActors{CreatedBy: rec.CreatedBy, ApprovedBy: rec.ApprovedBy}); err != nil {
+		return err
+	}
+	if err := rec.Journal.Validate(); err != nil { // re-validate stored lines before posting
+		return err
+	}
+	// What the approver saw must be what posts: the stored command hash
+	// is recomputed from the stored lines (the DB also freezes them).
+	if postgres.CommandHash(rec.Journal) != rec.CommandHash {
+		return fmt.Errorf("%w: journal content changed after creation", ledger.ErrBadTransition)
+	}
+	if err := postgres.PostJournal(ctx, tx, id, p.UserID, rec.Version); err != nil {
+		return err
+	}
+	d, c, _ := rec.Journal.Totals()
+	payload := map[string]any{"journal_id": id, "project_id": rec.ProjectID, "posted_by": p.UserID, "business_event_at": rec.BusinessEventAt,
+		"debits": d, "credits": c, "reversal_of": rec.ReversalOf}
+	return s.record(ctx, tx, p, "journal.post", "journal", id, "journal.posted", payload)
+}
+
+// cancelJournalTx cancels a DRAFT or APPROVED journal. It is the
+// compensation a rejected journal workflow may run; it never moves value.
+func (s *Service) cancelJournalTx(ctx context.Context, tx pgx.Tx, p auth.Principal, id, reason string) error {
+	if err := s.authz.Require(p, auth.PermJournalApprove, p.TenantID); err != nil {
+		return err
+	}
+	rec, err := postgres.GetJournal(ctx, tx, id, true)
+	if err != nil {
+		return err
+	}
+	if err := s.authz.RequireProject(p, auth.PermJournalApprove, rec.TenantID, rec.ProjectID); err != nil {
+		return err
+	}
+	if !ledger.CanTransition(rec.Status, ledger.StatusCancelled) {
+		return fmt.Errorf("%w: %s -> CANCELLED", ledger.ErrBadTransition, rec.Status)
+	}
+	if err := postgres.CancelJournal(ctx, tx, id, rec.Version); err != nil {
+		return err
+	}
+	return s.record(ctx, tx, p, "journal.cancel", "journal", id, "journal.cancelled",
+		map[string]any{"journal_id": id, "project_id": rec.ProjectID, "cancelled_by": p.UserID, "reason": reason, "previous_status": rec.Status})
 }
 
 // ReverseJournal creates the DRAFT compensating journal for a POSTED journal.

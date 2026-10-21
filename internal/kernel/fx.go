@@ -153,6 +153,22 @@ func (s *Service) ApproveFXSnapshot(ctx context.Context, p auth.Principal, id, r
 	}
 	var res FXDecisionResult
 	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
+		if err := refuseIfMandatory(ctx, tx, "fx_snapshot"); err != nil {
+			return err
+		}
+		var err error
+		res, err = s.approveFXSnapshotTx(ctx, tx, p, id, reason)
+		return err
+	})
+	return res, err
+}
+
+func (s *Service) approveFXSnapshotTx(ctx context.Context, tx pgx.Tx, p auth.Principal, id, reason string) (FXDecisionResult, error) {
+	if err := s.authz.Require(p, auth.PermFXApprove, p.TenantID); err != nil {
+		return FXDecisionResult{}, err
+	}
+	var res FXDecisionResult
+	err := func() error {
 		snap, err := postgres.GetFXSnapshot(ctx, tx, id, true)
 		if err != nil {
 			return err
@@ -200,7 +216,7 @@ func (s *Service) ApproveFXSnapshot(ctx context.Context, p auth.Principal, id, r
 			payload["deviation"] = res.Deviation.String()
 		}
 		return s.record(ctx, tx, p, "fx.snapshot.approve", "fx_snapshot", id, "fx.snapshot.approved", payload)
-	})
+	}()
 	return res, err
 }
 
@@ -222,6 +238,18 @@ func (s *Service) decideNegative(ctx context.Context, p auth.Principal, id, reas
 		return err
 	}
 	return s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
+		return s.decideNegativeTx(ctx, tx, p, id, reason, from, to, action, event)
+	})
+}
+
+func (s *Service) decideNegativeTx(ctx context.Context, tx pgx.Tx, p auth.Principal, id, reason string, from, to fx.ApprovalStatus, action, event string) error {
+	if err := s.authz.Require(p, auth.PermFXApprove, p.TenantID); err != nil {
+		return err
+	}
+	if err := requireReason(reason); err != nil {
+		return err
+	}
+	{
 		snap, err := postgres.GetFXSnapshot(ctx, tx, id, true)
 		if err != nil {
 			return err
@@ -238,7 +266,7 @@ func (s *Service) decideNegative(ctx context.Context, p auth.Principal, id, reas
 			return err
 		}
 		return s.record(ctx, tx, p, action, "fx_snapshot", id, event, map[string]any{"snapshot_id": id, "by": p.UserID, "reason": reason})
-	})
+	}
 }
 
 // ConvertRequest describes an FX conversion query.

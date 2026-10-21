@@ -31,6 +31,27 @@ func (s *Service) ClosePeriod(ctx context.Context, p auth.Principal, periodID st
 	}
 	var res ClosePeriodResult
 	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
+		per, err := postgres.GetFiscalPeriod(ctx, tx, periodID, false)
+		if err != nil {
+			return err
+		}
+		if per.Status == "OPEN" { // locking an already closed period is not workflow-gated
+			if err := refuseIfMandatory(ctx, tx, "fiscal_period"); err != nil {
+				return err
+			}
+		}
+		res, err = s.closePeriodTx(ctx, tx, p, periodID, lock)
+		return err
+	})
+	return res, err
+}
+
+func (s *Service) closePeriodTx(ctx context.Context, tx pgx.Tx, p auth.Principal, periodID string, lock bool) (ClosePeriodResult, error) {
+	if err := s.authz.Require(p, auth.PermPeriodClose, p.TenantID); err != nil {
+		return ClosePeriodResult{}, err
+	}
+	var res ClosePeriodResult
+	err := func() error {
 		per, err := postgres.GetFiscalPeriod(ctx, tx, periodID, true)
 		if err != nil {
 			return err
@@ -65,7 +86,7 @@ func (s *Service) ClosePeriod(ctx context.Context, p auth.Principal, periodID st
 		return s.record(ctx, tx, p, "period.close", "fiscal_period", periodID, ev, map[string]any{
 			"period_id": periodID, "name": per.Name, "action": rec.Action, "journal_count": rec.JournalCount,
 			"tb_debits": rec.TBDebits, "tb_credits": rec.TBCredits, "tb_hash": rec.TBHash})
-	})
+	}()
 	return res, err
 }
 

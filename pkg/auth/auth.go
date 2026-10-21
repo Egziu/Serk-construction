@@ -49,6 +49,10 @@ const (
 	PermWorkflowPublish Permission = "workflow.publish" // approve a definition (different person)
 	PermWorkflowAdmin   Permission = "workflow.admin"   // console operations: retry effects, cancel instances
 	PermWorkflowRead    Permission = "workflow.read"
+
+	// PermApprovalHighValue is the executive sign-off used by workflow
+	// threshold steps (e.g. journals at or above a materiality limit).
+	PermApprovalHighValue Permission = "approval.high_value"
 )
 
 // Role is a named permission bundle. Roles are tenant-scoped data in
@@ -69,7 +73,7 @@ var DefaultRoles = map[string]Role{
 	"controller": {Name: "controller", Permissions: []Permission{PermJournalPost, PermJournalReverse, PermJournalRead, PermPeriodClose,
 		PermAccountManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead}},
 	"cfo": {Name: "cfo", Permissions: []Permission{PermJournalRead, PermFXRead, PermFXApprove, PermFXApproveExcept, PermFXPolicyApprove,
-		PermPeriodReopen, PermAuditRead, PermScopeTenantWide, PermWorkflowRead, PermWorkflowPublish}},
+		PermPeriodReopen, PermAuditRead, PermScopeTenantWide, PermWorkflowRead, PermWorkflowPublish, PermApprovalHighValue}},
 	"auditor":            {Name: "auditor", Permissions: []Permission{PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead}},
 	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead}},
 	"project_accountant": {Name: "project_accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermWorkflowRead}},
@@ -119,6 +123,18 @@ func NewAuthorizer(roles map[string]Role, requireDistinctPoster bool) *Authorize
 		roles = DefaultRoles
 	}
 	return &Authorizer{roles: roles, RequireDistinctPoster: requireDistinctPoster, StepUpMaxAge: 10 * time.Minute, now: time.Now}
+}
+
+// KnownPermissions is every permission some role of the catalogue grants.
+// Workflow definitions may only reference these.
+func (a *Authorizer) KnownPermissions() map[Permission]bool {
+	out := map[Permission]bool{}
+	for _, r := range a.roles {
+		for _, p := range r.Permissions {
+			out[p] = true
+		}
+	}
+	return out
 }
 
 // Permissions returns the sorted, de-duplicated permission set of a principal.
