@@ -1,6 +1,6 @@
 # Repository inventory
 
-Generated 2026-10-21T21:03:13Z at commit `74fb7d4` by `tools/inventory.sh` from `git ls-files` and the Go toolchain. Nothing in this file is hand-counted.
+Generated 2026-10-21T21:04:04Z at commit `4547924` by `tools/inventory.sh` from `git ls-files` and the Go toolchain. Nothing in this file is hand-counted.
 
 ## Baseline lineage
 
@@ -16,6 +16,7 @@ Generated 2026-10-21T21:03:13Z at commit `74fb7d4` by `tools/inventory.sh` from 
 | `bae7eeb` | GATEA-11: metrics, trace context, DB health via aggregate-only monitor role, alert rules and executed alert drill |
 | `8a2948b` | GATEA-12 (offline part): go mod verify, build-list CycloneDX SBOM, license review, secret scan; CI runs the same script |
 | `74fb7d4` | Independent re-verification of 0010: 8 open probes closed (0012) |
+| `4547924` | Checkpoint: GATE_STATUS.json (generated, evidence-checked), GO_NO_GO (NO-GO), REPO_INVENTORY, ADR 0008, readiness, implementation log, regenerated privilege matrix, final test log (170 PASS) |
 
 ## Size
 
@@ -24,7 +25,7 @@ Generated 2026-10-21T21:03:13Z at commit `74fb7d4` by `tools/inventory.sh` from 
 | Go (non-test) | 40 | 10230 |
 | Go tests | 35 | 8012 |
 | SQL migrations | 12 | 3736 |
-| Markdown docs | 27 | 2077 |
+| Markdown docs | 31 | 2194 |
 | Shell / Python tooling | 5 | 568 |
 
 ## Packages
