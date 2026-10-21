@@ -3,7 +3,7 @@
 ## 1. Baseline commit and worktree status
 
 - **Input:** 0.2.0-gate-a at `ea3533c`. Its zip, bundle and SHA256SUMS were verified when the 0.2.0 package was produced.
-- **This checkpoint:** tag `v0.3.0-gate-a-hardening` at `0e36a34`, with a clean worktree (`git status` empty).
+- **This checkpoint:** tag `v0.3.0-gate-a-hardening` (see SHA256SUMS for the exact commit), with a clean worktree (`git status` empty).
 - **Lineage:** `docs/baseline/REPO_INVENTORY.md` (generated).
 
 ## 2. Files created or modified (responsibility)
