@@ -45,6 +45,20 @@ func (s *Server) registerAR() {
 		return nil, k().DecideContract(ctx, p, id, false, b.Reason)
 	}))
 	m.Handle("GET /v1/contracts/{id}/position", s.authed(s.contractPosition))
+	// Variations (0026).
+	m.Handle("POST /v1/contracts/{id}/variations", s.authed(s.createVariation))
+	m.Handle("POST /v1/variations/{id}/submit", decide(func(ctx context.Context, p auth.Principal, id string, _ decisionBody) (any, error) {
+		return nil, k().SubmitVariation(ctx, p, id)
+	}))
+	m.Handle("POST /v1/variations/{id}/approve", decide(func(ctx context.Context, p auth.Principal, id string, _ decisionBody) (any, error) {
+		return nil, k().DecideVariation(ctx, p, id, true, "")
+	}))
+	m.Handle("POST /v1/variations/{id}/reject", decide(func(ctx context.Context, p auth.Principal, id string, b decisionBody) (any, error) {
+		return nil, k().DecideVariation(ctx, p, id, false, b.Reason)
+	}))
+	m.Handle("POST /v1/variations/{id}/cancel", decide(func(ctx context.Context, p auth.Principal, id string, b decisionBody) (any, error) {
+		return nil, k().CancelVariation(ctx, p, id, b.Reason)
+	}))
 	// Measurements.
 	m.Handle("POST /v1/contracts/{id}/measurements", s.authed(s.createMeasurement))
 	m.Handle("POST /v1/measurements/{id}/submit", decide(func(ctx context.Context, p auth.Principal, id string, _ decisionBody) (any, error) {
@@ -226,6 +240,25 @@ func (s *Server) issueCreditNote(w http.ResponseWriter, r *http.Request) {
 	}
 	cn, err := s.cfg.Kernel.IssueCreditNote(r.Context(), principalFrom(r.Context()), id, b.NetAmount, b.CreditDate.Time, b.Reason)
 	s.created(w, cn, err)
+}
+
+func (s *Server) createVariation(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var b kernel.VariationInput
+	if !decode(w, r, &b) {
+		return
+	}
+	for _, l := range b.Lines {
+		if l.BOQItemID != "" && !canonicalUUID(l.BOQItemID) {
+			writeErr(w, http.StatusUnprocessableEntity, "validation", "boq_item_id must be a canonical UUID")
+			return
+		}
+	}
+	v, err := s.cfg.Kernel.CreateVariation(r.Context(), principalFrom(r.Context()), id, b)
+	s.created(w, v, err)
 }
 
 func (s *Server) recordRetentionRelease(w http.ResponseWriter, r *http.Request) {

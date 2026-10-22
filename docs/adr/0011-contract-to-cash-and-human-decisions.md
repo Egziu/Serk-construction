@@ -171,3 +171,28 @@ Retention deducted on each certificate is debited to retention receivable when t
 - Kernel: `TestJourneyB_RetentionReleaseRace`.
 - HTTP: `TestAPIJourneyB_ContractToCash`.
 - Browser: `TestConsoleBrowserJourneyB`, where the release is recorded with the certificate hashed in the browser and approved from the document page.
+
+## Addendum: contract variations (2026-10-22), migration 0026
+
+A variation (change order) changes the scope of an ACTIVE contract on the client's written instruction.
+
+- **Who.**
+  - A commercial manager (`contract.manage`) records a DRAFT variation with the client's instruction reference and the SHA-256 of the signed instruction (computed in the browser), then submits it.
+  - The CFO (`contract.approve`) approves it with fresh MFA, as a different person and a human, or rejects it with a reason.
+  - Commercial staff may cancel a draft or submitted variation, with a reason.
+- **Lines.**
+  - **CHANGE** adds a quantity, or removes one (an omission), on an existing contract line. It is priced at the contract rate, which a quantity change cannot renegotiate. The unit and BOQ link are taken from the contract line.
+  - **NEW** adds a contract line with its own rate. Its line number must be unused on the contract and on every live variation, and a BOQ link must point to the project's approved BOQ.
+  - The database prices every line. Nothing changes after submission.
+- **Effective quantity.** Signed contract lines are never edited. A line's effective quantity is its signed quantity plus approved CHANGEs (`contract_line_qty`), and measurement verification is capped by it. An omission can never take a line below the quantity already verified: this is checked when the line is recorded and again at approval, under the contract row lock that measurement verification also takes.
+- **Approval.** On approval the NEW lines are inserted into `contract_lines`. The contract-line guard now accepts an insert into an ACTIVE contract only as an exact copy of a NEW line of a variation approved in the same transaction. A deferred check makes sure every NEW line arrived.
+- **Value.** `contract_value` stays as signed. The position reports `variations_approved` and `revised_contract_value`.
+- **Accounting.** There is no journal. Revenue follows certification: IPCs value verified quantities of all contract lines, including variation lines.
+
+**Not built:** daywork, claims and extension-of-time records; variations priced by star rates or by re-rating existing work; variation-specific retention or advance terms.
+
+**Tests.**
+
+- Kernel: `TestJourneyB_Variation`, with figures in docs/testing/E2E_JOURNEY_B.md. It covers 13 refusals, including a reduction overtaken by verified work.
+- HTTP: `TestAPIJourneyB_ContractToCash`.
+- Browser: `TestConsoleBrowserJourneyB`, where the variation is recorded with the instruction hashed in the browser and approved by the CFO.

@@ -215,3 +215,47 @@ Retention held: **432,000**.
 | Receivable open | 1,548,000 + 216,000 = **1,764,000** |
 
 **Browser journey:** 265,500 released at taking over. Receivable open is 265,500 and retention held is 0.
+
+## Variations (`TestJourneyB_Variation`, migration 0026)
+
+The contract is 23,060,000:
+
+| Line | Work | Quantity | Rate |
+|---|---|---|---|
+| 1 | Excavation | 10,000 m3 | 350 |
+| 2 | Concrete | 1,200 m3 | 6,500 |
+| 3 | Steel | 120 t | 98,000 |
+
+**Measurement 1** verifies 4,000 / 300 / 20.
+
+**VO-1**
+
+| Change | Value |
+|---|---|
+| Line 2 +200 m3 | 1,300,000 |
+| Line 1 −1,000 m3 | −350,000 |
+| New line 4, gabions 500 m3 @ 2,400 | 1,200,000 |
+| **Total** | **2,150,000** |
+
+The revised contract value is **25,210,000**.
+
+**Measurement 2**
+
+- Line 2 +1,050: cumulative 1,350, which is over the signed 1,200 but within the varied 1,400.
+- Line 4: 200 m3.
+- A measurement of line 2 at +1,101 (1,401 > 1,400) is refused.
+
+**IPC 1**
+
+| Item | Amount |
+|---|---|
+| Cumulative gross: 1,400,000 + 8,775,000 + 1,960,000 + 480,000 | 12,615,000 |
+| Retention | 630,750 |
+| VAT | 1,892,250 |
+| **Due** | **13,876,500** |
+
+**VO-2** reduces line 3 by 90 t, leaving 30. Line 3 is then verified to 35, so approving VO-2 is refused. VO-2 is rejected with a reason, and VO-3 is cancelled. The revised value stays 25,210,000.
+
+**HTTP journey:** line 1 +500 (175,000) and new line 4 (1,200,000) give 1,375,000. The revised value is 24,435,000.
+
+**Browser journey:** line 2 +100 (650,000) and new line 4 (1,200,000) give 1,850,000. The revised value is 24,910,000.

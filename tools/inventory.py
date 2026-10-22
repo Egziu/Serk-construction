@@ -39,7 +39,7 @@ tests = {}  # name -> file
 for f in sorted(glob.glob(os.path.join(ROOT, "**/*_test.go"), recursive=True)):
     for t in re.findall(r"^func (Test\w+)\(t \*testing\.T\)", open(f).read(), re.M):
         tests[t] = os.path.relpath(f, ROOT)
-LOGS = ["docs/testing/evidence/full-suite-journey-c.txt", "docs/testing/evidence/full-suite-credit-notes.txt", "docs/testing/evidence/full-suite-retention-release.txt", "docs/testing/evidence/full-suite-review7-fixes.txt", "docs/testing/evidence/full-suite-stock-transfers.txt"]
+LOGS = ["docs/testing/evidence/full-suite-journey-c.txt", "docs/testing/evidence/full-suite-credit-notes.txt", "docs/testing/evidence/full-suite-retention-release.txt", "docs/testing/evidence/full-suite-review7-fixes.txt", "docs/testing/evidence/full-suite-stock-transfers.txt", "docs/testing/evidence/full-suite-variations-fresh-db.txt"]
 results = {}
 for lg in LOGS:  # later logs override earlier ones
     if os.path.exists(os.path.join(ROOT, lg)):
@@ -78,9 +78,9 @@ DOMAINS = [
  dict(name="Bank statements and reconciliation", status="partial", tables=r"^bank_statement", routes=r"^/v1/bank-statements|reconciliation", screens=r"#/(bank|recon)",
       perms=r"^bank\.(import|reconcile)", postings="P2P_SETTLEMENT: Dr payments in transit, Cr bank", tests=r"^Test(JourneyA|StatementParse|R3_|R4_)",
       gaps="Statement authenticity depends on how the file is obtained: no bank-signed feed (R-BANKFEED)"),
- dict(name="Contracts and measurements (Journey B)", status="implemented", tables=r"^(customers|contract_|contracts|measurement)", routes=r"^/v1/(customers|contract|measurements)",
-      screens=r"#/list/(contract|measurement|customer$)", perms=r"^(customer|contract|measure)\.", postings="-",
-      tests=r"^Test(JourneyB|APIJourneyB|ConsoleBrowserJourneyB|GovernedAI)", gaps="No variations/change orders; no retention bonds"),
+ dict(name="Contracts and measurements (Journey B)", status="implemented", tables=r"^(customers|contract_|contracts|measurement|variation_)", routes=r"^/v1/(customers|contract|measurements|variations)",
+      screens=r"#/list/(contract|measurement|customer$|contract_variation)", perms=r"^(customer|contract|measure)\.", postings="-",
+      tests=r"^Test(JourneyB|APIJourneyB|ConsoleBrowserJourneyB|GovernedAI)", gaps="No claims, daywork or extension-of-time records; no retention bonds"),
  dict(name="IPC, AR invoicing and receipts (Journey B)", status="implemented", tables=r"^(ipcs|customer_invoices|customer_receipts|receipt_allocations|customer_credit_notes|retention_releases)",
       routes=r"^/v1/(ipcs|customer-invoices|receipts|credit-notes|retention-releases)|ar-reconciliation|position", screens=r"#/list/(ipc|customer_invoice|customer_receipt|customer_credit_note|retention_release|money_in)",
       perms=r"^(ipc|ar)\.", postings="AR_INVOICE: Dr AR, retention, advances; Cr revenue, VAT output. AR_RECEIPT: Dr bank; Cr AR, advances. AR_CREDIT: Dr revenue, VAT output; Cr AR. AR_RETENTION: Dr AR; Cr retention",
@@ -92,8 +92,9 @@ DOMAINS = [
       tests=r"^Test(JourneyC|APIJourneyC|ConsoleBrowserJourneyC|R7_)", gaps="No supplier returns, landed costs, in-transit stock, serial/lot tracking; invoice variance not revalued into stock (JC-INVOICE-REVALUE)"),
  dict(name="Planning, CPM and EVM", status="absent", tables=r"^(schedule|activities|baseline)", routes=r"^/v1/(schedule|plans)", screens=r"^#/(plan|schedule)", perms=r"^plan\.",
       postings="-", tests=r"^TestEVM|^TestEvm", gaps="pkg/evm computes EVM figures but nothing stores or schedules work"),
- dict(name="Variations and claims", status="absent", tables=r"^(variation|claim)", routes=r"^/v1/(variations|claims)", screens=r"^#/variation", perms=r"^variation\.", postings="-",
-      tests=r"^TestVariation", gaps="Not started; over-measurement is refused pending this module"),
+ dict(name="Variations and claims", status="partial", tables=r"^(contract_variations|variation_lines|claim)", routes=r"^/v1/(variations|claims)|/variations$",
+      screens=r"#/list/contract_variation", perms=r"^contract\.(manage|approve)", postings="- (revenue follows certification)",
+      tests=r"^Test(JourneyB_Variation|APIJourneyB|ConsoleBrowserJourneyB)", gaps="Variations built (0026); claims, daywork and extension-of-time records not started"),
  dict(name="Site operations and offline capture", status="absent", tables=r"^(site_|diary|offline)", routes=r"^/v1/(site|sync)", screens=r"^#/site", perms=r"^site\.", postings="-",
       tests=r"^Test(Offline|Sync)", gaps="Not started"),
  dict(name="Equipment", status="absent", tables=r"^equipment", routes=r"^/v1/equipment", screens=r"^#/equipment", perms=r"^equipment\.", postings="-", tests=r"^TestEquipment", gaps="Not started"),

@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-22T07:30:46Z",
- "source_commit": "9f66087",
+ "generated_at": "2026-10-22T07:38:25Z",
+ "source_commit": "8caddaa",
  "release_decision": "NO-GO",
  "release_decision_reason": "Gate A not passed (BLOCKED items); Gate B/C partly evidenced (Journeys A and B), other items not tested or partial; Gate P requires independent human sign-off",
  "deployment_authorization": "NONE. Production deployment and live financial operations require explicit authorization and independent human sign-off.",
@@ -633,10 +633,10 @@
     "docs/security/evidence/independent-review-6-after.txt",
     "docs/adr/0011-contract-to-cash-and-human-decisions.md"
    ],
-   "residual_risk": "Variations/change orders are NOT implemented; retention release (0023) and credit notes (0022) are built but not independently reviewed",
+   "residual_risk": "Variations (0026), retention release (0023) and credit notes (0022) are built and tested at kernel, HTTP and browser level but not yet independently reviewed; no claims/daywork",
    "independent_reviewer": "independent AI review agent (review 6)",
    "blocker": "",
-   "next_action": "Variations and claims module; independent review of 0022-0023",
+   "next_action": "Independent review of 0022-0026; claims and daywork",
    "signoff_required": true
   },
   {

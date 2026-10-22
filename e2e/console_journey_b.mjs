@@ -166,6 +166,37 @@ try {
   await snap(com, 'retention-release-approved');
   log('retention 265,500 released at taking over');
 
+  // ---- 6d. Variation: commercial manager records the client's instruction (line 2 +100 m3
+  //          and a new line 4), submits it; the CFO approves with MFA ------------------------
+  await nav(com, `#/doc/contract/${contractID}`, /^Contract CTR-/);
+  await com.getByRole('link', { name: 'Record variation' }).click();
+  await com.getByRole('heading', { level: 1, name: 'Record variation' }).waitFor();
+  await com.getByLabel('Title').fill('River protection works');
+  await com.getByLabel('Reason').fill('Client instruction after the flood survey');
+  await com.getByLabel('Client instruction reference').fill('ERA-VO-001');
+  await com.getByLabel('Signed client instruction').setInputFiles({ name: 'ERA-VO-001.pdf', mimeType: 'application/pdf', buffer: Buffer.from('test') });
+  await com.locator('output').filter({ hasText: 'SHA-256 9f86d081' }).waitFor();
+  await com.getByRole('group', { name: /Quantity changes/ }).getByLabel('Quantity change, line 2').fill('100');
+  const added = com.getByRole('group', { name: 'New lines' });
+  await added.getByLabel('Line number, line 1').fill('4');
+  await added.getByLabel('Description, line 1').fill('Gabion river protection');
+  await added.getByLabel('Unit, line 1').fill('m3');
+  await added.getByLabel('Quantity, line 1').fill('500');
+  await added.getByLabel('Rate, line 1').fill('2400');
+  await audit(com, 'variation form');
+  await com.getByRole('button', { name: 'Create variation' }).click();
+  await com.getByRole('heading', { level: 1, name: /^Variation VO-/ }).waitFor();
+  const voID = await idFromHash(com);
+  await act(com, 'Submit for approval', 'Submit for approval: done');
+  if (await com.getByRole('button', { name: 'Approve', exact: true }).count()) fail('the commercial manager who recorded the variation is offered "Approve"');
+  await nav(cfo, `#/doc/contract_variation/${voID}`, /^Variation VO-/);
+  const voView = await cfo.locator('main').textContent();
+  if (!voView.includes('1,850,000.00')) fail('the variation does not show its value 1,850,000.00 (650,000 + 1,200,000)');
+  await act(cfo, 'Approve', 'Approve: done');
+  await audit(cfo, 'approved variation');
+  await snap(cfo, 'variation-approved');
+  log('variation VO 1,850,000 approved; revised contract value 24,910,000');
+
   // ---- 7. Finance approves and posts the AR journals ------------------------------------
   const fin = await as('finMgr');
   const ctl = await as('controller');
@@ -194,7 +225,7 @@ try {
   const policyHref = await com.getByRole('link', { name: 'Open contract policy' }).getAttribute('href');
   if (!policyHref || !policyHref.startsWith('#/doc/contract_policy/')) fail(`contract policy link points to ${policyHref}`);
   const pos = await com.locator('.panel').filter({ hasText: 'Commercial position' }).textContent();
-  for (const v of ['23,060,000.00', '5,310,000.00', '265,500.00', '4,691,000.00']) {
+  for (const v of ['23,060,000.00', '24,910,000.00', '5,310,000.00', '265,500.00', '4,691,000.00']) {
     if (!pos.includes(v)) fail(`contract position does not show ${v}`);
   }
   await snap(com, 'contract-position');

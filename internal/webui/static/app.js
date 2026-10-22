@@ -188,6 +188,10 @@ const DOCS = {
     statuses: ['DRAFT', 'APPROVED'], actions: { DRAFT: [['approve', 'ar.invoice.approve']] } },
   customer_receipt: { title: 'Receipts', one: 'Receipt', base: '/v1/receipts', create: 'ar.receipt.create', form: 'receipt',
     statuses: ['DRAFT', 'CONFIRMED', 'CANCELLED'], actions: { DRAFT: [['confirm', 'ar.receipt.confirm'], ['cancel', 'ar.receipt.create', 'req'], ['cancel', 'ar.receipt.confirm', 'req']] } },
+  contract_variation: { title: 'Variations', one: 'Variation', base: '/v1/variations',
+    statuses: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELLED'],
+    actions: { DRAFT: [['submit', 'contract.manage'], ['cancel', 'contract.manage', 'req']],
+      SUBMITTED: [['approve', 'contract.approve'], ['reject', 'contract.approve', 'req'], ['cancel', 'contract.manage', 'req']] } },
   customer_credit_note: { title: 'Credit notes', one: 'Credit note', base: '/v1/credit-notes',
     statuses: ['DRAFT', 'APPROVED', 'CANCELLED'],
     actions: { DRAFT: [['approve', 'ar.credit.approve'], ['cancel', 'ar.credit.create', 'req'], ['cancel', 'ar.credit.approve', 'req']] } },
@@ -224,7 +228,7 @@ const NAV = [
     ['#/list/stock_receipt', 'Put-aways', 'p2p.read'], ['#/list/stock_item', 'Stock items', 'p2p.read'], ['#/list/warehouse', 'Warehouses', 'p2p.read']]],
   ['Payables', [['#/list/supplier_invoice', 'Invoices', 'p2p.read'], ['#/list/payment_instruction', 'Payments', 'p2p.read']]],
   ['Treasury', [['#/bank', 'Bank statements', 'bank.import|bank.reconcile'], ['#/list/company_bank_account', 'Company banks', 'scope.tenant_wide'], ['#/list/supplier_bank_account', 'Supplier banks', 'p2p.read']]],
-  ['Revenue', [['#/list/contract', 'Contracts', 'p2p.read'], ['#/list/measurement', 'Measurements', 'p2p.read'], ['#/list/ipc', 'Payment certificates', 'p2p.read'],
+  ['Revenue', [['#/list/contract', 'Contracts', 'p2p.read'], ['#/list/contract_variation', 'Variations', 'p2p.read'], ['#/list/measurement', 'Measurements', 'p2p.read'], ['#/list/ipc', 'Payment certificates', 'p2p.read'],
     ['#/list/customer_invoice', 'Customer invoices', 'p2p.read'], ['#/list/customer_credit_note', 'Credit notes', 'p2p.read'],
     ['#/list/retention_release', 'Retention releases', 'p2p.read'], ['#/list/money_in', 'Money received', 'ar.receipt.create|ar.receipt.confirm'],
     ['#/list/customer_receipt', 'Receipts', 'scope.tenant_wide'], ['#/list/customer', 'Customers', 'p2p.read']]],
@@ -259,6 +263,8 @@ const QUEUES = [
   ['customer.approve', 'customer', 'PENDING', 'Customers to approve'],
   ['contract.policy.approve', 'contract_policy', 'DRAFT', 'Contract policies to approve'],
   ['contract.approve', 'contract', 'SUBMITTED', 'Contracts to approve'],
+  ['contract.manage', 'contract_variation', 'DRAFT', 'Variations to submit'],
+  ['contract.approve', 'contract_variation', 'SUBMITTED', 'Variations to approve'],
   ['measure.create', 'measurement', 'DRAFT', 'Measurements to submit'],
   ['measure.verify', 'measurement', 'SUBMITTED', 'Measurements to verify'],
   ['ipc.prepare', 'ipc', 'DRAFT', 'Certificates to submit'],
@@ -436,7 +442,7 @@ const refOf = (k, type) => (REF_BY_TYPE[k] && REF_BY_TYPE[k][type]) || REF[k];
 // Reading order: what the document is, its state, money, dates, people.
 const ORDER = ['number', 'invoice_number', 'statement_no', 'code', 'name', 'description', 'justification', 'status', 'technical_status', 'match_status',
   'currency', 'subtotal', 'tax_amount', 'total', 'amount', 'invoice_date', 'due_date', 'received_on', 'value_date', 'needed_by', 'valid_until', 'due_at'];
-const MONEY = /amount|total|price|balance|subtotal|threshold|rate$|gross$|_value$|recovery$|_held$|received$|recovered$|_open$|_released$|_cost$/;
+const MONEY = /amount|total|price|balance|subtotal|threshold|rate$|gross$|_value$|recovery$|_held$|received$|recovered$|_open$|_released$|_cost$|value_change$|_approved$/;
 const STAMP = /_at$/;
 const rank = (k) => { const i = ORDER.indexOf(k); return i < 0 ? ORDER.length + (/_by$|_at$/.test(k) ? 1 : 0) : i; };
 const ordered = (keys) => [...keys].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
@@ -533,7 +539,7 @@ function nextSteps(type, d) {
   if (type === 'supplier' && d.status === 'ACTIVE') add('supplier.manage', `#/new/supplierbank/${d.id}`, 'Add bank account');
   if (type === 'grn' && d.status === 'CONFIRMED') add('stock.receive', `#/new/putaway/${d.id}`, 'Put away into a warehouse');
   if (type === 'contract' && d.status === 'ACTIVE') { add('measure.create', `#/new/measurement/${d.id}`, 'Record measurement'); add('ipc.prepare', `#/new/ipc/${d.id}`, 'Prepare payment certificate');
-    add('ar.retention.create', `#/new/retention/${d.id}`, 'Release retention'); }
+    add('ar.retention.create', `#/new/retention/${d.id}`, 'Release retention'); add('contract.manage', `#/new/variation/${d.id}`, 'Record variation'); }
   return links.length ? h('div', { class: 'actions' }, links) : null;
 }
 
@@ -1032,7 +1038,7 @@ const FORMS = {
         { key: 'contract_line_no', label: 'Line', make: (v) => input('contract_line_no', { type: 'hidden', value: String(v.line_no) }) },
         { key: 'description', label: 'Description', make: ro('description') },
         { key: 'unit', label: 'Unit', make: ro('unit') },
-        { key: 'contract_qty', label: 'Contract quantity', make: (v) => h('span', {}, String(v.contract_qty)) },
+        { key: 'contract_qty', label: 'Signed quantity (variations add to it)', make: (v) => h('span', {}, String(v.contract_qty)) },
         { key: 'quantity', label: 'Measured quantity', make: num('quantity') },
       ], lines.map((l) => ({ line_no: l.line_no, description: l.description, unit: l.unit, contract_qty: l.quantity })), false);
       holder.replaceChildren(grid);
@@ -1044,6 +1050,58 @@ const FORMS = {
       if (!lines.length) throw new Error('Enter at least one measured quantity.');
       const res = await api('POST', `/v1/contracts/${ctr.value}/measurements`, { period_end: period.value, lines });
       created('measurement', res, 'Measurement');
+    });
+    await load();
+  },
+
+  async variation(contractID) {
+    const ctr = select('contract_id', await docOpts('contract', 'ACTIVE'), { required: true });
+    if (contractID) ctr.value = contractID;
+    const title = input('title', { type: 'text', maxlength: '300', required: true });
+    const reason = input('reason', { type: 'text', maxlength: '2000', required: true });
+    const ref = input('client_instruction_ref', { type: 'text', maxlength: '100', required: true });
+    const file = h('input', { type: 'file', name: 'instruction_file', accept: '.pdf,image/*' });
+    const sum = h('output', { class: 'hint', 'aria-live': 'polite' });
+    let sha = '';
+    file.addEventListener('change', async () => {
+      sha = '';
+      sum.textContent = '';
+      if (!file.files.length) return;
+      const buf = await crypto.subtle.digest('SHA-256', await file.files[0].arrayBuffer());
+      sha = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      sum.textContent = `SHA-256 ${sha}`;
+    });
+    let changes;
+    const holder = h('div');
+    const load = async () => {
+      const lines = ctr.value ? ((await api('GET', `/v1/p2p/contract/${ctr.value}`)).detail.lines || []) : [];
+      changes = lineGrid('Quantity changes to existing lines (negative for an omission; leave blank for none)', [
+        { key: 'line_no', label: 'Line', make: (v) => input('line_no', { type: 'hidden', value: String(v.line_no) }) },
+        { key: 'description', label: 'Description', make: ro('description') },
+        { key: 'rate', label: 'Contract rate', make: (v) => h('span', {}, money(v.rate)) },
+        { key: 'qty_delta', label: 'Quantity change', make: num('qty_delta') },
+      ], lines.map((l) => ({ line_no: l.line_no, description: l.description, rate: l.rate })), false);
+      holder.replaceChildren(changes);
+    };
+    ctr.addEventListener('change', load);
+    const added = lineGrid('New lines', [
+      { key: 'line_no', label: 'Line number', make: num('line_no') },
+      { key: 'description', label: 'Description', make: txt('description') },
+      { key: 'unit', label: 'Unit', make: txt('unit', { size: '6' }) },
+      { key: 'qty_delta', label: 'Quantity', make: num('qty_delta') },
+      { key: 'rate', label: 'Rate', make: num('rate') },
+    ], [], true);
+    formPage('Record variation', 'A change to the contract on the client\'s written instruction. Quantity changes are priced at the contract rate; new lines carry their own rate. The CFO approves with a fresh multi-factor sign-in.', [
+      h('div', { class: 'grid' }, field('Contract', ctr), field('Title', title), field('Client instruction reference', ref)), field('Reason', reason),
+      field('Signed client instruction', file, 'Its SHA-256 is recorded with the variation; the file stays with you.'), sum, holder, added], 'Create variation', async () => {
+      if (!sha) throw new Error('Attach the signed client instruction so its SHA-256 can be recorded.');
+      const lines = [...changes.rows().filter((r) => r.qty_delta).map((r) => ({ line_no: Number(r.line_no), kind: 'CHANGE', qty_delta: r.qty_delta })),
+        ...added.rows().filter((r) => r.line_no && r.qty_delta).map((r) => ({ line_no: Number(r.line_no), kind: 'NEW', description: r.description, unit: r.unit,
+          qty_delta: r.qty_delta, rate: r.rate || '0' }))];
+      if (!lines.length) throw new Error('Enter at least one quantity change or new line.');
+      const res = await api('POST', `/v1/contracts/${ctr.value}/variations`, { title: title.value.trim(), reason: reason.value.trim(),
+        client_instruction_ref: ref.value.trim(), client_instruction_sha256: sha, lines });
+      created('contract_variation', res, 'Variation');
     });
     await load();
   },
