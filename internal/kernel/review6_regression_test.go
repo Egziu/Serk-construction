@@ -626,7 +626,7 @@ func TestR6_11_HumanRuleAndDraftParity(t *testing.T) {
 	})
 	now := time.Now()
 	a, err := attest.Signer{Master: testdb.ApprovalMaster, Now: func() time.Time { return now }}.Sign(attest.Claims{Tenant: f.tenant, Actor: "u-commercial", Action: "ipc.certify",
-		SubjectType: "ipc", SubjectID: ipc, SubjectHash: hash, Context: "CERTIFIED", Perms: []string{"ipc.certify", "p2p.read"}, MFA: true, AuthTime: now.Unix()})
+		SubjectType: "ipc", SubjectID: ipc, SubjectHash: hash, Context: "CERTIFIED", Perms: withMarkers([]string{"ipc.certify", "p2p.read"}), MFA: true, AuthTime: now.Unix()})
 	must(t, "sign", err)
 	r6held(t, "signed ipc.certify attestation without principal.human", f.r3tx(func(ctx context.Context, tx pgx.Tx) error {
 		if err := postgres.Authorize(ctx, tx, a.JSON()); err != nil {

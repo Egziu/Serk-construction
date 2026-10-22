@@ -1,6 +1,8 @@
 package legacy
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -72,4 +74,38 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+// R10-F10 and R10-I5.
+func TestControlTypesAndBOM(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"accounts.csv":         "\ufeffcode,name,type\n1100,AR,EQUITY\n2000,AP,ASSET\n3000,Capital,EQUITY\n",
+		"suppliers.csv":        "code,name,tin\n",
+		"customers.csv":        "code,name\n",
+		"cost_codes.csv":       "code,name\n",
+		"opening_balances.csv": "account_code,cost_code,debit,credit\n3000,,,0.00\n",
+		"open_payables.csv":    "supplier_code,number,invoice_date,due_date,amount\n",
+		"open_receivables.csv": "customer_code,number,invoice_date,due_date,amount\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := Validate(Options{Dir: dir, CutOver: time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), MinorUnits: 2, APAccount: "2000", ARAccount: "1100"})
+	var control, header int
+	for _, e := range s.Exceptions {
+		if e.Rule == "CONTROL" && strings.Contains(e.Text, "want") {
+			control++
+		}
+		if e.Rule == "HEADER" {
+			header++
+		}
+	}
+	if control != 2 {
+		t.Errorf("mistyped control accounts reported %d times, want 2: %+v", control, s.Exceptions)
+	}
+	if header != 0 {
+		t.Errorf("a UTF-8 BOM failed the header check: %+v", s.Exceptions)
+	}
 }

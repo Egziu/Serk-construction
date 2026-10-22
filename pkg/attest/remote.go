@@ -9,6 +9,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
+	"sort"
 	"time"
 )
 
@@ -110,8 +112,34 @@ func (r *Remote) Issue(ctx context.Context, c Claims) (Attestation, error) {
 	got := out.Attestation.Claims
 	if got.Tenant != c.Tenant || got.Actor != c.Actor || got.Action != c.Action || got.SubjectType != c.SubjectType ||
 		got.SubjectID != c.SubjectID || got.SubjectHash != c.SubjectHash || got.Context != c.Context || got.MFA != c.MFA ||
-		got.AuthTime != c.AuthTime || len(got.Perms) != len(c.Perms) {
+		got.AuthTime != c.AuthTime || !samePerms(got.Perms, c.Perms) {
 		return Attestation{}, fmt.Errorf("%w: signer altered the claims", ErrInvalid)
 	}
+	// R10-F6: the fields the signer fills must be well formed.
+	now := time.Now().Unix()
+	if got.V != Version || got.KeyID == "" || len(got.KeyID) > 16 || !nonceForm.MatchString(got.Nonce) || !sigForm.MatchString(out.Attestation.Sig) ||
+		got.ExpiresAt <= got.IssuedAt || got.ExpiresAt-got.IssuedAt > int64(MaxTTL/time.Second) || got.IssuedAt > now+60 || got.ExpiresAt <= now {
+		return Attestation{}, fmt.Errorf("%w: malformed attestation from the signer", ErrInvalid)
+	}
 	return *out.Attestation, nil
+}
+
+var (
+	nonceForm = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	sigForm   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+func samePerms(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	x, y := append([]string(nil), a...), append([]string(nil), b...)
+	sort.Strings(x)
+	sort.Strings(y)
+	for i := range x {
+		if x[i] != y[i] {
+			return false
+		}
+	}
+	return true
 }

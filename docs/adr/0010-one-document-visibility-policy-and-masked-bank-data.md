@@ -78,3 +78,12 @@ The review (`docs/security/INDEPENDENT_REVIEW_5_2026-10-22.md`) found that the p
   - A duplicate company account number is still refused, so a `bankacct.manage` holder can tell a right guess from a wrong one by registering it.
   - The refusal now returns the same generic invalid-input error as any other bad input and is audited as `bankacct.register_refused`. Each wrong guess leaves a PENDING account that a second person must approve.
   - Removing the oracle completely (uniqueness on a keyed digest, numbers out of the runtime credential's reach) belongs to R-BANK-AT-REST.
+
+
+## Addendum (2026-10-22, migration 0035, independent review 10, R10-F4)
+
+The 0017 keyed digest was computed **in the database** with the tenant's approval key. Any holder of the tenant credential could therefore call `p2p_account_digest()` as an offline oracle: 100,000 guesses took 1.75 s and recovered a full account number from its digest and last four digits. Changes:
+- The digest is now computed in the API: `datakey.Digest`, HKDF + HMAC-SHA-256 under `SERK_BANK_DIGEST_KEY`, prefix `hkey:`. The database never holds that key.
+- The database function is revoked from every runtime role, and new `hmac:` digests are refused.
+- `serk-migrate encrypt-bank-accounts` re-digests the remaining rows. The posture check reports any that are left.
+- Residual (R10-I4): the database cannot check that a digest matches its ciphertext. Only the API writes both, and encrypted details are immutable.

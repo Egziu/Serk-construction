@@ -29,6 +29,7 @@ func (f *fixture) sign(t *testing.T, tenant string, c attest.Claims, now time.Ti
 	if !slices.Contains(c.Perms, "principal.human") {
 		c.Perms = append(append([]string{}, c.Perms...), "principal.human")
 	}
+	c.Perms = withMarkers(c.Perms)
 	a, err := attest.Signer{Master: testdb.ApprovalMaster, Now: func() time.Time { return now }}.Sign(c)
 	if err != nil {
 		t.Fatal(err)
@@ -250,4 +251,28 @@ func TestAttestation_DecisionBoundToStepAndOutcome(t *testing.T) {
 	denied(t, "step-1 attestation used for step 0", f.rawAs(f.appr, "workflow.decide", "workflow_instance", w.ID, "1:APPROVE",
 		`INSERT INTO workflow_decisions(tenant_id,instance_id,step_index,step_id,decided_by,decision) VALUES ($1::uuid,$2::uuid,0,'review','u-approver','APPROVE')`,
 		f.tenant, w.ID))
+}
+
+// withMarkers adds what the signer adds for a tenant-wide token without a
+// session id or issue time (0035), unless the perms already carry markers.
+func withMarkers(perms []string) []string {
+	out := append([]string{}, perms...)
+	has := func(prefix string) bool {
+		for _, x := range out {
+			if strings.HasPrefix(x, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("principal.scope:") && !has("principal.project:") {
+		out = append(out, "principal.scope:tenant")
+	}
+	if !has("principal.session:") {
+		out = append(out, "principal.session:-")
+	}
+	if !has("principal.iat:") {
+		out = append(out, "principal.iat:0")
+	}
+	return out
 }

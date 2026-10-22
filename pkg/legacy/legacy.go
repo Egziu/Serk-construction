@@ -88,6 +88,9 @@ func readCSV(dir, name string, want []string) (*table, []Exception) {
 	if err != nil {
 		return nil, []Exception{{File: name, Rule: "FILE", Text: "no header row"}}
 	}
+	if len(hdr) > 0 {
+		hdr[0] = strings.TrimPrefix(hdr[0], "\ufeff") // spreadsheet UTF-8 BOM (R10-I5)
+	}
 	for i := range hdr {
 		hdr[i] = strings.TrimSpace(strings.ToLower(hdr[i]))
 	}
@@ -178,9 +181,14 @@ func Validate(o Options) Summary {
 		}
 		s.Files["accounts.csv"] = len(accounts.rows)
 	}
-	for _, c := range []struct{ code, what string }{{o.APAccount, "AP control"}, {o.ARAccount, "AR control"}} {
-		if _, ok := acct[c.code]; !ok && accounts != nil {
+	for _, c := range []struct{ code, what, typ string }{{o.APAccount, "AP control", "LIABILITY"}, {o.ARAccount, "AR control", "ASSET"}} {
+		typ, ok := acct[c.code]
+		switch {
+		case !ok && accounts != nil:
 			add("accounts.csv", 0, "CONTROL", c.what+" account "+c.code+" is not in the chart")
+		case ok && typ != c.typ:
+			// R10-F10: a mistyped control account would invert the tie-out.
+			add("accounts.csv", 0, "CONTROL", fmt.Sprintf("%s account %s is %s, want %s", c.what, c.code, typ, c.typ))
 		}
 	}
 
@@ -282,7 +290,7 @@ func Validate(o Options) Summary {
 					}
 				}
 			}
-			uniq("opening_balances.csv", n, seen, r[0]+"/"+r[1], "account/cost code")
+			uniq("opening_balances.csv", n, seen, r[0]+"\x1f"+r[1], "account/cost code")
 		}
 		s.Files["opening_balances.csv"] = len(ob.rows)
 		s.Balanced = debit.Equal(credit)
@@ -308,7 +316,7 @@ func Validate(o Options) Summary {
 			if r[1] == "" {
 				add(file, n, "NUMBER", "empty document number")
 			}
-			uniq(file, n, seen, r[0]+"/"+r[1], party+"/number")
+			uniq(file, n, seen, r[0]+"\x1f"+r[1], party+"/number")
 			inv, ok1 := date(file, n, "invoice_date", r[2])
 			due, err := time.Parse("2006-01-02", r[3])
 			if err != nil {

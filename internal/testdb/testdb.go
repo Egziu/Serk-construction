@@ -26,7 +26,8 @@ import (
 var ApprovalMaster = []byte("serk-test-approval-signing-secret-0123456789abcdef")
 
 // BankDataKeys are the bank-number data keys used by tests only (0032).
-var BankDataKeys = datakey.Ring{Current: datakey.Key{ID: "test-k1", Master: []byte("serk-test-bank-data-key-0123456789abcdefABCDEF")}}
+var BankDataKeys = datakey.Ring{Current: datakey.Key{ID: "test-k1", Master: []byte("serk-test-bank-data-key-0123456789abcdefABCDEF")},
+	DigestKey: []byte("serk-test-bank-digest-key-0123456789abcdefABCDEF")}
 
 // Secret is the tenant-credential derivation secret used by tests only.
 var Secret = []byte("serk-test-tenant-credential-secret-0123456789")

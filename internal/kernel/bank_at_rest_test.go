@@ -41,7 +41,7 @@ func TestBankAtRest_CiphertextOnlyInTheDatabase(t *testing.T) {
 	if len(enc) < 30 || strings.Contains(string(enc), number) || strings.Contains(string(enc), "987654") {
 		t.Errorf("OPEN: ciphertext carries the number: %x", enc)
 	}
-	if !strings.HasPrefix(digest, "hmac:") || len(digest) != 69 {
+	if !strings.HasPrefix(digest, "hkey:") || len(digest) != 69 { // API-keyed digest (0035, R10-F4)
 		t.Errorf("digest form: %q", digest)
 	}
 	if last4 != "4321" {
@@ -164,5 +164,84 @@ func TestBankAtRest_LegacyPlaintextConversionAndPosture(t *testing.T) {
 	must(t, "setting", f.super.QueryRow(f.ctx, `SELECT count(*) FROM (SELECT set_config('log_parameter_max_length', '0', true)) s, serk_database_posture() p WHERE p.issue LIKE 'log_parameter%'`).Scan(&withZero))
 	if withZero != 0 {
 		t.Errorf("posture reports log_parameter_max_length with the setting at 0")
+	}
+}
+
+// Rows encrypted between 0032 and 0035 carry a digest the database computed
+// (hmac:). The posture check reports them, the converter re-digests them
+// with the API's key (R10-F4) so duplicate detection works against them,
+// and no other change to an encrypted row's details is admitted. (Company
+// bank accounts are unique per tenant on the digest; supplier accounts are
+// not, so the digest form matters for company accounts and for the approval
+// subjects and payment snapshots that bind it.)
+func TestBankAtRest_LegacyDigestRedigested(t *testing.T) {
+	w := newP2PWorld(t)
+	f, c := w.f, w.cast
+	id, err := f.svc.AddSupplierBankAccount(f.ctx, c.buyer, w.sup[0], "Awash Bank", "ABC Steel PLC", "2000 5555 66677", "ETB")
+	must(t, "add", err)
+	want, err := datakey.Digest(testdb.BankDataKeys.DigestKey, f.tenant, "2000555566677")
+	must(t, "digest", err)
+	// Make it look like a 0032-era row: same ciphertext, a database digest.
+	legacy := "hmac:" + strings.Repeat("ab", 32)
+	must(t, "legacy digest", f.db.AdminStore.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `ALTER TABLE supplier_bank_accounts DISABLE TRIGGER USER`); err != nil {
+			return err
+		}
+		defer tx.Exec(ctx, `ALTER TABLE supplier_bank_accounts ENABLE TRIGGER USER`)
+		_, err := tx.Exec(ctx, `UPDATE supplier_bank_accounts SET account_digest = $2 WHERE id = $1::uuid`, id, legacy)
+		return err
+	}))
+	// An ordinary (non-converter) change of an encrypted row's digest is
+	// refused, whoever makes it: the owner in a tenant-scoped transaction is
+	// still a maintenance session, so test the shape the trigger admits
+	// against one it does not (hkey -> hkey).
+	err = f.db.AdminStore.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `ALTER TABLE supplier_bank_accounts DISABLE TRIGGER supplier_bank_accounts_guard`)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE supplier_bank_accounts SET account_digest = $2, account_last4 = '0000' WHERE id = $1::uuid`, id, want)
+		return err
+	})
+	if err == nil {
+		t.Errorf("OPEN: digest and display suffix of an encrypted row changed together")
+	}
+	issues, err := f.app.Posture(f.ctx)
+	must(t, "posture", err)
+	found := false
+	for _, s := range issues {
+		if strings.Contains(s, "database-computed digest") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("posture does not report the hmac: digest: %q", issues)
+	}
+	n, err := postgres.EncryptBankAccounts(f.ctx, f.admin, testdb.BankDataKeys)
+	must(t, "convert", err)
+	if n < 1 {
+		t.Errorf("re-digested %d rows", n)
+	}
+	var got string
+	must(t, "read", f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT account_digest FROM supplier_bank_accounts WHERE id = $1::uuid`, id).Scan(&got)
+	}))
+	if got != want {
+		t.Errorf("digest after conversion %q, want the API-keyed %q", got, want)
+	}
+	issues, err = f.app.Posture(f.ctx)
+	must(t, "posture after", err)
+	for _, s := range issues {
+		if strings.Contains(s, "database-computed digest") {
+			t.Errorf("posture still reports: %q", s)
+		}
+	}
+	// The ciphertext was untouched: the reveal still opens it.
+	if rev, err := f.svc.RevealBankAccount(f.ctx, fresh(c.finMgr), "supplier_bank_account", id, "Verifying the payee before the first payment run"); err != nil || rev.AccountNumber != "2000555566677" {
+		t.Errorf("reveal after re-digesting: %v %v", rev.AccountNumber, err)
+	}
+	// A second run finds nothing to do.
+	if n, err := postgres.EncryptBankAccounts(f.ctx, f.admin, testdb.BankDataKeys); err != nil || n != 0 {
+		t.Errorf("second conversion: %d rows, %v", n, err)
 	}
 }

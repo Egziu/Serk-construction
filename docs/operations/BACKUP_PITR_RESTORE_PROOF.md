@@ -106,3 +106,44 @@ The script refuses to run if `DRILL_DIR` exists, unless `DRILL_FORCE=1` is set. 
 
 - Proven: a backup chain can be kept offsite in a form that discloses nothing, and a fresh host can be rebuilt from it alone to an exact point in time, with the ledger's integrity and audit evidence intact. The bank data key (0032) is not in the backup, so bank account numbers in a restored database still need the API's key.
 - Not proven: the real offsite medium (object storage with retention lock, cross-region copies), the retention and key-rotation schedule, restore at production data volume, and custody of the private key in a vault or HSM. These need staging infrastructure (GATEA-08) and a human-owned key ceremony. The RPO measurement of §2 (archive_timeout) applies unchanged.
+
+## 6. Signed, encrypted offsite drill after review 10 (2026-10-22)
+
+Independent review 10 found that the §5 drill authenticated nothing (R10-F8): the SHA-256 manifest sits in the same offsite store, and `age` provides confidentiality only, because anyone with the public recipient key can produce a valid ciphertext. Someone able to write the offsite store could therefore replace the base backup or a WAL segment, together with its manifest line, and both restore-time checks would pass. The review also listed weaknesses in the drill as evidence (R10-I3). The drill script was changed, and it was **executed** again on a disposable PostgreSQL 16.15 cluster. Raw output: `docs/operations/evidence/pitr-offsite-signed-drill-2026-10-22.txt`. That run is PASS, at migrations 1–35. An earlier run of the changed script failed on the drill's own control: the description marker was searched for after the TRUNCATE had replaced the ledger's files. The control now runs before the damage.
+
+### What changed
+
+| Item | Before (§5) | Now |
+|---|---|---|
+| Authenticity | Unsigned SHA-256 manifest in the offsite store | Each object is signed with Ed25519 over `serk-offsite-v1 / name / SHA-256`. The key exists only on the primary. The recovery host checks the signature against a public key pinned out of band, and does this **before** decrypting. A failed check refuses the base backup (`restore_command` fails for a WAL segment). |
+| Forgery test | None | (a) Forged base backup: random bytes encrypted to the real recipient, with a matching manifest line. (b) Forged WAL segment: an older genuine segment re-encrypted under the name of the first segment needed after the base. Both must be refused. |
+| Base backup on the primary | `pg_basebackup -Ft` wrote a plaintext `base.tar` to disk, which was then encrypted | `pg_basebackup -D - -Ft` streams straight into `age`. No plaintext file is written; the run reports 0 such files. |
+| `pg_verifybackup` | Output discarded, `\|\| true` | PostgreSQL's `backup_manifest` travels inside the encrypted stream. `pg_verifybackup` runs on the recovery host, its output is in the report, and failure stops the restore. |
+| Archive retries | `test ! -f` made every retry fail after an interrupted copy, so WAL would accumulate | Uploads go to `.part` and are renamed. An existing object is accepted only if its signature verifies. An unverifiable object is replaced, along with its manifest line. All three paths are exercised at the end of the evidence file. |
+| Markers | The bank-number marker cannot be in the database since 0032, so its absence proved nothing | Supplier tax id, supplier name, journal description and `schema_migrations` each have a positive control in the primary's data files, taken before the damage. Separately, the bank number is shown to be absent from the primary's files as well as from the offsite store. |
+| Verdict | `scan == scan at target` (a planted `UNBALANCED_POSTED` passed) | Requires a **clean** `ledger_integrity_scan()` at both the target and the restore. The workload no longer includes the test that deliberately fabricates a defect. |
+
+### Results (from the evidence file)
+
+| Check | Result |
+|---|---|
+| Plaintext base-backup files on the primary host | 0 |
+| Markers in the offsite store or spool / controls in the primary's files before the damage | 0 / 1, 2, 1, 7 |
+| Bank number anywhere on the primary or offsite | 0 files |
+| Manifest digests; signatures | OK; 5 objects, 0 invalid |
+| `pg_verifybackup` on the decrypted base | `backup successfully verified` |
+| Fingerprint, 16 tables, restored vs target | **IDENTICAL** |
+| `ledger_integrity_scan()` target / restored | none / none |
+| Audit chains failing; data-checksum failures | 0 of 12 tenants; 0 |
+| Migrations on the restored instance | 1–35 |
+| RTO promoted / verified | 0.8 s / 1.0 s (47 MB base, 5 WAL objects) |
+| Wrong private key | refused (does not decrypt) |
+| Forged base backup (manifest digests still verify) | refused before decryption: `SIGNATURE INVALID for base.tar.age` |
+| Forged WAL segment `…03` | 2 signature refusals logged. Recovery ended before the target: `FATAL: recovery ended before configured recovery target was reached`. |
+| Archive retry paths: stale `.part`; lost acknowledgement; invalid signature on an existing object | rc 0 for each. One manifest line per object, digests OK, and the replaced object's signature is valid. |
+
+### Still not proven
+
+- The signing key on a real primary is a host secret. An attacker who controls the primary can sign forged objects. That threat is the reason for an *offsite* copy with object lock/WORM retention, and it needs the real storage (GATEA-08).
+- The pinned public key, the age identity and their rotation need a human key ceremony; see the KEY_CUSTODY runbook.
+- Production data volume, cross-region copies and the retention schedule are untested.

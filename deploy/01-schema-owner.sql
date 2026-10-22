@@ -20,7 +20,9 @@ BEGIN
     CREATE ROLE serk_owner LOGIN CREATEROLE NOSUPERUSER NOBYPASSRLS NOCREATEDB NOREPLICATION;
   END IF;
 END$$;
-GRANT serk_app, serk_publisher, serk_scheduler, serk_monitor, serk_abuse, serk_health TO serk_owner WITH ADMIN OPTION;
+-- ADMIN only: the owner must not inherit the platform roles' privileges or
+-- their row-level policies (R10-F5); the posture check reports it otherwise.
+GRANT serk_app, serk_publisher, serk_scheduler, serk_monitor, serk_abuse, serk_health TO serk_owner WITH ADMIN TRUE, INHERIT FALSE, SET FALSE;
 -- Then, as the administrator:
 --   CREATE DATABASE serk OWNER serk_owner;
 --   \c serk

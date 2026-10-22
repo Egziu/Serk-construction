@@ -122,7 +122,7 @@ func TestSignerIsolation_CompromisedAPICannotForge(t *testing.T) {
 	unasserted, _ := testVerifier.Sign(Claims{Subject: "u-prep", TenantID: e.tenant, Roles: []string{"accountant"}, IssuedAt: now0.Unix(),
 		ExpiresAt: now0.Add(time.Hour).Unix(), Issuer: "serk-id", Audience: "serk-construction"})
 	base := attest.Claims{Tenant: e.tenant, Actor: "u-prep", Action: "journal.create", SubjectType: "journal", SubjectID: "x", SubjectHash: "h",
-		Perms: []string{"journal.create"}}
+		Perms: tokenMarkers(t, acct, "journal.create")}
 	if st, out := ask(acct, base); st != 200 || out.Attestation == nil {
 		t.Fatalf("a legitimate draft claim refused: %d %v", st, out.Error)
 	}
@@ -135,7 +135,22 @@ func TestSignerIsolation_CompromisedAPICannotForge(t *testing.T) {
 		{"no token", "", base, "no_token"},
 		{"another actor", acct, func() attest.Claims { c := base; c.Actor = "u-cfo"; return c }(), "actor_mismatch"},
 		{"another tenant", acct, func() attest.Claims { c := base; c.Tenant = "00000000-0000-4000-8000-000000000009"; return c }(), "actor_mismatch"},
-		{"permission the roles do not grant", acct, func() attest.Claims { c := base; c.Perms = []string{"journal.create", "payment.approve"}; return c }(), "permission"},
+		{"permission the roles do not grant", acct, func() attest.Claims {
+			c := base
+			c.Perms = tokenMarkers(t, acct, "journal.create", "payment.approve")
+			return c
+		}(), "permission"},
+		{"no session markers (0035)", acct, func() attest.Claims { c := base; c.Perms = []string{"journal.create"}; return c }(), "session"},
+		{"another session's markers (0035)", acct, func() attest.Claims {
+			c := base
+			c.Perms = []string{"journal.create", "principal.scope:tenant", "principal.session:-", "principal.iat:1"}
+			return c
+		}(), "permission"},
+		{"a project the token does not list (0035)", acct, func() attest.Claims {
+			c := base
+			c.Perms = append(tokenMarkers(t, acct, "journal.create"), "principal.project:11111111-1111-4111-8111-111111111111")
+			return c
+		}(), "permission"},
 		{"platform marker for an unasserted principal", unasserted, func() attest.Claims { c := base; c.Perms = []string{"principal.human"}; return c }(), "permission"},
 		{"a decision by an unasserted token", unasserted, func() attest.Claims { c := base; c.Action = "journal.approve"; return c }(), "not_human"},
 		{"a decision by an AI token", func() string {
@@ -158,7 +173,7 @@ func TestSignerIsolation_CompromisedAPICannotForge(t *testing.T) {
 	human, _ := testVerifier.Sign(Claims{Subject: "u-appr", TenantID: e.tenant, Roles: []string{"finance_manager"}, IssuedAt: now.Unix(),
 		ExpiresAt: now.Add(time.Hour).Unix(), Issuer: "serk-id", Audience: "serk-construction", Kind: "human", AMR: []string{"pwd", "otp"}, AuthTime: now.Unix() - 5})
 	dec := attest.Claims{Tenant: e.tenant, Actor: "u-appr", Action: "journal.approve", SubjectType: "journal", SubjectID: "x", SubjectHash: "h",
-		Perms: []string{"journal.approve", "principal.human"}, MFA: true, AuthTime: now.Unix() - 5}
+		Perms: tokenMarkers(t, human, "journal.approve", "principal.human"), MFA: true, AuthTime: now.Unix() - 5}
 	if st, out := ask(human, dec); st != 200 || out.Attestation == nil || !out.Attestation.MFA {
 		t.Errorf("a human MFA decision claim refused: %d %v", st, out.Error)
 	}
@@ -212,4 +227,19 @@ func TestSignerIsolation_APIWithoutSecretFailsClosed(t *testing.T) {
 	if _, err := r.Issue(ctx, attest.Claims{Tenant: "t", Actor: "a", Action: "x", SubjectType: "s", SubjectID: "i", SubjectHash: "h", Perms: []string{"p"}}); err == nil || !strings.Contains(err.Error(), "altered") {
 		t.Errorf("widened claims from the signer were accepted: %v", err)
 	}
+}
+
+// tokenMarkers returns perms plus the scope, session and issue-time markers
+// the signer derives from tok (0035): what an honest API sends.
+func tokenMarkers(t *testing.T, tok string, perms ...string) []string {
+	t.Helper()
+	p, err := testVerifier.Verify(tok, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := auth.NewAuthorizer(nil, true).ScopeMarkers(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(append([]string{}, perms...), m...)
 }

@@ -11,6 +11,7 @@
 #   secrets/health_dsn           postgres://serk_health:<pw>@db:5432/serk?sslmode=verify-full
 #   secrets/scheduler_dsn        postgres://serk_timer:<pw>@db:5432/serk?sslmode=verify-full (workflow timers)
 #   secrets/bank_data_key        `openssl rand -hex 32` (encrypts bank account numbers at rest; keep it out of database backups)
+#   secrets/bank_digest_key      `openssl rand -hex 32` (keys the bank-number digest; never rotate in place)
 #   secrets/postgres_password    superuser password for the database container
 # and set SERK_OIDC_* to your identity provider.
 services:
@@ -74,12 +75,13 @@ services:
       SERK_ABUSE_DSN_FILE: /run/secrets/abuse_dsn
       SERK_ABUSE_KEY_FILE: /run/secrets/abuse_key
       SERK_BANK_DATA_KEY_FILE: /run/secrets/bank_data_key
+      SERK_BANK_DIGEST_KEY_FILE: /run/secrets/bank_digest_key
       SERK_OIDC_ISSUER: ${SERK_OIDC_ISSUER:?}
       SERK_OIDC_JWKS_URL: ${SERK_OIDC_JWKS_URL:?}
       SERK_OIDC_AUDIENCE: ${SERK_OIDC_AUDIENCE:?}
       SERK_TRUSTED_PROXIES: 172.30.0.0/24
       PGSSLROOTCERT: /run/secrets/db_ca
-    secrets: [health_dsn, tenant_db_secret, scheduler_dsn, abuse_dsn, abuse_key, bank_data_key, db_ca]
+    secrets: [health_dsn, tenant_db_secret, scheduler_dsn, abuse_dsn, abuse_key, bank_data_key, bank_digest_key, db_ca]
     volumes: [signer_sock:/run/serk]
     networks: [backend, edge]
     read_only: true
@@ -110,6 +112,7 @@ secrets:
   abuse_dsn: { file: ./secrets/abuse_dsn }
   abuse_key: { file: ./secrets/abuse_key }
   bank_data_key: { file: ./secrets/bank_data_key }
+  bank_digest_key: { file: ./secrets/bank_digest_key }
   db_tls_cert: { file: ./secrets/db_tls_cert }
   db_tls_key: { file: ./secrets/db_tls_key }
   db_ca: { file: ./secrets/db_ca }

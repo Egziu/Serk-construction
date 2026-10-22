@@ -79,6 +79,10 @@ type Config struct {
 	// still decrypts older rows. Required in production.
 	BankDataKey, BankDataKeyPrevious     []byte
 	BankDataKeyID, BankDataKeyPreviousID string
+	// BankDigestKey keys the bank-number digest (uniqueness, approval
+	// binding); computed in the API, never by the database (R10-F4). Never
+	// rotated in place.
+	BankDigestKey []byte
 }
 
 // ErrInvalid wraps every validation failure.
@@ -179,6 +183,9 @@ func Load(src Source) (Config, error) {
 		return Config{}, err
 	}
 	if c.BankDataKeyPrevious, err = src.secret("SERK_BANK_DATA_KEY_PREVIOUS"); err != nil {
+		return Config{}, err
+	}
+	if c.BankDigestKey, err = src.secret("SERK_BANK_DIGEST_KEY"); err != nil {
 		return Config{}, err
 	}
 	c.BankDataKeyID = src.str("SERK_BANK_DATA_KEY_ID", "k1")
@@ -313,6 +320,11 @@ func (c Config) Validate() error {
 			} else if c.BankDataKeyPreviousID == c.BankDataKeyID {
 				bad("SERK_BANK_DATA_KEY_PREVIOUS_ID must differ from SERK_BANK_DATA_KEY_ID")
 			}
+		}
+		if e := checkSecret(c.BankDigestKey, prod); e != "" {
+			bad("SERK_BANK_DIGEST_KEY %s (required with SERK_BANK_DATA_KEY)", e)
+		} else if string(c.BankDigestKey) == string(c.BankDataKey) || string(c.BankDigestKey) == string(c.TenantDBSecret) || string(c.BankDigestKey) == string(c.AbuseKey) {
+			bad("SERK_BANK_DIGEST_KEY must differ from every other secret")
 		}
 		if c.BankDataKeyID == "" || len(c.BankDataKeyID) > 32 {
 			bad("SERK_BANK_DATA_KEY_ID must be 1-32 characters")
@@ -503,7 +515,7 @@ func (c Config) BankDataRing() *datakey.Ring {
 	if len(c.BankDataKey) == 0 {
 		return nil
 	}
-	r := &datakey.Ring{Current: datakey.Key{ID: c.BankDataKeyID, Master: c.BankDataKey}}
+	r := &datakey.Ring{Current: datakey.Key{ID: c.BankDataKeyID, Master: c.BankDataKey}, DigestKey: c.BankDigestKey}
 	if len(c.BankDataKeyPrevious) > 0 {
 		r.Previous = []datakey.Key{{ID: c.BankDataKeyPreviousID, Master: c.BankDataKeyPrevious}}
 	}

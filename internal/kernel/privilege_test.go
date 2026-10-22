@@ -44,6 +44,17 @@ func TestPrivileges_CatalogInvariants(t *testing.T) {
 			SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 			WHERE n.nspname = 'public' AND p.prosecdef
 			  AND NOT COALESCE(array_to_string(p.proconfig, ',') LIKE 'search_path=pg_catalog, public%', false)`,
+		"pinned search_path that does not name pg_temp last (R10-F3: pg_temp is otherwise searched FIRST)": `
+			SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+			WHERE n.nspname = 'public' AND p.proconfig IS NOT NULL
+			  AND array_to_string(p.proconfig, ',') LIKE 'search_path=%'
+			  AND array_to_string(p.proconfig, ',') NOT LIKE '%pg\_temp'
+			  AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')`,
+		"function in public without a pinned search_path": `
+			SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+			WHERE n.nspname = 'public' AND p.prolang <> (SELECT oid FROM pg_language WHERE lanname = 'c')
+			  AND p.proconfig IS NULL AND p.prosecdef
+			  AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')`,
 		"table writable by PUBLIC or deletable by an app role": `
 			SELECT c.relname || ':' || r FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
 			  unnest(ARRAY['serk_app','serk_publisher','serk_scheduler','serk_health','serk_monitor','serk_abuse']) r

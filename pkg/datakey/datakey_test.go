@@ -51,3 +51,19 @@ func TestRoundTripBindingAndRotation(t *testing.T) {
 		t.Error("short master accepted")
 	}
 }
+
+func TestDigestIsKeyedAndPerTenant(t *testing.T) {
+	k1, k2 := make([]byte, 32), make([]byte, 32)
+	rand.Read(k1)
+	rand.Read(k2)
+	a, _ := Digest(k1, "t1", "1000123456789")
+	b, _ := Digest(k1, "t1", "1000123456789")
+	c, _ := Digest(k1, "t2", "1000123456789")
+	d, _ := Digest(k2, "t1", "1000123456789")
+	if a != b || a == c || a == d || len(a) != 69 || a[:5] != "hkey:" {
+		t.Errorf("digest: %s %s %s %s", a, b, c, d)
+	}
+	if _, err := Digest([]byte("short"), "t1", "x"); err == nil {
+		t.Error("short digest key accepted")
+	}
+}

@@ -88,6 +88,14 @@ func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p auth.Principal, ac
 	if p.Kind == auth.KindHuman {
 		perms = append(perms, auth.ReservedPermissionPrefix+"human")
 	}
+	// Scope and session markers: the database checks the subject's project
+	// and the session's revocation against them (0035, R10-F1/F2), so a
+	// compromised API cannot act outside the person's scope or after logout.
+	markers, err := s.authz.ScopeMarkers(p)
+	if err != nil {
+		return err
+	}
+	perms = append(perms, markers...)
 	var authTime int64
 	if !p.AuthTime.IsZero() {
 		authTime = p.AuthTime.Unix()

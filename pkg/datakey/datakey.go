@@ -13,8 +13,10 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hkdf"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 )
@@ -33,6 +35,8 @@ type Key struct {
 type Ring struct {
 	Current  Key
 	Previous []Key
+	// DigestKey keys Digest (never rotated in place).
+	DigestKey []byte
 }
 
 func (k Key) sub(tenant string) ([]byte, error) {
@@ -116,4 +120,23 @@ func (r Ring) Decrypt(tenant string, aad, ciphertext []byte) ([]byte, error) {
 // AAD builds the row binding: table, row id and tenant.
 func AAD(table, id, tenant string) []byte {
 	return []byte(table + "\x1f" + id + "\x1f" + tenant)
+}
+
+// Digest is a deterministic keyed digest of a value for one tenant, used for
+// uniqueness and for approval binding of bank account numbers (R10-F4). It
+// is computed in the API with a key the database never holds, so a tenant
+// database credential cannot test guesses against stored digests. The key
+// must never be rotated without re-digesting every stored value (it is
+// separate from the encryption keys for that reason).
+func Digest(key []byte, tenant, value string) (string, error) {
+	if len(key) < 32 {
+		return "", fmt.Errorf("%w: digest key must be at least 32 bytes", ErrKey)
+	}
+	sub, err := hkdf.Key(sha256.New, key, []byte("serk-digest:"+tenant), "bank-account-digest", 32)
+	if err != nil {
+		return "", err
+	}
+	m := hmac.New(sha256.New, sub)
+	m.Write([]byte(value))
+	return "hkey:" + hex.EncodeToString(m.Sum(nil)), nil
 }

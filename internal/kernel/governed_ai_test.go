@@ -61,7 +61,7 @@ func TestGovernedAI_DraftOnly(t *testing.T) {
 	j := f.draftJournal(t, f.balanced(key("gai")))
 	sign := func(perms []string) attest.Attestation {
 		a, err := attest.Signer{Master: testdb.ApprovalMaster, Now: time.Now}.Sign(attest.Claims{Tenant: f.tenant, Actor: "u-approver", Action: "journal.approve",
-			SubjectType: "journal", SubjectID: j, SubjectHash: f.subjectHash(t, "journal", j), Perms: perms})
+			SubjectType: "journal", SubjectID: j, SubjectHash: f.subjectHash(t, "journal", j), Perms: withMarkers(perms)})
 		must(t, "sign", err)
 		return a
 	}

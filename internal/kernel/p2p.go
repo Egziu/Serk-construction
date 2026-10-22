@@ -1858,7 +1858,12 @@ func (s *Service) sealAccountNumber(ctx context.Context, tx pgx.Tx, tenant, tabl
 		return sealedAccount{}, err
 	}
 	out.enc = enc
-	if err := tx.QueryRow(ctx, `SELECT p2p_account_digest($1)`, number).Scan(&out.digest); err != nil {
+	// R10-F4: the digest is keyed by the API's digest key, never computed by
+	// the database (a tenant credential must not be able to test guesses).
+	if len(s.bankKeys.DigestKey) == 0 {
+		return sealedAccount{}, ErrBankDataKey
+	}
+	if out.digest, err = datakey.Digest(s.bankKeys.DigestKey, tenant, number); err != nil {
 		return sealedAccount{}, err
 	}
 	return out, nil

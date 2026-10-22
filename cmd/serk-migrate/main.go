@@ -94,7 +94,7 @@ func main() {
 				state = "VALIDATED"
 			}
 			fmt.Printf("%-24s %-40s %-11s violators=%d %s\n", r.Table, r.Name, r.Kind, r.Violators, state)
-			if r.Violators > 0 {
+			if r.Violators != 0 {
 				open++
 			}
 		}
@@ -113,7 +113,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "SERK_BANK_DATA_KEY (>= 32 bytes) is required")
 			os.Exit(2)
 		}
-		ring := datakey.Ring{Current: datakey.Key{ID: envOr("SERK_BANK_DATA_KEY_ID", "k1"), Master: []byte(key)}}
+		dkey := secret("SERK_BANK_DIGEST_KEY")
+		if len(dkey) < 32 || dkey == key {
+			fmt.Fprintln(os.Stderr, "SERK_BANK_DIGEST_KEY (>= 32 bytes, different from SERK_BANK_DATA_KEY) is required")
+			os.Exit(2)
+		}
+		ring := datakey.Ring{Current: datakey.Key{ID: envOr("SERK_BANK_DATA_KEY_ID", "k1"), Master: []byte(key)}, DigestKey: []byte(dkey)}
 		n, err := postgres.EncryptBankAccounts(ctx, conn, ring)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "encrypt-bank-accounts:", err)

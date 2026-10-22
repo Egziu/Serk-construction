@@ -216,10 +216,29 @@ func (s *Server) issue(p auth.Principal, c attest.Claims, now time.Time) (attest
 	if p.Kind == auth.KindHuman {
 		allowed[auth.ReservedPermissionPrefix+"human"] = true
 	}
+	// Scope and session markers (R10-F1/F2): the project markers and the
+	// tenant-scope marker must be ones the token grants; the session and iat
+	// markers must be exactly the token's (the database checks revocation
+	// against them, so a forged or blank session would evade a logout).
+	markers, err := s.cfg.Authz.ScopeMarkers(p)
+	if err != nil {
+		return attest.Attestation{}, "malformed", err
+	}
+	want := map[string]bool{}
+	for _, m := range markers {
+		allowed[m] = true
+		if strings.HasPrefix(m, auth.ReservedPermissionPrefix+"session:") || strings.HasPrefix(m, auth.ReservedPermissionPrefix+"iat:") {
+			want[m] = true
+		}
+	}
 	for _, perm := range c.Perms {
 		if !allowed[perm] {
-			return attest.Attestation{}, "permission", fmt.Errorf("permission %q is not granted by the token's roles", perm)
+			return attest.Attestation{}, "permission", fmt.Errorf("permission %q is not granted by the token", perm)
 		}
+		delete(want, perm)
+	}
+	if len(want) > 0 {
+		return attest.Attestation{}, "session", fmt.Errorf("the claims do not carry the token's session and issue time")
 	}
 	if !s.allow(p.TenantID+"/"+p.UserID, now) {
 		return attest.Attestation{}, "rate_limited", fmt.Errorf("issuance rate exceeded for this actor")

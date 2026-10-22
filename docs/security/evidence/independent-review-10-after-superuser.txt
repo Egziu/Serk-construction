@@ -1,0 +1,76 @@
+### Review 10 probes AFTER the fixes (migration 0035), extracted from go test -race -count=1 -p 1 -shuffle=on -v ./... ; fresh database serk_full35s3, superuser owner postgres, migrations 0001-0035; 2026-10-22T19:48:17Z; go version go1.26.10 linux/amd64
+### Full log: docs/testing/evidence/full-suite-review10-fixes-superuser-shuffled-fresh-db.txt
+    review10_regression_test.go:85: held: attestation lifetime 120s (DB max 300s)
+    review10_regression_test.go:89: info: signer signed mfa=true for a token whose auth_time is 48 h old (freshness is left to approval_authorize: mfa_fresh requires <= 600 s)
+    review10_regression_test.go:90: held (0035): the claims carry the token's project, session and issue-time markers
+    review10_regression_test.go:97: held: per-actor limit 3/min: 3 signed, 1 refused
+    review10_regression_test.go:109: info: fixed window: 3 signed in the first minute and 3 more 1 ms after it ends (6 within ~1 ms of wall time across the boundary)
+    review10_regression_test.go:121: info: 500 forged requests refused without touching the budget; legitimate request after them: 200 (refusals are logged and counted in serk_signer_refusals_total, not rate-limited)
+--- PASS: TestR10_SignerRateLimitTTLAndMFA (0.22s)
+    review10_regression_test.go:331: held: digest oracle failed: store: database invariant violated: privilege: permission denied for function p2p_account_digest ""
+    review10_regression_test.go:341: info: R5-F3 path for comparison: 1 guess per API request (first <nil>, duplicate kernel: invalid input: this bank account cannot be registered; contact treasury administration), audit rows for the two guesses: 3
+--- PASS: TestR10_BankDigestOracle (0.13s)
+--- PASS: TestBankAtRest_LegacyDigestRedigested (0.21s)
+    review10_regression_test.go:404: held: raw edit of a DRAFT correction: store: database invariant violated: privilege: permission denied for table customer_credit_notes
+    review10_regression_test.go:415: held: IPC 2 prepared before the correction is stale after it: store: database invariant violated: IPC IPC-2026-000002 is stale: measurements, certificates or advance receipts changed since it was prepared; cancel and prepare it again
+    review10_regression_test.go:422: info: ar_contract_position after 60 t certified, 20 t verified (IPC 2 stale) and an approved 10 t correction: measured_value 6860000.00 (70 t, net of the correction), certified_gross 5880000.000000 (60 t, gross of the correction), retention_held 294000.000000 (5% of 60 t), credited_total 1127000.000000
+    review10_regression_test.go:429: info: ipc_compute after the correction: cumulative 6860000.00 previous 4900000.000000 this 1960000.000000
+--- PASS: TestR10_QuantityCorrectionOrderings (0.35s)
+    review10_regression_test.go:443: info: tenant 2 journal (outbox row): store: database invariant violated: insert or update on table "journals" violates foreign key constraint "journals_tenant_id_legal_entity_id_functional_currency_fkey"
+    review10_regression_test.go:449: info: SERK object owner postgres (superuser true) holds the privileges of serk_publisher: true
+    review10_regression_test.go:455: info: policies other than tenant_isolation/owner_maintenance that apply to the owner in ANY session: [outbox:publisher_mark TO serk_publisher USING true outbox:publisher_read TO serk_publisher USING true workflow_instances:owner_timer_scan TO postgres USING serk_maintenance_session()]
+    review10_regression_test.go:475: held: serk_maintenance_session() is false for a tenant session calling an owner-rights function
+    review10_regression_test.go:478: info: the object owner is a superuser: RLS does not bind it, so owner functions see 56 tenants; the posture check refuses this in production (0035)
+--- PASS: TestR10_OwnerMaintenance (0.09s)
+    review10_regression_test.go:261: held: posture reports TEMP for serk_t_1c5ea3a3946f4dc0951c37383f4d9e05 (production would refuse to start)
+    review10_regression_test.go:296: held: pg_temp shadow refused: store: database invariant violated: privilege: journal.approve of journal 0261ff08-5f16-4852-a621-e16c13658375 requires a verified approval attestation for u-approver (status DRAFT)
+--- PASS: TestR10_PgTempShadowsApprovalEvidence (0.06s)
+    review10_regression_test.go:138: held: the API middleware check refuses the revoked token (cut-off 2026-10-22T22:49:17+03:00)
+    review10_regression_test.go:145: held: honest API with the revoked token: refused (kernel: session revoked)
+    review10_regression_test.go:158: held: revoked token refused end to end: attest: invalid attestation: signer refused: permission: permission "principal.session:-" is not granted by the token
+--- PASS: TestR10_SignerIgnoresRevocation (0.08s)
+    review10_regression_test.go:194: held: altered response refused: attest: invalid attestation: signer altered the claims
+--- PASS: TestR10_RemoteComparesPermsByLengthOnly (0.00s)
+    review10_regression_test.go:569: info: report-only: r10_child r10_fk_full violators=1
+    review10_regression_test.go:569: info: report-only: r10_chk r10_chk_pos violators=1
+    review10_regression_test.go:579: info: --apply run: 2 reports, error: <nil>
+    review10_regression_test.go:582: info: migration_exceptions rows for the r10 constraints: 2
+--- PASS: TestR10_ValidateConstraintsMatchFull (0.06s)
+    review10_regression_test.go:608: info: clean bundle: 0 exceptions
+    review10_regression_test.go:616: info: same bundle with a UTF-8 BOM on accounts.csv: 0 exceptions []
+    review10_regression_test.go:619: info: clean accounts.csv: "code,name,type\n1000,Cash at bank,ASSET\n1100,Accounts receivable,ASSET\n1200,Inventory,ASSET\n2000,Accounts payable,LIABILITY\n3000,Share capital,EQUITY\n3100,Retained earnings,EQUITY\n4000,Contract revenue,REVENUE\n5000,Site materials,EXPENSE\n"
+    review10_regression_test.go:638: info: wrong control types: [{accounts.csv 0 CONTROL AP control account 2000 is ASSET, want LIABILITY} {accounts.csv 0 CONTROL AR control account 1100 is EQUITY, want ASSET}]
+--- PASS: TestR10_LegacyBundle (0.00s)
+    attestation_markers_test.go:62: refused: no session markers                                         missing session markers
+    attestation_markers_test.go:63: refused: two session markers                                        missing session markers
+    attestation_markers_test.go:67: refused: project-mapped subject, another project's marker           outside the attested scope
+    attestation_markers_test.go:69: refused: project-mapped subject, no scope marker                    outside the attested scope
+    attestation_markers_test.go:70: accepted: project-mapped subject, its own project's marker
+    attestation_markers_test.go:72: accepted: project-mapped subject, tenant scope
+    attestation_markers_test.go:74: accepted: unmapped subject (journal), project scope
+    attestation_markers_test.go:82: revocation through the kernel: auth: forbidden: identity.revoke_sessions; recording it directly
+    attestation_markers_test.go:89: refused: session issued before the revocation                       is revoked
+    attestation_markers_test.go:91: refused: issue time unknown (iat 0) after a revocation (fail closed) is revoked
+    attestation_markers_test.go:93: accepted: session issued after the revocation
+--- PASS: TestAttestationMarkers_DatabaseEnforcesSessionAndScope (1.26s)
+    review10_regression_test.go:362: held: tenant plaintext back: store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    review10_regression_test.go:362: held: tenant plaintext, clear enc: store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    review10_regression_test.go:362: held: tenant approve by raw update: store: database invariant violated: privilege: supplier.bank.approve of supplier_bank_account 07133596-bb9d-43cf-b397-5ce4b47ae6f1 requires a verified approval attestation for u-finance-manager
+    review10_regression_test.go:362: held: tenant digest swap: store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    review10_regression_test.go:362: held: tenant suffix swap: store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    review10_regression_test.go:368: info: raw insert of an unverifiable ciphertext with a free-form digest: store: database invariant violated: new bank account digests are computed by the API (hkey:), not by the database
+    review10_regression_test.go:371: info: server log_parameter_max_length=-1 log_parameter_max_length_on_error=0 (posture checks only the first)
+    review10_regression_test.go:378: held: posture reports on-error parameter logging
+--- PASS: TestR10_BankRowRules (0.13s)
+    review10_regression_test.go:102: held: honest API, token scope [6709beb9-27b0-4e18-a644-b0c125091594]: refused (store: not found)
+    review10_regression_test.go:115: held: forged project scope refused: attest: invalid attestation: signer refused: permission: permission "principal.project:c8bad65a-90b3-442d-9a40-880353fae5b4" is not granted by the token (status SUBMITTED)
+--- PASS: TestR10_SignerIgnoresProjectScope (0.20s)
+    review10_regression_test.go:214: held: no INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER on the three state tables for serk_app or the tenant login
+    review10_regression_test.go:227: held: tenant insert balance: store: database invariant violated: privilege: permission denied for table stock_balances
+    review10_regression_test.go:227: held: tenant update layers: store: database invariant violated: privilege: permission denied for table stock_layers
+    review10_regression_test.go:227: held: tenant delete consumed: store: database invariant violated: privilege: permission denied for table stock_consumptions
+    review10_regression_test.go:227: held: tenant stk_receive: store: database invariant violated: privilege: permission denied for function stk_receive
+    review10_regression_test.go:227: held: tenant stk_consume: store: database invariant violated: privilege: permission denied for function stk_consume
+    review10_regression_test.go:227: held: tenant guard direct call: store: database invariant violated: privilege: permission denied for function stock_issues_guard
+    review10_regression_test.go:235: info: SECURITY DEFINER functions executable by the tenant login: [approval_authorize(jsonb) approval_use(text,text,text,text,text[],boolean,text,text) audit_log_verify(uuid) current_tenant() fiscal_period_close_record(uuid,text,text,text,text) workflow_decide_definition(uuid,text,text,text)]
+--- PASS: TestR10_StockStateTenantWrites (0.06s)

@@ -19,3 +19,14 @@ Managed PostgreSQL (RDS, Cloud SQL, Azure) never grants a true superuser, and ru
 
 - Every future migration that creates an RLS table must add the same policy; `TestPrivileges_OwnerMaintenancePolicyEverywhere` fails otherwise.
 - A compromised ops login (monitor, scheduler, publisher, health) can read through the owner-rights functions granted to it; this was already the case with a superuser owner.
+
+
+## Addendum (2026-10-22, migration 0035, independent review 10)
+
+- **The owner must not inherit the platform roles (R10-F5).** With INHERIT, the owner picked up `serk_publisher`'s `USING (true)` policies on `outbox`, so an owner-rights function called by a tenant could read every tenant's outbox. The earlier claim that such calls "stay tenant-scoped" held for tenant tables, but not for outbox or `workflow_instances`. Fixes:
+  - `deploy/01-schema-owner.sql` grants the platform roles `WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`;
+  - the posture check refuses an inheriting owner;
+  - `owner_timer_scan` admits maintenance sessions only.
+- **The owner is identified as the object owner, not the schema owner (R10-I6).** `serk_object_owner()` is the owner of `public.tenants`, the role that ran the migrations. With `public` still owned by `pg_database_owner` (the PostgreSQL 15+ default), the schema-owner lookup never matched. The posture check also reports:
+  - any table owned by another role;
+  - an object owner that is a superuser or has BYPASSRLS. FORCE RLS does not bind such an owner, so every owner-rights function would see all tenants. Production refuses to start in that state; development and the superuser test mode accept the warning.

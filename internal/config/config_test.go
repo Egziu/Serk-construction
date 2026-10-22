@@ -24,6 +24,7 @@ const (
 	goodSecret2 = "a8c2e4f6b1d3f5a7c9e0b2d4f6a8c1e3b5d7f9a0c2e4b6d8f1a3c5e7b9d2f4a6"
 	goodSecret3 = "71c4e9a2f6b08d3e5a7c1f9b2d4e6a8c0f3b5d7e9a1c4f6b8d0e2a5c7f9b1d3e"
 	goodSecret4 = "e8c51ac2eb0d174014c6a05b17e1cff9d7c2f7aa9c3bb74afe9a4854b24a4752"
+	goodSecret7 = "0f3e5d7c9b1a2f4e6d8c0b3a5f7e9d1c4b6a8f0e2d5c7b9a1f3e6d8c0b2a4f6e"
 	goodSecret6 = "b7e1c9d2f4a6083e5c1a9f7d2b4e6c8a0d3f5b7e9c1a4d6f8b0e2c5a7f9d1b3e"
 	goodSecret5 = "e5e59115f58846dcdc3885e32b052bebf8dc1f0befff56a1bf3f382a296c436e"
 )
@@ -40,6 +41,7 @@ func prodEnv() map[string]string {
 		"SERK_ABUSE_DSN":        "postgres://serk_ratelimit:" + goodSecret4 + "@db.internal:5432/serk?sslmode=verify-full",
 		"SERK_ABUSE_KEY":        goodSecret5,
 		"SERK_BANK_DATA_KEY":    goodSecret6,
+		"SERK_BANK_DIGEST_KEY":  goodSecret7,
 	}
 }
 

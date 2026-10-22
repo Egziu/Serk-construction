@@ -33,3 +33,21 @@ Approval attestations (ADR for migration 0007) are HMAC-signed by the API with a
 - `TestSignerIsolation_CompromisedAPICannotForge`: ten forged claim shapes refused on the socket, and the one legitimate human MFA decision signed.
 - `TestSignerIsolation_NoBearerNoSignature`, `TestSignerIsolation_APIWithoutSecretFailsClosed`.
 - `TestSignerConfig`, `TestProductionRefusesWeakConfig` (key in the API refused), `TestProductionManifestKeepsSigningKeyOutOfTheAPI`.
+
+
+## Addendum (2026-10-22, migration 0035, independent review 10)
+
+Review 10 showed that the signer, which has no database, could not enforce two things the API enforces: the token's **project scope** (R10-F1) and **session revocation** (R10-F2). A compromised API could obtain and use signatures for projects outside the token and for revoked sessions.
+
+- The signed perms now carry platform markers derived from the token by `auth.Authorizer.ScopeMarkers`:
+  - `principal.scope:tenant`, or one `principal.project:<id>` per listed project;
+  - `principal.session:<jti or ->`;
+  - `principal.iat:<unix or 0>`.
+- The signer accepts only markers the token grants, and requires the session and iat markers to equal the token's.
+- The database checks them in `approval_authorize()`:
+  - exactly one session marker and one iat marker;
+  - `session_is_revoked()`, where an unknown issue time counts as revoked if an actor-wide cut-off exists;
+  - the subject's project (`serk_subject_project()`, the kernel's `docProject` mapping) against the scope markers.
+- The DB check means a leaked tenant key (or a compromised signer) still cannot approve outside the markers it signs. But whoever holds the key can sign any markers. The HSM/KMS half of R-SIGNER remains the control for that.
+- `attest.Remote` now compares the signer's response field by field (R10-F6).
+- Tests: `TestR10_SignerIgnoresProjectScope`, `TestR10_SignerIgnoresRevocation`, `TestAttestationMarkers_DatabaseEnforcesSessionAndScope`, `TestR10_RemoteComparesPermsByLengthOnly`.

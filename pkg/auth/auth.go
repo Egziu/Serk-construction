@@ -435,3 +435,36 @@ func CheckMakerChecker(checker Principal, maker, what string) error {
 	}
 	return nil
 }
+
+// ScopeMarkers are the platform-derived permission markers that bind an
+// approval attestation to the principal's data scope and session (R10-F1,
+// R10-F2). The kernel adds them to every attestation; the isolated signer
+// signs only markers the person's token supports; the database refuses an
+// attestation whose session is revoked or whose subject's project is not in
+// the attested scope. They are never grantable by a role (ReservedPermissionPrefix).
+func (a *Authorizer) ScopeMarkers(p Principal) ([]string, error) {
+	var out []string
+	sc := a.ScopeOf(p)
+	if sc.TenantWide {
+		out = append(out, ReservedPermissionPrefix+"scope:tenant")
+	}
+	for _, id := range sc.Projects {
+		if id == "" || strings.ContainsAny(id, ",\x1f") {
+			return nil, fmt.Errorf("%w: malformed project id in the session", ErrForbidden)
+		}
+		out = append(out, ReservedPermissionPrefix+"project:"+id)
+	}
+	sid := p.SessionID
+	if sid == "" {
+		sid = "-"
+	}
+	if strings.ContainsAny(sid, ",\x1f") || len(sid) > 200 {
+		return nil, fmt.Errorf("%w: malformed session id", ErrForbidden)
+	}
+	var iat int64
+	if !p.IssuedAt.IsZero() {
+		iat = p.IssuedAt.Unix()
+	}
+	out = append(out, ReservedPermissionPrefix+"session:"+sid, fmt.Sprintf("%siat:%d", ReservedPermissionPrefix, iat))
+	return out, nil
+}

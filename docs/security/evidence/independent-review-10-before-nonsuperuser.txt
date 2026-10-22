@@ -1,0 +1,106 @@
+=== RUN   TestR10_SignerIgnoresProjectScope
+    zz_review10_test.go:102: held: honest API, token scope [e403d345-e616-45e2-8cfd-e85050d93210]: refused (store: not found)
+    zz_review10_test.go:112: OPEN: compromised API (principal claims project 769bedda; the token lists only e403d345): the signer signed measurement.verify and the database accepted it: status VERIFIED verified_by u-site-other
+    zz_review10_test.go:118: info: signer issuance log: {"time":"2026-10-22T22:16:17.961330293+03:00","level":"INFO","msg":"signer","event":"issued","tenant":"ea5d3515-7388-4ee9-9630-62cf8c8d8fa4","actor":"u-site-other","action":"measure.verify","subject_type":"measurement","subject_id":"289a749a-e14d-4450-baaa-3e6102009352","ctx":"VERIFIED","mfa":false,"kid":"v1","nonce":"9fbd6790-35a7-409e-b502-ba2a97112964","exp":1792696697}
+--- FAIL: TestR10_SignerIgnoresProjectScope (0.21s)
+=== RUN   TestR10_SignerIgnoresRevocation
+    zz_review10_test.go:138: held: the API middleware check refuses the revoked token (cut-off 2026-10-22T22:16:18+03:00)
+    zz_review10_test.go:145: held: honest API with the revoked token: refused (kernel: session revoked)
+    zz_review10_test.go:155: OPEN: compromised API, revoked token (iat 10 min before the revocation cut-off): the signer signed journal.approve and approval_authorize() accepted it; journal 7bc62e76 is APPROVED
+--- FAIL: TestR10_SignerIgnoresRevocation (0.09s)
+=== RUN   TestR10_RemoteComparesPermsByLengthOnly
+    zz_review10_test.go:191: OPEN: Remote accepted a response with perms [payment.approve] (sent [journal.approve]), kid "other-kid", nonce "not-a-uuid", lifetime 86400s, sig "zz"
+--- FAIL: TestR10_RemoteComparesPermsByLengthOnly (0.00s)
+=== RUN   TestR10_StockStateTenantWrites
+    zz_review10_test.go:214: held: no INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER on the three state tables for serk_app or the tenant login
+    zz_review10_test.go:227: held: tenant insert balance: store: database invariant violated: privilege: permission denied for table stock_balances
+    zz_review10_test.go:227: held: tenant update layers: store: database invariant violated: privilege: permission denied for table stock_layers
+    zz_review10_test.go:227: held: tenant delete consumed: store: database invariant violated: privilege: permission denied for table stock_consumptions
+    zz_review10_test.go:227: held: tenant stk_receive: store: database invariant violated: privilege: permission denied for function stk_receive
+    zz_review10_test.go:227: held: tenant stk_consume: store: database invariant violated: privilege: permission denied for function stk_consume
+    zz_review10_test.go:227: held: tenant guard direct call: store: database invariant violated: privilege: permission denied for function stock_issues_guard
+    zz_review10_test.go:235: info: SECURITY DEFINER functions executable by the tenant login: [approval_authorize(jsonb) approval_use(text,text,text,text,text[],boolean,text,text) audit_log_verify(uuid) current_tenant() fiscal_period_close_record(uuid,text,text,text,text) p2p_account_digest(text) workflow_decide_definition(uuid,text,text,text)]
+--- PASS: TestR10_StockStateTenantWrites (0.28s)
+=== RUN   TestR10_PgTempShadowsApprovalEvidence
+    zz_review10_test.go:261: held: posture reports TEMP for serk_t_e883150f9e7a4cb29130b8085deedd43 (production would refuse to start)
+    zz_review10_test.go:293: OPEN: with TEMP granted, a tenant session approved journal 6ae8b1cf with no signature: pg_temp.approval_attestations shadowed the real table inside approval_use(); real attestations for it: 0
+--- FAIL: TestR10_PgTempShadowsApprovalEvidence (0.08s)
+=== RUN   TestR10_BankDigestOracle
+    zz_review10_test.go:328: OPEN: tenant login recovered the full account number 1000…4321 from account_digest + account_last4 with 100,000 p2p_account_digest() guesses in one statement (1.75 s, 57195 guesses/s; 10^9 = all 9 unknown digits of a 13-digit number ≈ 4.9 h single session); nothing written, nothing audited
+    zz_review10_test.go:341: info: R5-F3 path for comparison: 1 guess per API request (first <nil>, duplicate kernel: invalid input: this bank account cannot be registered; contact treasury administration), audit rows for the two guesses: 3
+--- FAIL: TestR10_BankDigestOracle (1.89s)
+=== RUN   TestR10_BankRowRules
+    zz_review10_test.go:362: held: tenant approve by raw update: store: database invariant violated: privilege: supplier.bank.approve of supplier_bank_account a7c8dc89-6897-407c-84e6-915093b4483f requires a verified approval attestation for u-finance-manager
+    zz_review10_test.go:362: held: tenant digest swap: store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    zz_review10_test.go:362: held: tenant suffix swap: store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    zz_review10_test.go:362: held: tenant plaintext back: store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    zz_review10_test.go:362: held: tenant plaintext, clear enc: store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    zz_review10_test.go:368: info: raw insert of an unverifiable ciphertext with a free-form digest: store: database invariant violated: new row for relation "supplier_bank_accounts" violates check constraint "supplier_bank_accounts_account_name_check"
+    zz_review10_test.go:371: info: server log_parameter_max_length=-1 log_parameter_max_length_on_error=0 (posture checks only the first)
+    zz_review10_test.go:376: OPEN: posture is clean with log_parameter_max_length_on_error = -1 (bound parameters, including the plaintext number passed to p2p_account_digest, are logged in full on error)
+--- FAIL: TestR10_BankRowRules (0.15s)
+=== RUN   TestR10_QuantityCorrectionOrderings
+    zz_review10_test.go:404: held: raw edit of a DRAFT correction: store: database invariant violated: privilege: permission denied for table customer_credit_notes
+    zz_review10_test.go:415: held: IPC 2 prepared before the correction is stale after it: store: database invariant violated: IPC IPC-2026-000002 is stale: measurements, certificates or advance receipts changed since it was prepared; cancel and prepare it again
+    zz_review10_test.go:422: info: ar_contract_position after 60 t certified, 20 t verified (IPC 2 stale) and an approved 10 t correction: measured_value 6860000.00 (70 t, net of the correction), certified_gross 5880000.000000 (60 t, gross of the correction), retention_held 294000.000000 (5% of 60 t), credited_total 1127000.000000
+    zz_review10_test.go:429: info: ipc_compute after the correction: cumulative 6860000.00 previous 4900000.000000 this 1960000.000000
+--- PASS: TestR10_QuantityCorrectionOrderings (0.34s)
+=== RUN   TestR10_OwnerMaintenance
+    zz_review10_test.go:443: info: tenant 2 journal (outbox row): store: database invariant violated: insert or update on table "journals" violates foreign key constraint "journals_tenant_id_legal_entity_id_functional_currency_fkey"
+    zz_review10_test.go:449: info: schema owner serk_owner_t (superuser false) holds the privileges of serk_publisher: true
+    zz_review10_test.go:455: info: policies other than tenant_isolation/owner_maintenance that apply to the owner in ANY session: [outbox:publisher_mark TO serk_publisher USING true outbox:publisher_read TO serk_publisher USING true workflow_instances:owner_timer_scan TO serk_owner_t USING true]
+    zz_review10_test.go:475: held: serk_maintenance_session() is false for a tenant session calling an owner-rights function
+    zz_review10_test.go:480: held: journals through the owner function: 1 tenant(s)
+    zz_review10_test.go:483: OPEN: tenant session through an owner-rights function saw outbox rows of 7 tenants (106 rows): the owner inherits serk_publisher, whose publisher_read policy is USING (true); 0034's claim that such calls 'stay tenant-scoped' does not hold for outbox (and workflow_instances via owner_timer_scan)
+    zz_review10_test.go:501: held: tenant SET ROLE serk_monitor: store: database invariant violated: privilege: permission denied to set role "serk_monitor"
+    zz_review10_test.go:501: held: tenant call serk_maintenance_session: store: database invariant violated: privilege: permission denied for function serk_maintenance_session
+    zz_review10_test.go:501: held: tenant GRANT serk_monitor to itself: store: database invariant violated: privilege: permission denied to grant role "serk_monitor"
+    zz_review10_test.go:501: held: tenant delete own tenant_db_roles row: store: database invariant violated: privilege: permission denied for table tenant_db_roles
+    zz_review10_test.go:501: held: tenant read approval_keys: store: database invariant violated: privilege: permission denied for table approval_keys
+    zz_review10_test.go:501: held: tenant call ops_health_metrics: store: database invariant violated: privilege: permission denied for function ops_health_metrics
+    zz_review10_test.go:501: held: tenant call serk_bank_plaintext_rows: store: database invariant violated: privilege: permission denied for function serk_bank_plaintext_rows
+    zz_review10_test.go:501: held: tenant SET SESSION AUTHORIZATION owner: store: database invariant violated: privilege: permission denied to set session authorization "serk_owner_t"
+    zz_review10_test.go:516: held: tenant login granted serk_monitor: maintenance false, journals of 1 tenant(s)
+    zz_review10_test.go:534: held: serk_monitor login reads journals: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_monitor login reads supplier_bank_accounts: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_monitor login reads audit_log: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_monitor login reads outbox: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_scheduler login reads journals: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_scheduler login reads supplier_bank_accounts: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_scheduler login reads audit_log: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_scheduler login reads outbox: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_publisher login reads journals: ERROR: permission denied for table journals (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_publisher login reads supplier_bank_accounts: ERROR: permission denied for table supplier_bank_accounts (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_publisher login reads audit_log: ERROR: permission denied for table audit_log (SQLSTATE 42501)
+    zz_review10_test.go:530: info: serk_publisher login reads outbox directly: 106 rows, 7 tenants
+    zz_review10_test.go:534: held: serk_health login reads journals: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_health login reads supplier_bank_accounts: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_health login reads audit_log: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+    zz_review10_test.go:534: held: serk_health login reads outbox: ERROR: permission denied for function current_tenant (SQLSTATE 42501)
+--- FAIL: TestR10_OwnerMaintenance (0.14s)
+=== RUN   TestR10_ValidateConstraintsMatchFull
+    zz_review10_test.go:565: info: report-only: r10_child r10_fk_full violators=0
+    zz_review10_test.go:567: OPEN: MATCH FULL FK with a half-NULL row (1, NULL) reported with 0 violators (the tool applies MATCH SIMPLE semantics to every FK)
+    zz_review10_test.go:565: info: report-only: r10_chk r10_chk_pos violators=1
+    zz_review10_test.go:575: info: --apply run: 3 reports, error: validate r10_fk_full: ERROR: insert or update on table "r10_child" violates foreign key constraint "r10_fk_full" (SQLSTATE 23503)
+    zz_review10_test.go:578: info: migration_exceptions rows for the r10 constraints: 1
+--- FAIL: TestR10_ValidateConstraintsMatchFull (0.08s)
+=== RUN   TestR10_LegacyBundle
+    zz_review10_test.go:604: info: clean bundle: 0 exceptions
+    zz_review10_test.go:612: info: same bundle with a UTF-8 BOM on accounts.csv: 7 exceptions [{accounts.csv 1 HEADER columns "\ufeffcode,name,type", want "code,name,type"} {opening_balances.csv 2 FK account 1000 is not in accounts.csv} {opening_balances.csv 3 FK account 1100 is not in accounts.csv} {opening_balances.csv 4 FK account 1200 is not in accounts.csv} {opening_balances.csv 5 FK account 2000 is not in accounts.csv} {opening_balances.csv 6 FK account 3000 is not in accounts.csv} {opening_balances.csv 7 FK account 3100 is not in accounts.csv}]
+    zz_review10_test.go:615: info: clean accounts.csv: "code,name,type\n1000,Cash at bank,ASSET\n1100,Accounts receivable,ASSET\n1200,Inventory,ASSET\n2000,Accounts payable,LIABILITY\n3000,Share capital,EQUITY\n3100,Retained earnings,EQUITY\n4000,Contract revenue,REVENUE\n5000,Site materials,EXPENSE\n"
+    zz_review10_test.go:632: OPEN: bundle with the AP control account typed ASSET and the AR control account typed EQUITY is reported clean (control-account type is never checked)
+--- FAIL: TestR10_LegacyBundle (0.01s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	3.293s
+=== RUN   TestR10_SignerRateLimitTTLAndMFA
+    zz_review10_test.go:83: held: attestation lifetime 120s (DB max 300s)
+    zz_review10_test.go:87: info: signer signed mfa=true for a token whose auth_time is 48 h old (freshness is left to approval_authorize: mfa_fresh requires <= 600 s)
+    zz_review10_test.go:88: info: signed for a token whose projects claim is [1111…]; the claims carry no project and the signer does not consider it
+    zz_review10_test.go:95: held: per-actor limit 3/min: 3 signed, 1 refused
+    zz_review10_test.go:107: info: fixed window: 3 signed in the first minute and 3 more 1 ms after it ends (6 within ~1 ms of wall time across the boundary)
+    zz_review10_test.go:119: info: 500 forged requests refused without touching the budget; legitimate request after them: 200 (refusals are logged and counted in serk_signer_refusals_total, not rate-limited)
+--- PASS: TestR10_SignerRateLimitTTLAndMFA (0.27s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/httpapi	1.283s
+FAIL

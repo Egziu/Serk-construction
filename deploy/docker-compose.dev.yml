@@ -44,6 +44,7 @@ services:
       SERK_ABUSE_DSN: postgres://serk_ratelimit:dev-only-ratelimit-password@db:5432/serk_construction?sslmode=disable
       SERK_ABUSE_KEY: dev-only-abuse-hmac-key-0123456789abcdefABCDEF
       SERK_BANK_DATA_KEY: dev-only-bank-data-key-0123456789abcdefABCDEF
+      SERK_BANK_DIGEST_KEY: dev-only-bank-digest-key-0123456789abcdefABCDEF
       SERK_LISTEN: ":8080"
     ports: ["127.0.0.1:8080:8080"]
     volumes: [signer_sock:/run/serk]

@@ -1,0 +1,636 @@
+package kernel
+
+// Independent review 10 probes (commits fa48c8a, 8027230, 2e0c9a2).
+// "OPEN:" (t.Errorf) = a defect observed; "held:" (t.Logf) = the control
+// worked; "info:" = an observation. Synthetic data only.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/serk-group/serk-construction/internal/signer"
+	"github.com/serk-group/serk-construction/internal/store/postgres"
+	"github.com/serk-group/serk-construction/internal/testdb"
+	"github.com/serk-group/serk-construction/pkg/attest"
+	"github.com/serk-group/serk-construction/pkg/auth"
+	"github.com/serk-group/serk-construction/pkg/legacy"
+)
+
+func r10open(t *testing.T, format string, a ...any) { t.Helper(); t.Errorf("OPEN: "+format, a...) }
+func r10held(t *testing.T, format string, a ...any) { t.Helper(); t.Logf("held: "+format, a...) }
+func r10info(t *testing.T, format string, a ...any) { t.Helper(); t.Logf("info: "+format, a...) }
+
+// r10Verifier stands in for the identity provider: each token string maps
+// to the principal the IdP asserted for it.
+type r10Verifier map[string]auth.Principal
+
+func (v r10Verifier) Verify(tok string, _ time.Time) (auth.Principal, error) {
+	p, ok := v[tok]
+	if !ok {
+		return auth.Principal{}, errors.New("unknown token")
+	}
+	return p, nil
+}
+
+func r10startSigner(t *testing.T, v signer.TokenVerifier, logw io.Writer) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "r10sig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "s.sock")
+	if logw == nil {
+		logw = io.Discard
+	}
+	h := signer.New(signer.Config{Verifier: v, Keyring: signer.FileKeyring{Master: testdb.ApprovalMaster},
+		Logger: slog.New(slog.NewJSONHandler(logw, nil)), PerActorPerMinute: 1000})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = signer.Listen(ctx, sock, h, slog.New(slog.NewTextHandler(io.Discard, nil))) }()
+	for i := 0; i < 200; i++ {
+		if c, err := net.Dial("unix", sock); err == nil {
+			c.Close()
+			return sock
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("signer did not start")
+	return ""
+}
+
+// ---------------------------------------------------------------------------
+// Area 1: the isolated signer.
+// ---------------------------------------------------------------------------
+
+// The signer checks tenant, actor, MFA, auth_time, perms and kind against the
+// token, but not the token's project scope: a compromised API that claims a
+// project the token does not list gets a decision signed and accepted.
+func TestR10_SignerIgnoresProjectScope(t *testing.T) {
+	w := newARWorld(t)
+	f := w.f
+	w.activeContract(t)
+	mid, err := f.svc.CreateMeasurement(f.ctx, w.ar.qs, w.contract, time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC), []MeasurementLine{{3, dec("5"), "Km 1+000 to 1+200"}})
+	must(t, "measurement", err)
+	must(t, "submit", f.svc.SubmitMeasurement(f.ctx, w.ar.qs, mid))
+
+	otherProject := uuid.NewString()
+	tok := auth.Principal{Kind: auth.KindHuman, UserID: "u-site-other", TenantID: f.tenant, Roles: []string{"site_engineer"},
+		ProjectIDs: []string{otherProject}, IssuedAt: time.Now().Add(-time.Minute)}
+	var logBuf strings.Builder
+	sock := r10startSigner(t, r10Verifier{"tok-other": tok}, &logBuf)
+	api := New(f.app, auth.NewAuthorizer(nil, true)).UseApprovalSigner(&attest.Remote{Socket: sock}).UseBankDataKeys(testdb.BankDataKeys)
+	ctx := attest.WithBearer(f.ctx, "tok-other")
+
+	if err := api.DecideMeasurement(ctx, tok, mid, true, ""); err == nil {
+		r10open(t, "an honest API let a site engineer of another project verify the measurement")
+	} else {
+		r10held(t, "honest API, token scope %v: refused (%v)", tok.ProjectIDs, err)
+	}
+	forged := tok
+	forged.ProjectIDs = []string{f.project}
+	err = api.DecideMeasurement(ctx, forged, mid, true, "")
+	var status, by string
+	_ = r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT status, COALESCE(verified_by, '') FROM measurements WHERE id = $1::uuid`, mid).Scan(&status, &by)
+	})
+	if err == nil && status == "VERIFIED" {
+		r10open(t, "compromised API (principal claims project %s; the token lists only %s): the signer signed measurement.verify and the database accepted it: status %s verified_by %s",
+			f.project[:8], otherProject[:8], status, by)
+	} else {
+		r10held(t, "forged project scope refused: %v (status %s)", err, status)
+	}
+	if strings.Contains(logBuf.String(), `"event":"issued"`) {
+		r10info(t, "signer issuance log: %s", strings.TrimSpace(logBuf.String()))
+	}
+}
+
+// Session revocation (GATEA-07) is checked by the API and inside the kernel's
+// transaction, never by the signer or by approval_authorize(). A compromised
+// API can therefore keep using a revoked person's token until it expires.
+func TestR10_SignerIgnoresRevocation(t *testing.T) {
+	f := newFixture(t)
+	res, err := f.svc.CreateJournal(f.ctx, f.prep, f.balanced(key("r10rev")))
+	must(t, "journal", err)
+	tok := f.appr
+	tok.IssuedAt, tok.SessionID = time.Now().Add(-10*time.Minute), "jti-r10-appr"
+	sock := r10startSigner(t, r10Verifier{"tok-appr": tok}, nil)
+	api := New(f.app, auth.NewAuthorizer(nil, true)).UseApprovalSigner(&attest.Remote{Socket: sock})
+	ctx := attest.WithBearer(f.ctx, "tok-appr")
+
+	cut, err := f.svc.RevokeSessions(f.ctx, f.appr, f.appr.UserID, "review 10: device stolen")
+	must(t, "revoke", err)
+	if err := api.CheckSession(f.ctx, tok); errors.Is(err, ErrSessionRevoked) {
+		r10held(t, "the API middleware check refuses the revoked token (cut-off %s)", cut.Format(time.RFC3339))
+	} else {
+		r10open(t, "revoked token not refused by CheckSession: %v", err)
+	}
+	if err := api.ApproveJournal(ctx, tok, res.JournalID); err == nil {
+		r10open(t, "an honest API approved with a revoked token")
+	} else {
+		r10held(t, "honest API with the revoked token: refused (%v)", err)
+	}
+	forged := tok
+	forged.SessionID, forged.IssuedAt = "", time.Now().Add(time.Minute)
+	err = api.ApproveJournal(ctx, forged, res.JournalID)
+	var status string
+	_ = r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT status FROM journals WHERE id = $1::uuid`, res.JournalID).Scan(&status)
+	})
+	if err == nil && status == "APPROVED" {
+		r10open(t, "compromised API, revoked token (iat 10 min before the revocation cut-off): the signer signed journal.approve and approval_authorize() accepted it; journal %s is %s",
+			res.JournalID[:8], status)
+	} else {
+		r10held(t, "revoked token refused end to end: %v", err)
+	}
+}
+
+// attest.Remote compares the claims it sent with those returned, but only
+// the length of perms, and none of kid, iat, exp, nonce or the signature.
+func TestR10_RemoteComparesPermsByLengthOnly(t *testing.T) {
+	dir, err := os.MkdirTemp("", "r10evil")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	sock := filepath.Join(dir, "e.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req attest.SignRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			c := req.Claims
+			c.Perms = []string{"payment.approve"} // same length, different content
+			c.V, c.KeyID, c.Nonce = 1, "other-kid", "not-a-uuid"
+			c.IssuedAt, c.ExpiresAt = time.Now().Unix(), time.Now().Add(24*time.Hour).Unix()
+			_ = json.NewEncoder(w).Encode(attest.SignResponse{Attestation: &attest.Attestation{Claims: c, Sig: "zz"}})
+		}))
+	}()
+	r := &attest.Remote{Socket: sock}
+	a, err := r.Issue(attest.WithBearer(context.Background(), "tok"), attest.Claims{Tenant: "t", Actor: "a", Action: "journal.approve", SubjectType: "journal",
+		SubjectID: "j", SubjectHash: "h", Perms: []string{"journal.approve"}})
+	if err == nil {
+		r10open(t, "Remote accepted a response with perms %v (sent [journal.approve]), kid %q, nonce %q, lifetime %ds, sig %q",
+			a.Perms, a.KeyID, a.Nonce, a.ExpiresAt-a.IssuedAt, a.Sig)
+	} else {
+		r10held(t, "altered response refused: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Area 2: 0031 stock state.
+// ---------------------------------------------------------------------------
+
+func TestR10_StockStateTenantWrites(t *testing.T) {
+	f := newFixture(t)
+	role, _ := postgres.RoleName(f.tenant)
+	for _, tbl := range []string{"stock_balances", "stock_layers", "stock_consumptions"} {
+		for _, priv := range []string{"INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"} {
+			var app, ten bool
+			must(t, "priv", f.super.QueryRow(f.ctx, `SELECT has_table_privilege('serk_app', $1, $2), has_table_privilege($3, $1, $2)`, tbl, priv, role).Scan(&app, &ten))
+			if app || ten {
+				r10open(t, "%s on %s: serk_app %v, tenant login %v", priv, tbl, app, ten)
+			}
+		}
+	}
+	r10held(t, "no INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER on the three state tables for serk_app or the tenant login")
+	for what, stmt := range map[string]string{
+		"insert balance":    `INSERT INTO stock_balances(tenant_id, stock_item_id, warehouse_id, qty, value) VALUES (current_tenant(), gen_random_uuid(), gen_random_uuid(), 1000, 1)`,
+		"update layers":     `UPDATE stock_layers SET qty_remaining = qty_remaining + 1000`,
+		"delete consumed":   `DELETE FROM stock_consumptions`,
+		"stk_receive":       `SELECT stk_receive(gen_random_uuid(), gen_random_uuid(), 1, 1, 1, 'X', gen_random_uuid())`,
+		"stk_consume":       `SELECT stk_consume(gen_random_uuid(), gen_random_uuid(), 1, 'X', gen_random_uuid())`,
+		"guard direct call": `SELECT stock_issues_guard()`,
+	} {
+		err := r9exec(f, stmt)
+		if err == nil {
+			r10open(t, "tenant %s accepted", what)
+		} else {
+			r10held(t, "tenant %s: %v", what, err)
+		}
+	}
+	// Definer functions the tenant login can execute (inventory).
+	rows, err := f.super.Query(f.ctx, `SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+		WHERE n.nspname = 'public' AND p.prosecdef AND has_function_privilege($1, p.oid, 'EXECUTE') ORDER BY 1`, role)
+	must(t, "definers", err)
+	list, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	r10info(t, "SECURITY DEFINER functions executable by the tenant login: %v", list)
+}
+
+// pg_temp is searched first for relations even when a definer function pins
+// search_path = pg_catalog, public. With TEMP granted (a posture failure the
+// API refuses to start on), a tenant session can shadow approval tables that
+// approval_use() (SECURITY DEFINER) reads, and approve without any signature.
+func TestR10_PgTempShadowsApprovalEvidence(t *testing.T) {
+	f := newFixture(t)
+	res, err := f.svc.CreateJournal(f.ctx, f.prep, f.balanced(key("r10tmp")))
+	must(t, "journal", err)
+	role, _ := postgres.RoleName(f.tenant)
+	var db string
+	must(t, "db", f.super.QueryRow(f.ctx, `SELECT current_database()`).Scan(&db))
+	_, err = f.super.Exec(f.ctx, fmt.Sprintf(`GRANT TEMP ON DATABASE %s TO %s`, pgx.Identifier{db}.Sanitize(), pgx.Identifier{role}.Sanitize()))
+	must(t, "grant temp", err)
+	defer f.super.Exec(f.ctx, fmt.Sprintf(`REVOKE TEMP ON DATABASE %s FROM %s`, pgx.Identifier{db}.Sanitize(), pgx.Identifier{role}.Sanitize()))
+	issues, err := f.app.Posture(f.ctx)
+	must(t, "posture", err)
+	reported := false
+	for _, s := range issues {
+		if strings.Contains(s, "TEMP") && strings.Contains(s, role) {
+			reported = true
+		}
+	}
+	if reported {
+		r10held(t, "posture reports TEMP for %s (production would refuse to start)", role)
+	} else {
+		r10open(t, "posture does not report TEMP granted to the tenant login: %q", issues)
+	}
+	err = r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		for _, s := range []string{
+			`CREATE TEMP TABLE approval_attestations (LIKE public.approval_attestations INCLUDING DEFAULTS) ON COMMIT DROP`,
+			`CREATE TEMP TABLE approval_consumptions (LIKE public.approval_consumptions INCLUDING DEFAULTS) ON COMMIT DROP`,
+			// The definer runs as the schema owner, which (non-superuser) has
+			// no rights on the tenant's temp tables until the tenant grants them.
+			`GRANT ALL ON pg_temp.approval_attestations, pg_temp.approval_consumptions TO PUBLIC`,
+		} {
+			if _, err := tx.Exec(ctx, s); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO pg_temp.approval_attestations(nonce, tenant_id, txid, actor, action, subject_type, subject_id, subject_hash, ctx, perms,
+			mfa_claimed, mfa_fresh, auth_time, issued_at, expires_at, key_id, signature)
+			VALUES (gen_random_uuid(), current_tenant(), txid_current(), 'u-approver', 'journal.approve', 'journal', $1, approval_subject_hash('journal', $1), '',
+			        ARRAY['journal.approve'], false, false, NULL, now(), now() + interval '2 minutes', 'v1', repeat('0', 64))`, res.JournalID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE journals SET status = 'APPROVED', approved_by = 'u-approver', approved_at = now() WHERE id = $1::uuid`, res.JournalID)
+		return err
+	})
+	var status string
+	var real int
+	_ = r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT j.status, (SELECT count(*) FROM approval_attestations a WHERE a.subject_id = j.id::text AND a.action = 'journal.approve')
+			FROM journals j WHERE j.id = $1::uuid`, res.JournalID).Scan(&status, &real)
+	})
+	if err == nil && status == "APPROVED" {
+		r10open(t, "with TEMP granted, a tenant session approved journal %s with no signature: pg_temp.approval_attestations shadowed the real table inside approval_use(); real attestations for it: %d",
+			res.JournalID[:8], real)
+	} else {
+		r10held(t, "pg_temp shadow refused: %v (status %s)", err, status)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Area 3: bank data at rest.
+// ---------------------------------------------------------------------------
+
+// p2p_account_digest() is executable by serk_app; the stored digest and the
+// display suffix are readable by the tenant. Together they are an offline
+// guessing oracle for the full number.
+func TestR10_BankDigestOracle(t *testing.T) {
+	w := newP2PWorld(t)
+	f, c := w.f, w.cast
+	const number = "1000987654321"
+	id, err := f.svc.AddSupplierBankAccount(f.ctx, c.buyer, w.sup[0], "Awash Bank", "ABC Steel PLC", "1000 9876 54321", "ETB")
+	must(t, "add", err)
+	var digest, last4 string
+	must(t, "row", r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT account_digest, account_last4 FROM supplier_bank_accounts WHERE id = $1::uuid`, id).Scan(&digest, &last4)
+	}))
+	// Attacker model: a leaked tenant credential (the router's tenant login),
+	// no API, no data key. Known: 13 digits, bank prefix 1000, suffix from the row.
+	start := time.Now()
+	var found string
+	err = r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT g FROM (SELECT '1000' || lpad(i::text, 5, '0') || $2 AS g FROM generate_series(0, 99999) i) s
+			WHERE p2p_account_digest(g) = $1`, digest, last4).Scan(&found)
+	})
+	el := time.Since(start)
+	rate := 100000 / el.Seconds()
+	if err == nil && found == number {
+		r10open(t, "tenant login recovered the full account number %s…%s from account_digest + account_last4 with 100,000 p2p_account_digest() guesses in one statement (%.2f s, %.0f guesses/s; 10^9 = all 9 unknown digits of a 13-digit number ≈ %.1f h single session); nothing written, nothing audited",
+			found[:4], found[len(found)-4:], el.Seconds(), rate, 1e9/rate/3600)
+	} else {
+		r10held(t, "digest oracle failed: %v %q", err, found)
+	}
+	// R5-F3 comparison: the duplicate-number oracle needs one API call per
+	// guess; each is audited.
+	var audited int
+	_, regErr := f.svc.RegisterCompanyBankAccount(f.ctx, c.treasury, f.entity, "Guess", "CBE1000555000", "ETB", w.acct["1000"], w.acct["1050"])
+	_, regErr2 := f.svc.RegisterCompanyBankAccount(f.ctx, c.treasury, f.entity, "Guess 2", "CBE1000555000", "ETB", w.acct["1000"], w.acct["1050"])
+	_ = r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE action IN ('bankacct.register', 'bankacct.register_refused')`).Scan(&audited)
+	})
+	r10info(t, "R5-F3 path for comparison: 1 guess per API request (first %v, duplicate %v), audit rows for the two guesses: %d", regErr, regErr2, audited)
+}
+
+// Area 3: the immutability trigger checks only the digest's form, not that
+// it matches the ciphertext; and plaintext still crosses to the database as a
+// bound parameter of p2p_account_digest.
+func TestR10_BankRowRules(t *testing.T) {
+	w := newP2PWorld(t)
+	f, c := w.f, w.cast
+	id, err := f.svc.AddSupplierBankAccount(f.ctx, c.buyer, w.sup[0], "Awash Bank", "ABC Steel PLC", "100011112222", "ETB")
+	must(t, "add", err)
+	for what, stmt := range map[string]string{
+		"digest swap":           `UPDATE supplier_bank_accounts SET account_digest = 'hmac:' || repeat('a', 64) WHERE id = $1::uuid`,
+		"suffix swap":           `UPDATE supplier_bank_accounts SET account_last4 = '9999' WHERE id = $1::uuid`,
+		"plaintext back":        `UPDATE supplier_bank_accounts SET account_number = '100011112222' WHERE id = $1::uuid`,
+		"plaintext, clear enc":  `UPDATE supplier_bank_accounts SET account_number = '100011112222', account_number_enc = NULL, account_digest = NULL, account_last4 = NULL WHERE id = $1::uuid`,
+		"approve by raw update": `UPDATE supplier_bank_accounts SET status = 'APPROVED', approved_by = 'u-finance-manager' WHERE id = $1::uuid`,
+	} {
+		if err := r9exec(f, stmt, id); err == nil {
+			r10open(t, "tenant %s accepted", what)
+		} else {
+			r10held(t, "tenant %s: %v", what, err)
+		}
+	}
+	// Raw insert with a mismatched digest: refused only for lack of an attestation?
+	err = r9exec(f, `INSERT INTO supplier_bank_accounts(supplier_id, bank_name, account_name, account_number_enc, account_digest, account_last4, currency, created_by)
+		VALUES ($1::uuid, 'X', 'Y', '\x0102'::bytea, 'hmac:' || repeat('b', 64), '1234', 'ETB', 'u-buyer')`, w.sup[0])
+	r10info(t, "raw insert of an unverifiable ciphertext with a free-form digest: %v", err)
+	var lp, lpe string
+	must(t, "settings", f.super.QueryRow(f.ctx, `SELECT current_setting('log_parameter_max_length'), current_setting('log_parameter_max_length_on_error')`).Scan(&lp, &lpe))
+	r10info(t, "server log_parameter_max_length=%s log_parameter_max_length_on_error=%s (posture checks only the first)", lp, lpe)
+	var n int
+	must(t, "posture on_error", f.super.QueryRow(f.ctx, `SELECT count(*) FROM (SELECT set_config('log_parameter_max_length', '0', true), set_config('log_parameter_max_length_on_error', '-1', true)) s,
+		serk_database_posture() p WHERE p.issue LIKE 'log_parameter%'`).Scan(&n))
+	if n == 0 {
+		r10open(t, "posture is clean with log_parameter_max_length_on_error = -1 (bound parameters, including the plaintext number passed to p2p_account_digest, are logged in full on error)")
+	} else {
+		r10held(t, "posture reports on-error parameter logging")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Area 4: quantity corrections.
+// ---------------------------------------------------------------------------
+
+func TestR10_QuantityCorrectionOrderings(t *testing.T) {
+	w := newARWorld(t)
+	f, c := w.f, w.cast
+	w.activeContract(t)
+	w.measure(t, 10, "0", "0", "60")
+	ipc1 := w.certifiedIPC(t, 10, "ERA-IPC-01")
+	inv1, _ := w.approvedInvoice(t, ipc1)
+	// IPC 2 prepared and submitted on 20 t more, then a correction is approved.
+	w.measure(t, 12, "0", "0", "20")
+	ipc2, err := f.svc.PrepareIPC(f.ctx, w.ar.qs, w.contract, time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC))
+	must(t, "ipc2", err)
+	must(t, "ipc2 submit", f.svc.SubmitIPC(f.ctx, w.ar.qs, ipc2))
+	cn, err := f.svc.IssueQuantityCorrection(f.ctx, w.ar.arClerk, inv1, 3, dec("10"), today(), "Re-survey: 10 t not in place")
+	must(t, "qc", err)
+	// A raw tenant edit of the DRAFT correction.
+	if err := r9exec(f, `UPDATE customer_credit_notes SET correction_qty = 1, net_amount = 98000 WHERE id = $1::uuid`, cn); err == nil {
+		r10open(t, "raw edit of a DRAFT quantity correction accepted")
+	} else {
+		r10held(t, "raw edit of a DRAFT correction: %v", err)
+	}
+	_, err = f.svc.ApproveCreditNote(f.ctx, w.mfa(c.commercial), cn)
+	must(t, "approve qc", err)
+	if err := f.svc.CertifyIPC(f.ctx, w.mfa(c.commercial), ipc2, "ERA-IPC-02", arCertSHA); err == nil {
+		var this string
+		_ = r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT this_gross::text FROM ipcs WHERE id = $1::uuid`, ipc2).Scan(&this)
+		})
+		r10info(t, "IPC 2 prepared before the correction was certified after it: this_gross %s", this)
+	} else {
+		r10held(t, "IPC 2 prepared before the correction is stale after it: %v", err)
+	}
+	var measured, certified, retHeld, credited string
+	must(t, "position", r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT measured_value::text, certified_gross::text, retention_held::text, credited_total::text FROM ar_contract_position($1::uuid)`, w.contract).
+			Scan(&measured, &certified, &retHeld, &credited)
+	}))
+	r10info(t, "ar_contract_position after 60 t certified, 20 t verified (IPC 2 stale) and an approved 10 t correction: measured_value %s (70 t, net of the correction), certified_gross %s (60 t, gross of the correction), retention_held %s (5%% of 60 t), credited_total %s",
+		measured, certified, retHeld, credited)
+	// Recompute: what is billable now and the job total.
+	var cum, prev, this string
+	must(t, "compute", r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT cumulative_gross::text, previous_gross::text, this_gross::text FROM ipc_compute($1::uuid, NULL)`, w.contract).Scan(&cum, &prev, &this)
+	}))
+	r10info(t, "ipc_compute after the correction: cumulative %s previous %s this %s", cum, prev, this)
+}
+
+// ---------------------------------------------------------------------------
+// Area 5: 0034 owner maintenance.
+// ---------------------------------------------------------------------------
+
+func TestR10_OwnerMaintenance(t *testing.T) {
+	f := newFixture(t)
+	// Outbox rows in both tenants.
+	f.lifecycle(t, f.balanced(key("r10a")))
+	o := f.outsider
+	res, err := f.svc.CreateJournal(f.ctx, o, f.balanced(key("r10b")))
+	_ = res
+	r10info(t, "tenant 2 journal (outbox row): %v", err)
+	var owner string
+	var ownerSuper bool
+	must(t, "owner", f.super.QueryRow(f.ctx, `SELECT r.rolname, r.rolsuper FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner WHERE n.nspname = 'public'`).Scan(&owner, &ownerSuper))
+	var inh bool
+	must(t, "inherit", f.super.QueryRow(f.ctx, `SELECT pg_has_role($1, 'serk_publisher', 'USAGE')`, owner).Scan(&inh))
+	r10info(t, "schema owner %s (superuser %v) holds the privileges of serk_publisher: %v", owner, ownerSuper, inh)
+	rows, err := f.super.Query(f.ctx, `SELECT tablename || ':' || policyname || ' TO ' || array_to_string(roles, ',') || ' USING ' || COALESCE(qual, '-')
+		FROM pg_policies p WHERE schemaname = 'public' AND policyname <> 'owner_maintenance' AND roles <> '{public}'
+		  AND EXISTS (SELECT 1 FROM unnest(p.roles) r WHERE pg_has_role($1, r::name, 'USAGE')) ORDER BY 1`, owner)
+	must(t, "policies", err)
+	pol, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	r10info(t, "policies other than tenant_isolation/owner_maintenance that apply to the owner in ANY session: %v", pol)
+
+	// A scratch owner-rights function (as a future migration might add one),
+	// executable by the tenant: what does a tenant session see through it?
+	_, err = f.super.Exec(f.ctx, `CREATE FUNCTION r10_probe() RETURNS TABLE (maint boolean, outbox_rows bigint, outbox_tenants bigint, journals_tenants bigint, wf_tenants bigint)
+		LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+		SELECT serk_maintenance_session(), (SELECT count(*) FROM outbox), (SELECT count(DISTINCT tenant_id) FROM outbox),
+		       (SELECT count(DISTINCT tenant_id) FROM journals), (SELECT count(DISTINCT tenant_id) FROM workflow_instances) $$`)
+	must(t, "probe fn", err)
+	defer f.super.Exec(f.ctx, `DROP FUNCTION IF EXISTS r10_probe()`)
+	_, err = f.super.Exec(f.ctx, fmt.Sprintf(`ALTER FUNCTION r10_probe() OWNER TO %s; GRANT EXECUTE ON FUNCTION r10_probe() TO serk_app`, pgx.Identifier{owner}.Sanitize()))
+	must(t, "probe owner", err)
+	var maint bool
+	var ob, obt, jt, wft int64
+	must(t, "probe call", r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT * FROM r10_probe()`).Scan(&maint, &ob, &obt, &jt, &wft)
+	}))
+	if maint {
+		r10open(t, "serk_maintenance_session() is true inside an owner function called by a tenant login")
+	} else {
+		r10held(t, "serk_maintenance_session() is false for a tenant session calling an owner-rights function")
+	}
+	if jt > 1 {
+		r10open(t, "tenant session through an owner function saw journals of %d tenants", jt)
+	} else {
+		r10held(t, "journals through the owner function: %d tenant(s)", jt)
+	}
+	if obt > 1 {
+		r10open(t, "tenant session through an owner-rights function saw outbox rows of %d tenants (%d rows): the owner inherits serk_publisher, whose publisher_read policy is USING (true); 0034's claim that such calls 'stay tenant-scoped' does not hold for outbox (and workflow_instances via owner_timer_scan)", obt, ob)
+	} else {
+		r10held(t, "outbox through the owner function: %d tenant(s)", obt)
+	}
+	// A tenant login cannot change session identity or join a platform role.
+	for what, stmt := range map[string]string{
+		"SET ROLE serk_monitor":                 `SET LOCAL ROLE serk_monitor`,
+		"SET SESSION AUTHORIZATION owner":       `SET SESSION AUTHORIZATION ` + pgx.Identifier{owner}.Sanitize(),
+		"call serk_maintenance_session":         `SELECT serk_maintenance_session()`,
+		"GRANT serk_monitor to itself":          `GRANT serk_monitor TO CURRENT_USER`,
+		"delete own tenant_db_roles row":        `DELETE FROM tenant_db_roles`,
+		"read approval_keys":                    `SELECT count(*) FROM approval_keys`,
+		"call ops_health_metrics":               `SELECT * FROM ops_health_metrics()`,
+		"call serk_bank_plaintext_rows":         `SELECT serk_bank_plaintext_rows()`,
+	} {
+		if err := r9exec(f, stmt); err == nil {
+			r10open(t, "tenant %s accepted", what)
+		} else {
+			r10held(t, "tenant %s: %v", what, err)
+		}
+	}
+	// Even if an operator mistakenly grants a platform role to a tenant login,
+	// the tenant_db_roles exclusion keeps the predicate false.
+	role, _ := postgres.RoleName(f.tenant)
+	_, err = f.super.Exec(f.ctx, `GRANT serk_monitor TO `+pgx.Identifier{role}.Sanitize())
+	must(t, "grant monitor", err)
+	must(t, "probe call 2", r9raw(f, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT * FROM r10_probe()`).Scan(&maint, &ob, &obt, &jt, &wft)
+	}))
+	_, _ = f.super.Exec(f.ctx, `REVOKE serk_monitor FROM `+pgx.Identifier{role}.Sanitize())
+	if maint || jt > 1 {
+		r10open(t, "tenant login granted serk_monitor became a maintenance session (journals of %d tenants)", jt)
+	} else {
+		r10held(t, "tenant login granted serk_monitor: maintenance false, journals of %d tenant(s)", jt)
+	}
+	// Ops logins: direct table reads.
+	for _, grp := range []string{"serk_monitor", "serk_scheduler", "serk_publisher", "serk_health"} {
+		dsn := f.db.LoginRole(t, grp)
+		conn, err := pgx.Connect(f.ctx, dsn)
+		if err != nil {
+			r10info(t, "%s login connect: %v", grp, err)
+			continue
+		}
+		for _, tbl := range []string{"journals", "supplier_bank_accounts", "audit_log", "outbox"} {
+			var n, nt int64
+			err := conn.QueryRow(f.ctx, `SELECT count(*), count(DISTINCT tenant_id) FROM `+tbl).Scan(&n, &nt)
+			if err == nil && n > 0 {
+				r10info(t, "%s login reads %s directly: %d rows, %d tenants", grp, tbl, n, nt)
+			} else if err == nil {
+				r10held(t, "%s login reads %s: 0 rows", grp, tbl)
+			} else {
+				r10held(t, "%s login reads %s: %v", grp, tbl, err)
+			}
+		}
+		conn.Close(f.ctx)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Area 6: constraint validation and legacy bundles.
+// ---------------------------------------------------------------------------
+
+func TestR10_ValidateConstraintsMatchFull(t *testing.T) {
+	f := newFixture(t)
+	for _, s := range []string{
+		`CREATE TABLE r10_parent (a int, b int, PRIMARY KEY (a, b))`,
+		`CREATE TABLE r10_child (id int PRIMARY KEY, a int, b int)`,
+		`INSERT INTO r10_parent VALUES (1, 1)`,
+		`INSERT INTO r10_child VALUES (1, 1, NULL), (2, 1, 1)`,
+		`ALTER TABLE r10_child ADD CONSTRAINT r10_fk_full FOREIGN KEY (a, b) REFERENCES r10_parent MATCH FULL NOT VALID`,
+		`CREATE TABLE r10_chk (id int PRIMARY KEY, "a, b" int)`,
+		`INSERT INTO r10_chk VALUES (1, -5)`,
+		`ALTER TABLE r10_chk ADD CONSTRAINT r10_chk_pos CHECK ("a, b" > 0) NOT VALID`,
+	} {
+		if _, err := f.admin.Exec(f.ctx, s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	defer f.admin.Exec(f.ctx, `DROP TABLE IF EXISTS r10_child, r10_parent, r10_chk`)
+	reps, err := postgres.ValidateConstraints(f.ctx, f.admin, false)
+	for _, r := range reps {
+		if strings.HasPrefix(r.Name, "r10_") {
+			r10info(t, "report-only: %s %s violators=%d", r.Table, r.Name, r.Violators)
+			if r.Name == "r10_fk_full" && r.Violators == 0 {
+				r10open(t, "MATCH FULL FK with a half-NULL row (1, NULL) reported with 0 violators (the tool applies MATCH SIMPLE semantics to every FK)")
+			}
+		}
+	}
+	if err != nil {
+		r10info(t, "report-only run error: %v", err)
+	}
+	reps, err = postgres.ValidateConstraints(f.ctx, f.admin, true)
+	r10info(t, "--apply run: %d reports, error: %v", len(reps), err)
+	var ledgered int
+	_ = f.admin.QueryRow(f.ctx, `SELECT count(*) FROM migration_exceptions WHERE rule LIKE 'GATEA-13 r10_%'`).Scan(&ledgered)
+	r10info(t, "migration_exceptions rows for the r10 constraints: %d", ledgered)
+}
+
+func TestR10_LegacyBundle(t *testing.T) {
+	src := filepath.Join("..", "..", "pkg", "legacy", "testdata", "clean")
+	base := t.TempDir()
+	cp := func(dst string, edit func(name, body string) string) string {
+		d := filepath.Join(base, dst)
+		must(t, "mkdir", os.MkdirAll(d, 0o755))
+		ents, err := os.ReadDir(src)
+		must(t, "readdir", err)
+		for _, e := range ents {
+			b, err := os.ReadFile(filepath.Join(src, e.Name()))
+			must(t, "read", err)
+			body := string(b)
+			if edit != nil {
+				body = edit(e.Name(), body)
+			}
+			must(t, "write", os.WriteFile(filepath.Join(d, e.Name()), []byte(body), 0o644))
+		}
+		return d
+	}
+	opts := func(dir string) legacy.Options {
+		return legacy.Options{Dir: dir, CutOver: time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), MinorUnits: 2, APAccount: "2000", ARAccount: "1100"}
+	}
+	clean := legacy.Validate(opts(cp("clean", nil)))
+	r10info(t, "clean bundle: %d exceptions", len(clean.Exceptions))
+	// A UTF-8 BOM (common in spreadsheet exports).
+	bom := legacy.Validate(opts(cp("bom", func(n, b string) string {
+		if n == "accounts.csv" {
+			return "\xef\xbb\xbf" + b
+		}
+		return b
+	})))
+	r10info(t, "same bundle with a UTF-8 BOM on accounts.csv: %d exceptions %v", len(bom.Exceptions), bom.Exceptions)
+	// Control accounts of the wrong type.
+	acc, _ := os.ReadFile(filepath.Join(src, "accounts.csv"))
+	r10info(t, "clean accounts.csv: %q", string(acc))
+	wrong := legacy.Validate(opts(cp("wrongtype", func(n, b string) string {
+		if n == "accounts.csv" {
+			lines := strings.Split(b, "\n")
+			for i, l := range lines {
+				if strings.HasPrefix(l, "2000,") {
+					lines[i] = strings.Replace(l, "LIABILITY", "ASSET", 1)
+				}
+				if strings.HasPrefix(l, "1100,") {
+					lines[i] = strings.Replace(l, "ASSET", "EQUITY", 1)
+				}
+			}
+			return strings.Join(lines, "\n")
+		}
+		return b
+	})))
+	if len(wrong.Exceptions) == 0 {
+		r10open(t, "bundle with the AP control account typed ASSET and the AR control account typed EQUITY is reported clean (control-account type is never checked)")
+	} else {
+		r10info(t, "wrong control types: %v", wrong.Exceptions)
+	}
+}

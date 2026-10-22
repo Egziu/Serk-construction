@@ -28,7 +28,7 @@ type ConstraintReport struct {
 // constraints in the public schema.
 func ValidateConstraints(ctx context.Context, conn *pgx.Conn, apply bool) ([]ConstraintReport, error) {
 	rows, err := conn.Query(ctx, `
-		SELECT c.conrelid::regclass::text, c.conname, c.contype::text, pg_get_constraintdef(c.oid),
+		SELECT c.conrelid::regclass::text, c.conname, c.contype::text || CASE WHEN c.contype = 'f' THEN c.confmatchtype::text ELSE '' END, pg_get_constraintdef(c.oid),
 		       (SELECT string_agg(quote_ident(a.attname), ', ' ORDER BY k.ord) FROM unnest(c.conkey) WITH ORDINALITY k(attnum, ord)
 		          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum),
 		       COALESCE(c.confrelid::regclass::text, ''),
@@ -70,7 +70,7 @@ func ValidateConstraints(ctx context.Context, conn *pgx.Conn, apply bool) ([]Con
 			// "CHECK (<expr>) NOT VALID" -> NOT (<expr>)
 			expr := strings.TrimSuffix(strings.TrimPrefix(x.def, "CHECK "), " NOT VALID")
 			where = "NOT " + expr
-		case "f":
+		case "fs", "fp", "ff":
 			cols, ref := strings.Split(x.cols, ", "), strings.Split(x.refCols, ", ")
 			var conds []string
 			for i := range cols {
@@ -82,6 +82,15 @@ func ValidateConstraints(ctx context.Context, conn *pgx.Conn, apply bool) ([]Con
 				notNull = append(notNull, "t."+c+" IS NOT NULL")
 			}
 			where = strings.Join(notNull, " AND ") + " AND NOT EXISTS (SELECT 1 FROM " + x.refTable + " r WHERE " + strings.Join(conds, " AND ") + ")"
+			if x.kind == "ff" && len(cols) > 1 {
+				// MATCH FULL (R10-F9): a key that is partly NULL is itself a
+				// violation; only an all-NULL key is exempt.
+				var someNull []string
+				for _, c := range cols {
+					someNull = append(someNull, "t."+c+" IS NULL")
+				}
+				where = "(" + where + ") OR ((" + strings.Join(someNull, " OR ") + ") AND NOT (" + strings.Join(someNull, " AND ") + "))"
+			}
 		}
 		rowRef := "t.ctid::text"
 		if x.pk != "" {
@@ -91,7 +100,10 @@ func ValidateConstraints(ctx context.Context, conn *pgx.Conn, apply bool) ([]Con
 			}
 			rowRef = "concat_ws('#', " + strings.Join(parts, ", ") + ")"
 		}
-		r := ConstraintReport{Table: x.table, Name: x.name, Kind: map[string]string{"c": "CHECK", "f": "FOREIGN KEY"}[x.kind], Definition: x.def}
+		r := ConstraintReport{Table: x.table, Name: x.name, Kind: map[string]string{"c": "CHECK", "fs": "FOREIGN KEY", "fp": "FOREIGN KEY", "ff": "FOREIGN KEY (MATCH FULL)"}[x.kind], Definition: x.def}
+		if r.Kind == "" {
+			return out, fmt.Errorf("%s: unsupported constraint kind %q", x.name, x.kind)
+		}
 		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return out, err
@@ -113,11 +125,23 @@ func ValidateConstraints(ctx context.Context, conn *pgx.Conn, apply bool) ([]Con
 			return out, fmt.Errorf("%s: %w", x.name, err)
 		}
 		if apply && r.Violators == 0 {
-			if _, err := tx.Exec(ctx, fmt.Sprintf(`ALTER TABLE %s VALIDATE CONSTRAINT %s`, x.table, pgx.Identifier{x.name}.Sanitize())); err != nil {
+			// The database is the final judge: a refusal here means the
+			// report missed a violator; keep the ledger entries recorded so
+			// far and report the constraint as not validated.
+			if _, err := tx.Exec(ctx, `SAVEPOINT validate_one`); err != nil {
 				tx.Rollback(ctx)
-				return out, fmt.Errorf("validate %s: %w", x.name, err)
+				return out, err
 			}
-			r.Validated = true
+			if _, err := tx.Exec(ctx, fmt.Sprintf(`ALTER TABLE %s VALIDATE CONSTRAINT %s`, x.table, pgx.Identifier{x.name}.Sanitize())); err != nil {
+				if _, rerr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT validate_one`); rerr != nil {
+					tx.Rollback(ctx)
+					return out, rerr
+				}
+				r.Violators = -1 // unknown: the database refused validation
+				r.Definition += " [VALIDATE refused: " + err.Error() + "]"
+			} else {
+				r.Validated = true
+			}
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return out, err
