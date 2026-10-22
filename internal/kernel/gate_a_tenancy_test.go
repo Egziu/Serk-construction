@@ -169,12 +169,28 @@ func (m misroute) TenantDSN(context.Context, string) (string, error) { return m.
 func TestSC04_DedicatedDatabaseTier(t *testing.T) {
 	shared := testdb.Setup(t)
 	dbName := "serk_ded_" + uuid.NewString()[:8]
-	if _, err := shared.Admin.Exec(shared.Ctx, `CREATE DATABASE `+dbName); err != nil {
+	ownerURL, _ := url.Parse(shared.AdminDSN)
+	owner := ownerURL.User.Username()
+	if _, err := shared.Super.Exec(shared.Ctx, `CREATE DATABASE `+dbName+` OWNER `+pgx.Identifier{owner}.Sanitize()); err != nil {
 		t.Fatal(err)
+	}
+	// As on a managed database: the schema owner owns public and pgcrypto
+	// exists (created by the platform administrator).
+	{
+		su, _ := url.Parse(shared.SuperDSN)
+		su.Path = "/" + dbName
+		sc, err := pgx.Connect(shared.Ctx, su.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sc.Exec(shared.Ctx, `ALTER SCHEMA public OWNER TO `+pgx.Identifier{owner}.Sanitize()+`; CREATE EXTENSION IF NOT EXISTS pgcrypto`); err != nil {
+			t.Fatal(err)
+		}
+		sc.Close(shared.Ctx)
 	}
 	t.Cleanup(func() {
 		_, _ = shared.Admin.Exec(context.Background(), `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1`, dbName)
-		_, _ = shared.Admin.Exec(context.Background(), `DROP DATABASE IF EXISTS `+dbName)
+		_, _ = shared.Super.Exec(context.Background(), `DROP DATABASE IF EXISTS `+dbName)
 	})
 	dedAdminURL, _ := url.Parse(shared.AdminDSN)
 	dedAdminURL.Path = "/" + dbName
@@ -192,7 +208,7 @@ func TestSC04_DedicatedDatabaseTier(t *testing.T) {
 		t.Fatal(err)
 	}
 	role, _ := postgres.RoleName(tenant)
-	t.Cleanup(func() { _, _ = shared.Admin.Exec(context.Background(), `DROP ROLE IF EXISTS `+role) })
+	t.Cleanup(func() { _, _ = shared.Super.Exec(context.Background(), `DROP ROLE IF EXISTS `+role) })
 	dedTenantURL, _ := url.Parse(shared.BaseDSN)
 	dedTenantURL.Path = "/" + dbName
 	dsn, _ := postgres.DerivedCredentials{BaseDSN: dedTenantURL.String(), Secret: testdb.Secret}.TenantDSN(shared.Ctx, tenant)

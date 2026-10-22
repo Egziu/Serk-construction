@@ -109,11 +109,11 @@ func historyKinds(d InstanceDetail) string {
 func (f *fixture) backdate(t *testing.T, instanceID, column string) {
 	t.Helper()
 	ctx := f.ctx
-	if _, err := f.admin.Exec(ctx, `SET session_replication_role = replica`); err != nil {
+	if _, err := f.super.Exec(ctx, `SET session_replication_role = replica`); err != nil {
 		t.Fatal(err)
 	}
-	defer f.admin.Exec(ctx, `SET session_replication_role = origin`) //nolint:errcheck
-	if _, err := f.admin.Exec(ctx, `UPDATE workflow_instances SET `+column+` = now() - interval '1 minute' WHERE id=$1::uuid`, instanceID); err != nil {
+	defer f.super.Exec(ctx, `SET session_replication_role = origin`) //nolint:errcheck
+	if _, err := f.super.Exec(ctx, `UPDATE workflow_instances SET `+column+` = now() - interval '1 minute' WHERE id=$1::uuid`, instanceID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -444,11 +444,11 @@ func TestWorkflow_SubjectChangedAfterStartIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.admin.Exec(f.ctx, `SET session_replication_role = replica`); err != nil {
+	if _, err := f.super.Exec(f.ctx, `SET session_replication_role = replica`); err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.admin.Exec(f.ctx, `UPDATE fiscal_periods SET ends_on = ends_on + 1 WHERE id=$1::uuid`, per)
-	f.admin.Exec(f.ctx, `SET session_replication_role = origin`) //nolint:errcheck
+	_, err = f.super.Exec(f.ctx, `UPDATE fiscal_periods SET ends_on = ends_on + 1 WHERE id=$1::uuid`, per)
+	f.super.Exec(f.ctx, `SET session_replication_role = origin`) //nolint:errcheck
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -140,12 +140,32 @@ func TestAlertDrill_InducedFailuresFireTheRightAlerts(t *testing.T) {
 	ctx := context.Background()
 	// Fresh database for this drill.
 	dbName := "serk_drill_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-	admin0, err := pgx.Connect(ctx, adminDSN)
+	// The scratch database and the out-of-band tampering below are a
+	// superuser's actions (SERK_TEST_SUPERUSER_DSN when set); the drill's
+	// subject runs as the schema owner of SERK_TEST_ADMIN_DSN.
+	superDSN := adminDSN
+	if s := os.Getenv("SERK_TEST_SUPERUSER_DSN"); s != "" {
+		superDSN = s
+	}
+	admin0, err := pgx.Connect(ctx, superDSN)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := admin0.Exec(ctx, "CREATE DATABASE "+dbName); err != nil {
+	ownerURL, _ := url.Parse(adminDSN)
+	if _, err := admin0.Exec(ctx, "CREATE DATABASE "+dbName+" OWNER "+pgx.Identifier{ownerURL.User.Username()}.Sanitize()); err != nil {
 		t.Fatal(err)
+	}
+	{
+		su, _ := url.Parse(superDSN)
+		su.Path = "/" + dbName
+		sc, err := pgx.Connect(ctx, su.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sc.Exec(ctx, "ALTER SCHEMA public OWNER TO "+pgx.Identifier{ownerURL.User.Username()}.Sanitize()+"; CREATE EXTENSION IF NOT EXISTS pgcrypto"); err != nil {
+			t.Fatal(err)
+		}
+		sc.Close(ctx)
 	}
 	t.Cleanup(func() {
 		_, _ = admin0.Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1`, dbName)
@@ -189,7 +209,7 @@ func TestAlertDrill_InducedFailuresFireTheRightAlerts(t *testing.T) {
 		t.Fatalf("monitor login cannot read health: %v", baseByName)
 	}
 
-	su := e.db.Admin // schema owner/superuser: the out-of-band actor
+	su := e.db.Super // superuser: the out-of-band actor (SERK_TEST_SUPERUSER_DSN)
 	exec := func(what, q string, args ...any) {
 		t.Helper()
 		if _, err := su.Exec(ctx, q, args...); err != nil {

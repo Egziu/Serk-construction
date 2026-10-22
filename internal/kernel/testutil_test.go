@@ -29,6 +29,7 @@ type fixture struct {
 	app      *postgres.Router
 	db       *testdb.Env
 	admin    *pgx.Conn
+	super    *pgx.Conn // superuser-attack simulations only (testdb.Env.Super)
 	tenant   string
 	tenant2  string
 	entity   string
@@ -48,7 +49,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	env := testdb.Setup(t)
 	ctx, admin, app := env.Ctx, env.Admin, env.Router
-	f := &fixture{ctx: ctx, app: app, admin: admin, db: env, accounts: map[string]string{}}
+	f := &fixture{ctx: ctx, app: app, admin: admin, super: env.Super, db: env, accounts: map[string]string{}}
 	f.svc = New(app, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster}).UseBankDataKeys(testdb.BankDataKeys)
 	f.tenant, f.tenant2 = uuid.NewString(), uuid.NewString()
 

@@ -682,8 +682,8 @@ func TestR9_PostureFalseNegative(t *testing.T) {
 	must(t, "posture", err)
 	t.Logf("posture on the test database: %q", base)
 	fn := `pg_catalog.pg_try_advisory_xact_lock(bigint)`
-	defer f.admin.Exec(f.ctx, fmt.Sprintf(`REVOKE EXECUTE ON FUNCTION %s FROM %q`, fn, role))
-	if _, err := f.admin.Exec(f.ctx, fmt.Sprintf(`GRANT EXECUTE ON FUNCTION %s TO %q`, fn, role)); err != nil {
+	defer f.super.Exec(f.ctx, fmt.Sprintf(`REVOKE EXECUTE ON FUNCTION %s FROM %q`, fn, role))
+	if _, err := f.super.Exec(f.ctx, fmt.Sprintf(`GRANT EXECUTE ON FUNCTION %s TO %q`, fn, role)); err != nil {
 		t.Skipf("grant: %v", err)
 	}
 	after, err := f.app.Posture(f.ctx)

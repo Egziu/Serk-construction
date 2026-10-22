@@ -33,10 +33,17 @@ var Secret = []byte("serk-test-tenant-credential-secret-0123456789")
 
 // Env is a migrated database plus an application router.
 type Env struct {
-	Ctx        context.Context
-	AdminDSN   string
-	BaseDSN    string
-	Admin      *pgx.Conn
+	Ctx      context.Context
+	AdminDSN string
+	BaseDSN  string
+	Admin    *pgx.Conn
+	// Super is a superuser connection to the same database, used ONLY by
+	// tests that simulate an out-of-band superuser (tampering below the
+	// application, time travel, scratch databases, cluster grants). It is
+	// SERK_TEST_SUPERUSER_DSN when set (so the rest of the suite can run as a
+	// non-superuser schema owner, as on managed PostgreSQL), else Admin.
+	Super      *pgx.Conn
+	SuperDSN   string
 	AdminStore *postgres.Store
 	Router     *postgres.Router
 
@@ -65,7 +72,21 @@ func Setup(t *testing.T) *Env {
 		t.Fatal(err)
 	}
 	u.User = nil
-	e := &Env{Ctx: ctx, AdminDSN: adminDSN, BaseDSN: u.String(), Admin: admin}
+	e := &Env{Ctx: ctx, AdminDSN: adminDSN, BaseDSN: u.String(), Admin: admin, Super: admin, SuperDSN: adminDSN}
+	if sdsn := os.Getenv("SERK_TEST_SUPERUSER_DSN"); sdsn != "" {
+		su, err := url.Parse(sdsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		au, _ := url.Parse(adminDSN)
+		su.Path = au.Path
+		super, err := pgx.Connect(ctx, su.String())
+		if err != nil {
+			t.Fatalf("superuser connect: %v", err)
+		}
+		t.Cleanup(func() { _ = super.Close(ctx) })
+		e.Super, e.SuperDSN = super, su.String()
+	}
 	// Registered before the router so it runs after the router closes (LIFO).
 	t.Cleanup(e.dropRoles)
 	e.AdminStore, err = postgres.Open(ctx, adminDSN)
@@ -115,8 +136,8 @@ func (e *Env) dropRoles() {
 	defer e.mu.Unlock()
 	for _, r := range e.roles {
 		// Sessions of a dropped role are terminated first so DROP ROLE succeeds.
-		_, _ = e.Admin.Exec(e.Ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename=$1`, r)
-		_, _ = e.Admin.Exec(e.Ctx, `DROP ROLE IF EXISTS `+r)
+		_, _ = e.Super.Exec(e.Ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename=$1`, r)
+		_, _ = e.Super.Exec(e.Ctx, `DROP ROLE IF EXISTS `+r)
 	}
 }
 
@@ -126,7 +147,7 @@ func (e *Env) LoginRole(t *testing.T, group string) string {
 	t.Helper()
 	name := "serk_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
 	pw := strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, err := e.Admin.Exec(e.Ctx, fmt.Sprintf(`CREATE ROLE %s LOGIN NOSUPERUSER INHERIT PASSWORD '%s' IN ROLE %s`, name, pw, pgx.Identifier{group}.Sanitize())); err != nil {
+	if _, err := e.Super.Exec(e.Ctx, fmt.Sprintf(`CREATE ROLE %s LOGIN NOSUPERUSER INHERIT PASSWORD '%s' IN ROLE %s`, name, pw, pgx.Identifier{group}.Sanitize())); err != nil {
 		t.Fatalf("create login role: %v", err)
 	}
 	e.mu.Lock()

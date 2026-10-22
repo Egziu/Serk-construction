@@ -161,7 +161,7 @@ func TestBankAtRest_LegacyPlaintextConversionAndPosture(t *testing.T) {
 	}
 	// Parameter logging: the posture item clears when the server setting is 0.
 	var withZero int
-	must(t, "setting", f.admin.QueryRow(f.ctx, `SELECT count(*) FROM (SELECT set_config('log_parameter_max_length', '0', true)) s, serk_database_posture() p WHERE p.issue LIKE 'log_parameter%'`).Scan(&withZero))
+	must(t, "setting", f.super.QueryRow(f.ctx, `SELECT count(*) FROM (SELECT set_config('log_parameter_max_length', '0', true)) s, serk_database_posture() p WHERE p.issue LIKE 'log_parameter%'`).Scan(&withZero))
 	if withZero != 0 {
 		t.Errorf("posture reports log_parameter_max_length with the setting at 0")
 	}

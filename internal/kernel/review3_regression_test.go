@@ -93,7 +93,7 @@ func TestR3_01_SubledgerJournalLinesAppendedAfterBinding(t *testing.T) {
 	// (simulated here as the cluster superuser with triggers disabled), the
 	// database refuses to approve or post a subledger journal that no longer
 	// equals its document's accounting.
-	if _, err := f.admin.Exec(f.ctx, `BEGIN; SET LOCAL session_replication_role = replica;
+	if _, err := f.super.Exec(f.ctx, `BEGIN; SET LOCAL session_replication_role = replica;
 		INSERT INTO journal_lines(journal_id, tenant_id, legal_entity_id, line_no, account_id, side, amount, currency, project_id, cost_code_id) VALUES
 		('`+j+`', '`+f.tenant+`', '`+f.entity+`', 90, '`+w.acct["5000"]+`', 'DEBIT', 1000000, 'ETB', '`+f.project+`', '`+w.costCode+`'),
 		('`+j+`', '`+f.tenant+`', '`+f.entity+`', 91, '`+w.acct["1000"]+`', 'CREDIT', 1000000, 'ETB', '`+f.project+`', NULL); COMMIT;`); err != nil {

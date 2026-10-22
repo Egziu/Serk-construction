@@ -191,3 +191,39 @@ func TestPrivileges_MonitorSeesAggregatesOnly(t *testing.T) {
 		}
 	}
 }
+
+// 0034: every RLS table carries the owner_maintenance policy (so a
+// non-superuser schema owner can provision and monitor), and a tenant login
+// calling an owner-rights function still sees only its own tenant.
+func TestPrivileges_OwnerMaintenancePolicyEverywhere(t *testing.T) {
+	f := newFixture(t)
+	var missing string
+	if err := f.admin.QueryRow(f.ctx, `SELECT COALESCE(string_agg(c.relname, ', ' ORDER BY c.relname), '')
+		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity
+		  AND NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid AND p.polname = 'owner_maintenance')`).Scan(&missing); err != nil {
+		t.Fatal(err)
+	}
+	if missing != "" {
+		t.Errorf("RLS tables without owner_maintenance (a non-superuser owner cannot maintain them): %s", missing)
+	}
+	// From a tenant session the maintenance predicate is false, including
+	// inside owner-rights (SECURITY DEFINER) functions.
+	var inTenant bool
+	if err := f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT serk_maintenance_session()`).Scan(&inTenant)
+	}); err == nil && inTenant {
+		t.Errorf("serk_maintenance_session() is true for a tenant login")
+	}
+	var leaked int
+	if err := f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		// current_tenant() and p2p_account_digest are owner-rights functions
+		// a tenant may call; through them the tenant must not see others.
+		return tx.QueryRow(ctx, `SELECT count(*) FROM tenants WHERE id <> current_tenant()`).Scan(&leaked)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if leaked != 0 {
+		t.Errorf("a tenant login sees %d other tenants", leaked)
+	}
+}

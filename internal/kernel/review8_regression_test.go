@@ -646,10 +646,10 @@ func TestR8_PostureCheck(t *testing.T) {
 	cleanup := func() {
 		_, _ = f.admin.Exec(f.ctx, `DROP TABLE IF EXISTS public.r8_depth`)
 		_, _ = f.admin.Exec(f.ctx, `DROP FUNCTION IF EXISTS public.r8_depth_fn()`)
-		_, _ = f.admin.Exec(f.ctx, fmt.Sprintf(`REVOKE CREATE ON SCHEMA public FROM %q`, role))
+		_, _ = f.super.Exec(f.ctx, fmt.Sprintf(`REVOKE CREATE ON SCHEMA public FROM %q`, role))
 	}
 	defer cleanup()
-	if _, err := f.admin.Exec(f.ctx, fmt.Sprintf(`GRANT CREATE ON SCHEMA public TO %q`, role)); err != nil {
+	if _, err := f.super.Exec(f.ctx, fmt.Sprintf(`GRANT CREATE ON SCHEMA public TO %q`, role)); err != nil {
 		t.Skipf("cannot grant CREATE: %v", err)
 	}
 	issues2, err := f.app.Posture(f.ctx)
@@ -683,8 +683,8 @@ func TestR8_PostureCheck(t *testing.T) {
 
 	// Advisory locks: only one overload is checked.
 	fn := `pg_catalog.pg_try_advisory_xact_lock(bigint)`
-	defer f.admin.Exec(f.ctx, `REVOKE EXECUTE ON FUNCTION `+fn+` FROM PUBLIC`)
-	if _, err := f.admin.Exec(f.ctx, `GRANT EXECUTE ON FUNCTION `+fn+` TO PUBLIC`); err != nil {
+	defer f.super.Exec(f.ctx, `REVOKE EXECUTE ON FUNCTION `+fn+` FROM PUBLIC`)
+	if _, err := f.super.Exec(f.ctx, `GRANT EXECUTE ON FUNCTION `+fn+` TO PUBLIC`); err != nil {
 		t.Skipf("cannot grant: %v", err)
 	}
 	issues3, err := f.app.Posture(f.ctx)

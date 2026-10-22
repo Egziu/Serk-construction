@@ -113,7 +113,7 @@ func TestSC08_PostBlockedByUncommittedCloseIsRefused(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(f.ctx, 15*time.Second)
 	defer cancel()
-	tx, err := f.admin.Begin(ctx)
+	tx, err := f.super.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

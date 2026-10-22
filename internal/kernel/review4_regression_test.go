@@ -416,7 +416,8 @@ func TestR4_05_StatementContinuityRace(t *testing.T) {
 	for i := 0; i < 50 && !blocked; i++ {
 		time.Sleep(100 * time.Millisecond)
 		var n int
-		_ = f.admin.QueryRow(f.ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&n)
+		// Other roles' wait events are visible only to a superuser (or pg_read_all_stats).
+		_ = f.super.QueryRow(f.ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&n)
 		blocked = n > 0
 	}
 	close(aCommit)

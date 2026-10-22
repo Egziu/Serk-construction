@@ -106,7 +106,7 @@ items = [
       "TestSharedAbuse_LockoutAndBudgetsSpanReplicas (2-3 API replicas in one process over one PostgreSQL; per-process control case), TestSharedAbuse_StoreFailureFallsBackToLocalLimits",
       "go test ./internal/httpapi -run SharedAbuse -v", "shared lockout, pre-auth and per-principal budgets enforced across replicas; HMAC digests only; store outage falls back to local limits with an alert",
       ["docs/testing/evidence/full-suite-abuse-fresh-db.txt"],
-      "no edge (proxy/WAF) throttling configured or load-tested; replicas tested as separate servers in one process, not separate hosts; volumetric DoS is out of scope for an application limiter", "",
+      "edge throttling exists only as an unexecuted nginx draft (deploy/nginx-edge.conf); nothing at the edge has been started or load-tested; replicas tested as separate servers in one process, not separate hosts; volumetric DoS is out of scope for an application limiter", "",
       "No edge proxy / multi-host load environment", "Edge rate limiting (proxy) + multi-host load test in staging"),
  item("GATEA-11", "OpenTelemetry, SLOs and alerts work", "P1", "Gate A", "BLOCKED", "observability",
       ["internal/obs", "deploy/observability/prometheus-alerts.yml"], "Silent failures", "", "bae7eeb", "0011",

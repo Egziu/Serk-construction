@@ -136,7 +136,7 @@ func TestSC01_IntegrityScanDetectsPriorExploitation(t *testing.T) {
 	posted := f.lifecycle(t, f.balanced(key("scan")))
 	// Session-scoped trigger bypass (superuser only), so tests in other
 	// packages running concurrently keep full protection.
-	tx, err := f.admin.Begin(f.ctx)
+	tx, err := f.super.Begin(f.ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

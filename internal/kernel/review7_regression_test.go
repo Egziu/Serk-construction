@@ -688,10 +688,10 @@ func TestR7_TriggerDepthGuardNeedsTempRevoked(t *testing.T) {
 	must(t, "role", w.raw(func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT current_user, current_database()`).Scan(&role, &db)
 	}))
-	if _, err := f.admin.Exec(f.ctx, fmt.Sprintf(`GRANT TEMPORARY ON DATABASE %q TO %q`, db, role)); err != nil {
+	if _, err := f.super.Exec(f.ctx, fmt.Sprintf(`GRANT TEMPORARY ON DATABASE %q TO %q`, db, role)); err != nil {
 		t.Skipf("cannot grant TEMP: %v", err)
 	}
-	defer f.admin.Exec(f.ctx, fmt.Sprintf(`REVOKE TEMPORARY ON DATABASE %q FROM %q`, db, role))
+	defer f.super.Exec(f.ctx, fmt.Sprintf(`REVOKE TEMPORARY ON DATABASE %q FROM %q`, db, role))
 	err := w.raw(func(ctx context.Context, tx pgx.Tx) error {
 		for _, s := range []string{
 			`CREATE TEMP TABLE r7(x int)`,
