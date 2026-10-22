@@ -83,7 +83,7 @@ func newWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.svc = kernel.New(db.Router, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster})
+	w.svc = kernel.New(db.Router, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster}).UseBankDataKeys(testdb.BankDataKeys)
 	w.prep = auth.Principal{Kind: auth.KindHuman, UserID: "prep", TenantID: w.tenant, Roles: []string{"accountant"}}
 	w.appr = auth.Principal{Kind: auth.KindHuman, UserID: "appr", TenantID: w.tenant, Roles: []string{"finance_manager"}}
 	w.post = auth.Principal{Kind: auth.KindHuman, UserID: "post", TenantID: w.tenant, Roles: []string{"controller"}}

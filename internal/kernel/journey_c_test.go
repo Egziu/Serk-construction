@@ -255,12 +255,12 @@ func TestJourneyC_Controls(t *testing.T) {
 		_, err := tx.Exec(ctx, `UPDATE stock_balances SET qty = qty + 100 WHERE stock_item_id = $1::uuid`, w.itemSteel)
 		return err
 	})
-	arDenied(t, "direct change of a stock balance", err, "written only by stock documents")
+	arDenied(t, "direct change of a stock balance", err, "permission denied") // 0031: no write grant at all
 	err = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `SELECT stk_receive($1::uuid, $2::uuid, 100, 1, 0.01, 'RECEIPT', gen_random_uuid())`, w.itemSteel, w.store)
 		return err
 	})
-	arDenied(t, "calling the valuation engine directly", err, "only by a stock document")
+	arDenied(t, "calling the valuation engine directly", err, "permission denied") // 0031: no EXECUTE for the tenant login
 
 	// Issues: no negative stock; no self-approval; no AI approval; cost code of the project.
 	big, err := w.issue(t, w.itemSteel, "12.5")

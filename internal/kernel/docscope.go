@@ -144,8 +144,8 @@ func scrub(v any) any {
 				if n, ok := val.(string); ok {
 					out["account_number_masked"] = MaskAccount(n)
 				}
-			case "bank_snapshot":
-				// fingerprint of payee details; not needed by readers
+			case "bank_snapshot", "account_number_enc", "account_digest":
+				// fingerprint, ciphertext and keyed digest of payee details; not needed by readers
 			default:
 				out[k] = scrub(val)
 			}
@@ -163,14 +163,16 @@ func scrub(v any) any {
 // maskedAccountOf returns the masked number of the bank account a document
 // carries (the subject text holds only a keyed digest since 0017).
 func maskedAccountOf(ctx context.Context, tx pgx.Tx, docType, id string) (string, error) {
+	// Since 0032 only the display suffix is readable; a pre-0032 row not yet
+	// converted still carries the plaintext.
 	var q string
 	switch docType {
 	case "supplier_bank_account":
-		q = `SELECT account_number FROM supplier_bank_accounts WHERE id = $1::uuid`
+		q = `SELECT COALESCE(account_last4, right(account_number, 4), '') FROM supplier_bank_accounts WHERE id = $1::uuid`
 	case "company_bank_account":
-		q = `SELECT account_number FROM company_bank_accounts WHERE id = $1::uuid`
+		q = `SELECT COALESCE(account_last4, right(account_number, 4), '') FROM company_bank_accounts WHERE id = $1::uuid`
 	case "payment_instruction":
-		q = `SELECT b.account_number FROM payment_instructions p JOIN supplier_bank_accounts b ON b.id = p.supplier_bank_id WHERE p.id = $1::uuid`
+		q = `SELECT COALESCE(b.account_last4, right(b.account_number, 4), '') FROM payment_instructions p JOIN supplier_bank_accounts b ON b.id = p.supplier_bank_id WHERE p.id = $1::uuid`
 	default:
 		return "", nil
 	}
@@ -178,7 +180,7 @@ func maskedAccountOf(ctx context.Context, tx pgx.Tx, docType, id string) (string
 	if err := tx.QueryRow(ctx, q, id).Scan(&n); err != nil {
 		return "", err
 	}
-	return MaskAccount(n), nil
+	return "****" + n, nil
 }
 
 // projectDoc returns the reader-safe detail of a document; masked is the
@@ -264,13 +266,20 @@ func (s *Service) RevealBankAccount(ctx context.Context, p auth.Principal, docTy
 		if _, err := s.visibleDoc(ctx, tx, p, docType, id, false); err != nil {
 			return err
 		}
-		q := `SELECT id::text, bank_name, account_name, account_number, currency FROM supplier_bank_accounts WHERE id = $1::uuid`
+		q, table := `SELECT id::text, bank_name, account_name, account_number, account_number_enc, currency FROM supplier_bank_accounts WHERE id = $1::uuid`, "supplier_bank_accounts"
 		if docType == "company_bank_account" {
-			q = `SELECT id::text, '', name, account_number, currency FROM company_bank_accounts WHERE id = $1::uuid`
+			q, table = `SELECT id::text, '', name, account_number, account_number_enc, currency FROM company_bank_accounts WHERE id = $1::uuid`, "company_bank_accounts"
 		}
-		if err := tx.QueryRow(ctx, q, id).Scan(&out.ID, &out.BankName, &out.AccountName, &out.AccountNumber, &out.Currency); err != nil {
+		var plain *string
+		var enc []byte
+		if err := tx.QueryRow(ctx, q, id).Scan(&out.ID, &out.BankName, &out.AccountName, &plain, &enc, &out.Currency); err != nil {
 			return err
 		}
+		n, err := s.openAccountNumber(p.TenantID, table, out.ID, enc, plain)
+		if err != nil {
+			return err
+		}
+		out.AccountNumber = n
 		return s.record(ctx, tx, p, "bank.details.reveal", docType, id, "bank.details.revealed",
 			map[string]any{"document_type": docType, "account": MaskAccount(out.AccountNumber), "purpose": purpose, "mfa_auth_time": p.AuthTime.UTC()})
 	})

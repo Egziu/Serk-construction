@@ -22,6 +22,7 @@ import (
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/attest"
+	"github.com/serk-group/serk-construction/pkg/datakey"
 )
 
 func secret(name string) string {
@@ -76,6 +77,25 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "encrypt-bank-accounts" {
+		// 0032: convert pre-0032 plaintext account numbers to ciphertext.
+		// Runs as the schema owner with SERK_BANK_DATA_KEY; the posture check
+		// refuses production start-up until no plaintext remains.
+		key := secret("SERK_BANK_DATA_KEY")
+		if len(key) < 32 {
+			fmt.Fprintln(os.Stderr, "SERK_BANK_DATA_KEY (>= 32 bytes) is required")
+			os.Exit(2)
+		}
+		ring := datakey.Ring{Current: datakey.Key{ID: envOr("SERK_BANK_DATA_KEY_ID", "k1"), Master: []byte(key)}}
+		n, err := postgres.EncryptBankAccounts(ctx, conn, ring)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "encrypt-bank-accounts:", err)
+			os.Exit(1)
+		}
+		fmt.Printf("%d bank account number(s) encrypted\n", n)
+		return
+	}
+
 	applied, err := postgres.Migrate(ctx, conn)
 	for _, a := range applied {
 		fmt.Println("applied", a)
@@ -87,4 +107,11 @@ func main() {
 	if len(applied) == 0 {
 		fmt.Println("schema up to date")
 	}
+}
+
+func envOr(name, def string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return def
 }

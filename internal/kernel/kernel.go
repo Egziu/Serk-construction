@@ -17,6 +17,7 @@ import (
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/attest"
 	"github.com/serk-group/serk-construction/pkg/auth"
+	"github.com/serk-group/serk-construction/pkg/datakey"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 )
 
@@ -25,14 +26,26 @@ type Service struct {
 	store  postgres.TenantDB
 	authz  *auth.Authorizer
 	now    func() time.Time
-	signer *attest.Signer
+	signer attest.Issuer
+	// bankKeys encrypts bank account numbers at rest (R-BANK-AT-REST). Nil
+	// fails closed: bank details can be neither recorded nor revealed.
+	bankKeys *datakey.Ring
 }
+
+// UseBankDataKeys configures the data keys for bank account numbers.
+func (s *Service) UseBankDataKeys(r datakey.Ring) *Service {
+	s.bankKeys = &r
+	return s
+}
+
+// ErrBankDataKey: no data key configured.
+var ErrBankDataKey = errors.New("kernel: bank data key not configured; bank account numbers cannot be stored or revealed")
 
 // UseApprovalSigner configures the approval attestation signer. Without it
 // every sensitive transition fails closed (the database requires a verified
 // attestation for each).
-func (s *Service) UseApprovalSigner(signer attest.Signer) *Service {
-	s.signer = &signer
+func (s *Service) UseApprovalSigner(signer attest.Issuer) *Service {
+	s.signer = signer
 	return s
 }
 
@@ -79,7 +92,7 @@ func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p auth.Principal, ac
 	if !p.AuthTime.IsZero() {
 		authTime = p.AuthTime.Unix()
 	}
-	a, err := s.signer.Sign(attest.Claims{Tenant: p.TenantID, Actor: p.UserID, Action: action, SubjectType: subjectType,
+	a, err := s.signer.Issue(ctx, attest.Claims{Tenant: p.TenantID, Actor: p.UserID, Action: action, SubjectType: subjectType,
 		SubjectID: subjectID, SubjectHash: hash, Context: actx, Perms: perms, MFA: p.MFA && authTime > 0, AuthTime: authTime})
 	if err != nil {
 		return err

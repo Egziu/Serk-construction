@@ -20,6 +20,7 @@ import (
 	"github.com/serk-group/serk-construction/internal/obs"
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/internal/webui"
+	"github.com/serk-group/serk-construction/pkg/attest"
 	"github.com/serk-group/serk-construction/pkg/auth"
 	"github.com/serk-group/serk-construction/pkg/fx"
 	"github.com/serk-group/serk-construction/pkg/ledger"
@@ -290,7 +291,10 @@ func (s *Server) authed(next func(http.ResponseWriter, *http.Request)) http.Hand
 			pp := p
 			hd.p = &pp
 		}
-		next(w, r.WithContext(context.WithValue(r.Context(), principalKey, p)))
+		// The person's own credential travels with the request for the
+		// remote approval signer (R-SIGNER), which re-verifies it.
+		ctx := attest.WithBearer(context.WithValue(r.Context(), principalKey, p), strings.TrimPrefix(hdr, "Bearer "))
+		next(w, r.WithContext(ctx))
 	})
 }
 

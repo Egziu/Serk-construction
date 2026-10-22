@@ -6,9 +6,11 @@
 # Before first start create (outside version control):
 #   secrets/postgres_admin_dsn   postgres://<owner>:<pw>@db:5432/serk?sslmode=verify-full (migrations/provisioning only)
 #   secrets/tenant_db_secret     `openssl rand -hex 32`
-#   secrets/approval_signing_key `openssl rand -hex 32` (different; signs approval attestations)
+#   secrets/approval_signing_key `openssl rand -hex 32` (different; held ONLY by the signer container and by
+#                                serk-migrate provision-tenant; the API never sees it: R-SIGNER)
 #   secrets/health_dsn           postgres://serk_health:<pw>@db:5432/serk?sslmode=verify-full
 #   secrets/scheduler_dsn        postgres://serk_timer:<pw>@db:5432/serk?sslmode=verify-full (workflow timers)
+#   secrets/bank_data_key        `openssl rand -hex 32` (encrypts bank account numbers at rest; keep it out of database backups)
 #   secrets/postgres_password    superuser password for the database container
 # and set SERK_OIDC_* to your identity provider.
 services:
@@ -18,7 +20,7 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_DB: serk
     command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/run/secrets/db_tls_cert", "-c", "ssl_key_file=/run/secrets/db_tls_key",
-              "-c", "password_encryption=scram-sha-256", "-c", "log_connections=on"]
+              "-c", "password_encryption=scram-sha-256", "-c", "log_connections=on", "-c", "log_parameter_max_length=0", "-c", "log_parameter_max_length_on_error=0"]
     secrets: [postgres_password, db_tls_cert, db_tls_key]
     volumes: [pgdata:/var/lib/postgresql/data]
     networks: [backend]
@@ -38,31 +40,54 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     depends_on: { db: { condition: service_healthy } }
+  # Isolated approval signer (R-SIGNER, ADR 0015): the only runtime holder of
+  # the approval signing key. Reachable solely through a unix socket on a
+  # volume shared with the API; no network, no database.
+  signer:
+    image: ${SERK_IMAGE:?set SERK_IMAGE to a signed, digest-pinned image}
+    entrypoint: ["/serk-signer"]
+    environment:
+      SERK_ENV: production
+      SERK_SIGNER_SOCKET: /run/serk/signer.sock
+      SERK_APPROVAL_SIGNING_KEY_FILE: /run/secrets/approval_signing_key
+      SERK_OIDC_ISSUER: ${SERK_OIDC_ISSUER:?}
+      SERK_OIDC_JWKS_URL: ${SERK_OIDC_JWKS_URL:?}
+      SERK_OIDC_AUDIENCE: ${SERK_OIDC_AUDIENCE:?}
+    secrets: [approval_signing_key]
+    volumes: [signer_sock:/run/serk]
+    networks: [edge]   # JWKS fetch only; nothing listens on the network
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
   api:
     image: ${SERK_IMAGE:?set SERK_IMAGE to a signed, digest-pinned image}
     environment:
       SERK_ENV: production
       SERK_LISTEN: ":8080"
+      SERK_SIGNER_SOCKET: /run/serk/signer.sock
       SERK_DB_BASE_DSN: postgres://db:5432/serk?sslmode=verify-full
       SERK_HEALTH_DSN_FILE: /run/secrets/health_dsn
       SERK_TENANT_DB_SECRET_FILE: /run/secrets/tenant_db_secret
-      SERK_APPROVAL_SIGNING_KEY_FILE: /run/secrets/approval_signing_key
       SERK_SCHEDULER_DSN_FILE: /run/secrets/scheduler_dsn
       # Shared abuse limits across replicas (migration 0029): a login in
       # role serk_abuse only, and a distinct random HMAC key.
       SERK_ABUSE_DSN_FILE: /run/secrets/abuse_dsn
       SERK_ABUSE_KEY_FILE: /run/secrets/abuse_key
+      SERK_BANK_DATA_KEY_FILE: /run/secrets/bank_data_key
       SERK_OIDC_ISSUER: ${SERK_OIDC_ISSUER:?}
       SERK_OIDC_JWKS_URL: ${SERK_OIDC_JWKS_URL:?}
       SERK_OIDC_AUDIENCE: ${SERK_OIDC_AUDIENCE:?}
       SERK_TRUSTED_PROXIES: 172.30.0.0/24
       PGSSLROOTCERT: /run/secrets/db_ca
-    secrets: [health_dsn, tenant_db_secret, approval_signing_key, scheduler_dsn, abuse_dsn, abuse_key, db_ca]
+    secrets: [health_dsn, tenant_db_secret, scheduler_dsn, abuse_dsn, abuse_key, bank_data_key, db_ca]
+    volumes: [signer_sock:/run/serk]
     networks: [backend, edge]
     read_only: true
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
-    depends_on: { migrate: { condition: service_completed_successfully } }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      signer: { condition: service_started }
   proxy:
     image: caddy:2
     ports: ["443:443"]
@@ -84,9 +109,11 @@ secrets:
   approval_signing_key: { file: ./secrets/approval_signing_key }
   abuse_dsn: { file: ./secrets/abuse_dsn }
   abuse_key: { file: ./secrets/abuse_key }
+  bank_data_key: { file: ./secrets/bank_data_key }
   db_tls_cert: { file: ./secrets/db_tls_cert }
   db_tls_key: { file: ./secrets/db_tls_key }
   db_ca: { file: ./secrets/db_ca }
 volumes:
   pgdata:
   caddy_data:
+  signer_sock:

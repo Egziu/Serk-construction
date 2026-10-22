@@ -673,8 +673,10 @@ func TestR7_ReconSharedAccountUnposted(t *testing.T) {
 	_ = money.MustNew
 }
 
-// Conditional: the trigger-depth guard relies on TEMP being revoked (0006 /
-// deploy/02). Simulate a deployment where that step did not run.
+// R7-F9: the trigger-depth guard relied on TEMP being revoked (0006 /
+// deploy/02). Since 0031 the tenant login cannot write valuation state at
+// all: even with TEMP granted, a pg_temp trigger is refused with permission
+// denied, and the posture check still reports the grant.
 func TestR7_TriggerDepthGuardNeedsTempRevoked(t *testing.T) {
 	w := newStockWorld(t)
 	f := w.f
@@ -706,13 +708,28 @@ func TestR7_TriggerDepthGuardNeedsTempRevoked(t *testing.T) {
 		return nil
 	})
 	q, v := w.balanceOf(t, w.itemSteel)
-	if err == nil && q.GreaterThan(dec("12")) {
-		// Still possible with TEMP granted: the control is the start-up
-		// posture check, which must report it (the API then refuses to start
-		// in production).
-		t.Logf("conditional: with TEMP granted, the tenant login wrote stock_balances through a pg_temp trigger (steel %s t at %s)", q, v)
+	if err == nil || q.GreaterThan(dec("12")) {
+		t.Errorf("OPEN: with TEMP granted, the tenant login wrote stock_balances through a pg_temp trigger (steel %s t at %s, err %v)", q, v, err)
+	} else if !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("refused for an unexpected reason (want permission denied, the 0031 root fix): %v", err)
 	} else {
-		t.Logf("held: %v (steel %s t)", err, q)
+		t.Logf("held (0031): %v (steel %s t)", err, q)
+	}
+	// Direct statements and the engine functions are closed to the tenant
+	// login too, whatever the trigger depth.
+	item, wh := w.itemSteel, w.store
+	for what, stmt := range map[string]string{
+		"direct balance update": fmt.Sprintf(`UPDATE stock_balances SET qty = qty + 1 WHERE stock_item_id = '%s' AND warehouse_id = '%s'`, item, wh),
+		"direct layer insert":   fmt.Sprintf(`INSERT INTO stock_layers(stock_item_id, warehouse_id, source_type, source_id, qty_in, qty_remaining, unit_cost, value_in, value_remaining) VALUES ('%s', '%s', 'COUNT', '%s', 1, 1, 1, 1, 1)`, item, wh, item),
+		"direct consumption":    fmt.Sprintf(`INSERT INTO stock_consumptions(doc_type, doc_id, layer_id, qty, value) VALUES ('ISSUE', '%s', NULL, 1, 1)`, item),
+		"stk_receive call":      fmt.Sprintf(`SELECT stk_receive('%s', '%s', 1, 1, 1, 'COUNT', '%s')`, item, wh, item),
+		"stk_consume call":      fmt.Sprintf(`SELECT stk_consume('%s', '%s', 1, 'ISSUE', '%s')`, item, wh, item),
+		"delete a balance":      fmt.Sprintf(`DELETE FROM stock_balances WHERE stock_item_id = '%s' AND warehouse_id = '%s'`, item, wh),
+	} {
+		err := w.rawExec(stmt)
+		if err == nil || !strings.Contains(err.Error(), "permission denied") {
+			t.Errorf("OPEN: %s by the tenant login: %v (want permission denied)", what, err)
+		}
 	}
 	var issues []string
 	rows, err := f.admin.Query(f.ctx, `SELECT issue FROM serk_database_posture()`)

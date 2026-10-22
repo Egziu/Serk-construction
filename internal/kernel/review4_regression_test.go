@@ -590,7 +590,7 @@ func TestR4_08_HumanMarker(t *testing.T) {
 	az := auth.NewAuthorizer(roles, true)
 	bot := auth.Principal{UserID: "u-fm-bot", TenantID: f.tenant, Roles: []string{"finance_manager"}, MFA: true, AuthTime: time.Now(), IssuedAt: time.Now().Add(-time.Minute), Kind: auth.KindAI}
 	r4obs(t, "Permissions() with a role granting principal.human: %v", az.Permissions(bot))
-	svc2 := New(f.app, az).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster})
+	svc2 := New(f.app, az).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster}).UseBankDataKeys(testdb.BankDataKeys)
 	pa := w.r3payment(t, inv, "100")
 	_, err := svc2.ApprovePayment(f.ctx, bot, pa)
 	r3held(t, "AI principal whose role lists principal.human approves a payment", err)

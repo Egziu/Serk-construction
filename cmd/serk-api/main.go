@@ -77,7 +77,19 @@ func main() {
 		verifier = httpapi.HS256Verifier{Secret: cfg.HS256Secret, Issuer: cfg.TokenIssuer, Audience: cfg.TokenAudience}
 	}
 
-	svc := kernel.New(router, auth.NewAuthorizer(nil, cfg.SoDStrict)).UseApprovalSigner(attest.Signer{Master: cfg.ApprovalSecret})
+	var issuer attest.Issuer = attest.Signer{Master: cfg.ApprovalSecret}
+	if cfg.SignerSocket != "" {
+		// R-SIGNER: the signing secret lives in serk-signer, not here.
+		issuer = &attest.Remote{Socket: cfg.SignerSocket}
+	} else {
+		log.Warn("approval signing key is inside the API process (refused in production): run serk-signer and set SERK_SIGNER_SOCKET")
+	}
+	svc := kernel.New(router, auth.NewAuthorizer(nil, cfg.SoDStrict)).UseApprovalSigner(issuer)
+	if ring := cfg.BankDataRing(); ring != nil {
+		svc.UseBankDataKeys(*ring)
+	} else {
+		log.Warn("no SERK_BANK_DATA_KEY: bank account numbers cannot be recorded or revealed (refused in production)")
+	}
 	metrics := obs.NewRegistry()
 	if cfg.MonitorDSN != "" {
 		mon, err := pgxpool.New(ctx, cfg.MonitorDSN)

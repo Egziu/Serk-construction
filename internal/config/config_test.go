@@ -24,20 +24,22 @@ const (
 	goodSecret2 = "a8c2e4f6b1d3f5a7c9e0b2d4f6a8c1e3b5d7f9a0c2e4b6d8f1a3c5e7b9d2f4a6"
 	goodSecret3 = "71c4e9a2f6b08d3e5a7c1f9b2d4e6a8c0f3b5d7e9a1c4f6b8d0e2a5c7f9b1d3e"
 	goodSecret4 = "e8c51ac2eb0d174014c6a05b17e1cff9d7c2f7aa9c3bb74afe9a4854b24a4752"
+	goodSecret6 = "b7e1c9d2f4a6083e5c1a9f7d2b4e6c8a0d3f5b7e9c1a4d6f8b0e2c5a7f9d1b3e"
 	goodSecret5 = "e5e59115f58846dcdc3885e32b052bebf8dc1f0befff56a1bf3f382a296c436e"
 )
 
 func prodEnv() map[string]string {
 	return map[string]string{
-		"SERK_DB_BASE_DSN":          "postgres://db.internal:5432/serk?sslmode=verify-full",
-		"SERK_TENANT_DB_SECRET":     goodSecret,
-		"SERK_APPROVAL_SIGNING_KEY": goodSecret3,
-		"SERK_HEALTH_DSN":           "postgres://serk_health:" + goodSecret2 + "@db.internal:5432/serk?sslmode=verify-full",
-		"SERK_OIDC_ISSUER":          "https://id.serk.example/realms/serk",
-		"SERK_OIDC_JWKS_URL":        "https://id.serk.example/realms/serk/protocol/openid-connect/certs",
-		"SERK_OIDC_AUDIENCE":        "serk-construction",
-		"SERK_ABUSE_DSN":            "postgres://serk_ratelimit:" + goodSecret4 + "@db.internal:5432/serk?sslmode=verify-full",
-		"SERK_ABUSE_KEY":            goodSecret5,
+		"SERK_DB_BASE_DSN":      "postgres://db.internal:5432/serk?sslmode=verify-full",
+		"SERK_TENANT_DB_SECRET": goodSecret,
+		"SERK_SIGNER_SOCKET":    "/run/serk/signer.sock",
+		"SERK_HEALTH_DSN":       "postgres://serk_health:" + goodSecret2 + "@db.internal:5432/serk?sslmode=verify-full",
+		"SERK_OIDC_ISSUER":      "https://id.serk.example/realms/serk",
+		"SERK_OIDC_JWKS_URL":    "https://id.serk.example/realms/serk/protocol/openid-connect/certs",
+		"SERK_OIDC_AUDIENCE":    "serk-construction",
+		"SERK_ABUSE_DSN":        "postgres://serk_ratelimit:" + goodSecret4 + "@db.internal:5432/serk?sslmode=verify-full",
+		"SERK_ABUSE_KEY":        goodSecret5,
+		"SERK_BANK_DATA_KEY":    goodSecret6,
 	}
 }
 
@@ -82,12 +84,16 @@ func TestProductionRules(t *testing.T) {
 		return err
 	}
 	cases := map[string]func(m map[string]string){
-		"base DSN with credentials":    func(m map[string]string) { m["SERK_DB_BASE_DSN"] = "postgres://u:p@db/serk?sslmode=verify-full" },
-		"sslmode=require":              func(m map[string]string) { m["SERK_DB_BASE_DSN"] = "postgres://db/serk?sslmode=require" },
-		"short tenant secret":          func(m map[string]string) { m["SERK_TENANT_DB_SECRET"] = "abc" },
-		"low-variety secret":           func(m map[string]string) { m["SERK_TENANT_DB_SECRET"] = strings.Repeat("ab", 20) },
-		"missing approval key":         func(m map[string]string) { delete(m, "SERK_APPROVAL_SIGNING_KEY") },
-		"approval key = tenant secret": func(m map[string]string) { m["SERK_APPROVAL_SIGNING_KEY"] = m["SERK_TENANT_DB_SECRET"] },
+		"base DSN with credentials":         func(m map[string]string) { m["SERK_DB_BASE_DSN"] = "postgres://u:p@db/serk?sslmode=verify-full" },
+		"sslmode=require":                   func(m map[string]string) { m["SERK_DB_BASE_DSN"] = "postgres://db/serk?sslmode=require" },
+		"short tenant secret":               func(m map[string]string) { m["SERK_TENANT_DB_SECRET"] = "abc" },
+		"low-variety secret":                func(m map[string]string) { m["SERK_TENANT_DB_SECRET"] = strings.Repeat("ab", 20) },
+		"signing key in the API (R-SIGNER)": func(m map[string]string) { m["SERK_APPROVAL_SIGNING_KEY"] = goodSecret3 },
+		"no signer socket":                  func(m map[string]string) { delete(m, "SERK_SIGNER_SOCKET") },
+		"socket and key together": func(m map[string]string) {
+			m["SERK_APPROVAL_SIGNING_KEY"] = goodSecret3
+			m["SERK_SIGNER_SOCKET"] = "/run/serk/signer.sock"
+		},
 		"HS256 in production": func(m map[string]string) {
 			delete(m, "SERK_OIDC_ISSUER")
 			delete(m, "SERK_OIDC_JWKS_URL")
@@ -140,7 +146,7 @@ func TestProductionManifestHasNoDemoDefaults(t *testing.T) {
 			t.Errorf("docker-compose.prod.yml contains %q", bad)
 		}
 	}
-	for _, need := range []string{"SERK_ENV: production", "no-new-privileges", "read_only: true", "internal: true", "_FILE", "SERK_ABUSE_DSN_FILE", "SERK_ABUSE_KEY_FILE"} {
+	for _, need := range []string{"SERK_ENV: production", "no-new-privileges", "read_only: true", "internal: true", "_FILE", "SERK_ABUSE_DSN_FILE", "SERK_ABUSE_KEY_FILE", "SERK_SIGNER_SOCKET"} {
 		if !strings.Contains(s, need) {
 			t.Errorf("docker-compose.prod.yml lacks %q", need)
 		}
@@ -219,5 +225,64 @@ func TestProductionRequiresSharedAbuseLimits(t *testing.T) {
 		"SERK_HEALTH_DSN": "postgres://serk_health@localhost:5432/serk?sslmode=disable"}
 	if _, err := Load(src(dev, nil)); err != nil {
 		t.Errorf("development without shared abuse limits refused: %v", err)
+	}
+}
+
+// R-SIGNER: the signer's own configuration.
+func TestSignerConfig(t *testing.T) {
+	good := map[string]string{"SERK_SIGNER_SOCKET": "/run/serk/signer.sock", "SERK_APPROVAL_SIGNING_KEY": goodSecret3,
+		"SERK_OIDC_ISSUER": "https://id.serk.example/realms/serk", "SERK_OIDC_JWKS_URL": "https://id.serk.example/certs", "SERK_OIDC_AUDIENCE": "serk-construction"}
+	if _, err := LoadSigner(src(good, nil)); err != nil {
+		t.Fatalf("hardened signer configuration refused: %v", err)
+	}
+	for name, mutate := range map[string]func(m map[string]string){
+		"no socket": func(m map[string]string) { delete(m, "SERK_SIGNER_SOCKET") },
+		"no key":    func(m map[string]string) { delete(m, "SERK_APPROVAL_SIGNING_KEY") },
+		"weak key":  func(m map[string]string) { m["SERK_APPROVAL_SIGNING_KEY"] = "change-me-change-me-change-me-change-me" },
+		"HS256 in prod": func(m map[string]string) {
+			delete(m, "SERK_OIDC_ISSUER")
+			delete(m, "SERK_OIDC_JWKS_URL")
+			delete(m, "SERK_OIDC_AUDIENCE")
+			m["SERK_TOKEN_SECRET"] = goodSecret2
+		},
+		"http JWKS":         func(m map[string]string) { m["SERK_OIDC_JWKS_URL"] = "http://id/certs" },
+		"OIDC and HS256":    func(m map[string]string) { m["SERK_TOKEN_SECRET"] = goodSecret2 },
+		"key id with comma": func(m map[string]string) { m["SERK_SIGNER_KEY_ID"] = "v1,v2" },
+	} {
+		m := map[string]string{}
+		for k, v := range good {
+			m[k] = v
+		}
+		mutate(m)
+		if _, err := LoadSigner(src(m, nil)); err == nil {
+			t.Errorf("%s: signer configuration accepted", name)
+		}
+	}
+	dev := map[string]string{"SERK_ENV": "development", "SERK_SIGNER_SOCKET": "/tmp/s.sock", "SERK_APPROVAL_SIGNING_KEY": goodSecret3, "SERK_TOKEN_SECRET": goodSecret2}
+	if _, err := LoadSigner(src(dev, nil)); err != nil {
+		t.Errorf("development signer configuration refused: %v", err)
+	}
+}
+
+// R-SIGNER: in the production manifest only the signer service receives the
+// approval signing key; the api service does not.
+func TestProductionManifestKeepsSigningKeyOutOfTheAPI(t *testing.T) {
+	b, err := os.ReadFile("../../deploy/docker-compose.prod.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	api := s[strings.Index(s, "\n  api:"):]
+	if i := strings.Index(api[1:], "\n  proxy:"); i > 0 {
+		api = api[:i+1]
+	}
+	if strings.Contains(api, "approval_signing_key") || strings.Contains(api, "SERK_APPROVAL_SIGNING_KEY") {
+		t.Errorf("the api service is given the approval signing key:\n%s", api)
+	}
+	if !strings.Contains(api, "SERK_SIGNER_SOCKET") {
+		t.Errorf("the api service does not point at the signer socket")
+	}
+	if !strings.Contains(s, "entrypoint: [\"/serk-signer\"]") {
+		t.Errorf("no signer service in the production manifest")
 	}
 }

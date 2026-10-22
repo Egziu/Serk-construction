@@ -61,7 +61,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := kernel.New(db.Router, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster})
+	svc := kernel.New(db.Router, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster}).UseBankDataKeys(testdb.BankDataKeys)
 	e.svc, e.db = svc, db
 	h := New(Config{Verifier: testVerifier, Kernel: svc, Store: db.Router, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), RatePerMinute: 50})
 	e.srv = httptest.NewServer(h)

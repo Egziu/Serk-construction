@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/auth"
+	"github.com/serk-group/serk-construction/pkg/datakey"
 	"github.com/serk-group/serk-construction/pkg/ledger"
 	"github.com/serk-group/serk-construction/pkg/money"
 )
@@ -318,14 +320,21 @@ func (s *Service) BlockSupplier(ctx context.Context, p auth.Principal, id, reaso
 
 // AddSupplierBankAccount records new bank details, PENDING a second person.
 func (s *Service) AddSupplierBankAccount(ctx context.Context, p auth.Principal, supplierID, bank, accountName, accountNumber, ccy string) (string, error) {
+	number, err := normalizeAccountNumber(accountNumber)
+	if err != nil {
+		return "", err
+	}
 	var id string
-	err := s.p2pTx(ctx, p, auth.PermSupplierManage, func(ctx context.Context, tx pgx.Tx) error {
-		var err error
-		id, err = postgres.InsertReturningID(ctx, tx, `INSERT INTO supplier_bank_accounts(supplier_id, bank_name, account_name, account_number, currency, created_by)
-			VALUES ($1::uuid, $2, $3, $4, $5, $6) RETURNING id::text`, supplierID, bank, accountName, strings.ToUpper(strings.ReplaceAll(accountNumber, " ", "")), ccy, p.UserID)
+	err = s.p2pTx(ctx, p, auth.PermSupplierManage, func(ctx context.Context, tx pgx.Tx) error {
+		sealed, err := s.sealAccountNumber(ctx, tx, p.TenantID, "supplier_bank_accounts", number)
 		if err != nil {
 			return err
 		}
+		if err := postgres.Exec1(ctx, tx, `INSERT INTO supplier_bank_accounts(id, supplier_id, bank_name, account_name, account_number_enc, account_digest, account_last4, currency, created_by)
+			VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9)`, sealed.id, supplierID, bank, accountName, sealed.enc, sealed.digest, sealed.last4, ccy, p.UserID); err != nil {
+			return err
+		}
+		id = sealed.id
 		// The creator is bound by an attestation over the created content,
 		// consumed by the database at commit (0014, review 3 H1).
 		if err := s.authorize(ctx, tx, p, "supplier.bank.create", "supplier_bank_account", id, ""); err != nil {
@@ -374,7 +383,7 @@ func (s *Service) ApproveSupplierBankAccount(ctx context.Context, p auth.Princip
 // RegisterCompanyBankAccount records one of the entity's own bank accounts.
 func (s *Service) RegisterCompanyBankAccount(ctx context.Context, p auth.Principal, entity, name, number, ccy, glAccount, clearingAccount string) (string, error) {
 	id, err := s.registerCompanyBankAccount(ctx, p, entity, name, number, ccy, glAccount, clearingAccount)
-	if err != nil && strings.Contains(err.Error(), "company_bank_accounts_tenant_id_account_number_key") {
+	if err != nil && strings.Contains(err.Error(), "company_bank_accounts_tenant_digest") {
 		// Review 5 F3: do not confirm that a guessed full number exists; the
 		// refused attempt is itself audited (with the masked number only).
 		s.auditRefusal(ctx, p, "bankacct.register_refused", "company_bank_account", "", map[string]any{"account": MaskAccount(number), "reason": "duplicate"})
@@ -384,14 +393,21 @@ func (s *Service) RegisterCompanyBankAccount(ctx context.Context, p auth.Princip
 }
 
 func (s *Service) registerCompanyBankAccount(ctx context.Context, p auth.Principal, entity, name, number, ccy, glAccount, clearingAccount string) (string, error) {
+	number, err := normalizeAccountNumber(number)
+	if err != nil {
+		return "", err
+	}
 	var id string
-	err := s.p2pTx(ctx, p, auth.PermBankAcctManage, func(ctx context.Context, tx pgx.Tx) error {
-		var err error
-		id, err = postgres.InsertReturningID(ctx, tx, `INSERT INTO company_bank_accounts(legal_entity_id, name, account_number, currency, gl_account_id, clearing_account_id, created_by)
-			VALUES ($1::uuid, $2, $3, $4, $5::uuid, $6::uuid, $7) RETURNING id::text`, entity, name, number, ccy, glAccount, clearingAccount, p.UserID)
+	err = s.p2pTx(ctx, p, auth.PermBankAcctManage, func(ctx context.Context, tx pgx.Tx) error {
+		sealed, err := s.sealAccountNumber(ctx, tx, p.TenantID, "company_bank_accounts", number)
 		if err != nil {
 			return err
 		}
+		if err := postgres.Exec1(ctx, tx, `INSERT INTO company_bank_accounts(id, legal_entity_id, name, account_number_enc, account_digest, account_last4, currency, gl_account_id, clearing_account_id, created_by)
+			VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10)`, sealed.id, entity, name, sealed.enc, sealed.digest, sealed.last4, ccy, glAccount, clearingAccount, p.UserID); err != nil {
+			return err
+		}
+		id = sealed.id
 		// The creator is bound by an attestation over the created content,
 		// consumed by the database at commit (0014, review 3 H1).
 		if err := s.authorize(ctx, tx, p, "bankacct.create", "company_bank_account", id, ""); err != nil {
@@ -1810,4 +1826,56 @@ func (s *Service) ProjectCostCodes(ctx context.Context, p auth.Principal, projec
 		return err
 	})
 	return out, err
+}
+
+// sealedAccount is a bank account number as stored since 0032: ciphertext
+// bound to the row, the tenant's keyed digest and the display suffix.
+type sealedAccount struct {
+	id, digest, last4 string
+	enc               []byte
+}
+
+var accountNumberForm = regexp.MustCompile(`^[A-Z0-9]{6,34}$`)
+
+func normalizeAccountNumber(n string) (string, error) {
+	n = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(n), " ", ""))
+	if !accountNumberForm.MatchString(n) {
+		return "", fmt.Errorf("%w: an account number is 6 to 34 letters or digits", ErrInvalidInput)
+	}
+	return n, nil
+}
+
+// sealAccountNumber encrypts the number for a new row of table (the row id
+// is chosen here so the ciphertext is bound to it) and has the database
+// compute the keyed digest under the tenant's owner-only key.
+func (s *Service) sealAccountNumber(ctx context.Context, tx pgx.Tx, tenant, table, number string) (sealedAccount, error) {
+	if s.bankKeys == nil {
+		return sealedAccount{}, ErrBankDataKey
+	}
+	out := sealedAccount{id: uuid.NewString(), last4: MaskAccount(number)[4:]}
+	enc, err := s.bankKeys.Encrypt(tenant, datakey.AAD(table, out.id, tenant), []byte(number))
+	if err != nil {
+		return sealedAccount{}, err
+	}
+	out.enc = enc
+	if err := tx.QueryRow(ctx, `SELECT p2p_account_digest($1)`, number).Scan(&out.digest); err != nil {
+		return sealedAccount{}, err
+	}
+	return out, nil
+}
+
+// openAccountNumber decrypts a stored number for the reveal path.
+func (s *Service) openAccountNumber(tenant, table, id string, enc []byte, plain *string) (string, error) {
+	if plain != nil && *plain != "" {
+		// A pre-0032 row not yet converted (the posture check reports it).
+		return *plain, nil
+	}
+	if s.bankKeys == nil {
+		return "", ErrBankDataKey
+	}
+	pt, err := s.bankKeys.Decrypt(tenant, datakey.AAD(table, id, tenant), enc)
+	if err != nil {
+		return "", err
+	}
+	return string(pt), nil
 }

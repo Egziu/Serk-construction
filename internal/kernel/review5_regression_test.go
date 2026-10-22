@@ -429,7 +429,7 @@ func TestR5_04_Reveal(t *testing.T) {
 		roles[k] = v
 	}
 	roles["procurement_lead"] = auth.Role{Name: "procurement_lead", Permissions: []auth.Permission{auth.PermSupplierManage, auth.PermBankDetailsReveal, auth.PermP2PRead}}
-	svc2 := New(f.app, auth.NewAuthorizer(roles, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster})
+	svc2 := New(f.app, auth.NewAuthorizer(roles, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster}).UseBankDataKeys(testdb.BankDataKeys)
 	lead := auth.Principal{UserID: "u-proc-lead", TenantID: f.tenant, Roles: []string{"procurement_lead"}, ProjectIDs: []string{w.other},
 		IssuedAt: time.Now().Add(-time.Minute), Kind: auth.KindHuman, MFA: true, AuthTime: time.Now()}
 	if got, err := svc2.RevealBankAccount(f.ctx, lead, "supplier_bank_account", w.supBank, purpose); err == nil {
@@ -441,7 +441,7 @@ func TestR5_04_Reveal(t *testing.T) {
 	}
 	// Reveal needs no p2p.read.
 	roles["revealer"] = auth.Role{Name: "revealer", Permissions: []auth.Permission{auth.PermBankDetailsReveal, auth.PermScopeTenantWide}}
-	svc3 := New(f.app, auth.NewAuthorizer(roles, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster})
+	svc3 := New(f.app, auth.NewAuthorizer(roles, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster}).UseBankDataKeys(testdb.BankDataKeys)
 	rv := auth.Principal{UserID: "u-revealer", TenantID: f.tenant, Roles: []string{"revealer"}, Kind: auth.KindHuman, MFA: true, AuthTime: time.Now(), IssuedAt: time.Now().Add(-time.Minute)}
 	_, err := svc3.RevealBankAccount(f.ctx, rv, "company_bank_account", w.bank, purpose)
 	if err == nil {

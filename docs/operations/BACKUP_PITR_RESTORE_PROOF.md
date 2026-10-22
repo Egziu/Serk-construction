@@ -72,3 +72,37 @@ DRILL_DIR=/var/lib/postgresql/drill LOAD_BIN=/tmp/kernel.test deploy/drills/pitr
 ```
 
 The script refuses to run if `DRILL_DIR` exists, unless `DRILL_FORCE=1` is set. It creates its own cluster and never connects to any other.
+
+## 5. Encrypted offsite drill (2026-10-22)
+
+**Executed** with `deploy/drills/pitr_offsite_encrypted_drill.sh` against a disposable PostgreSQL 16.15 cluster the script creates. Raw output: `docs/operations/evidence/pitr-offsite-encrypted-drill-2026-10-22.txt`. Three runs were made: the first two ended early on defects in the drill script itself (a `pipefail` abort on a no-match `grep`, and a control that searched heap files before a checkpoint); the third, in the evidence file, is PASS.
+
+### Method
+
+- Every object leaving the primary is encrypted with `age` (X25519) to a recipient whose private key is never on the primary host: the base backup (`pg_basebackup -Ft` piped into `age`) and each archived WAL segment (`archive_command` encrypts, records a SHA-256 in a manifest, copies to the offsite store and verifies the copy before reporting success). The plaintext base backup is deleted the moment the encrypted object exists.
+- Workload: all 32 migrations and kernel flows (posting with maker/checker, attested approvals, FX, outbox, Journey A procure-to-pay, a supplier bank account whose number is a known marker).
+- Named restore point, fingerprints of 16 tables, then a superuser `TRUNCATE` of the ledger, a checkpoint, and the primary killed with its `pg_wal` deleted.
+- A separate recovery host restores from the offsite store only: manifest verified, base decrypted, each WAL segment checked against the manifest and decrypted on the fly by `restore_command`.
+- The same restore is attempted with a wrong private key.
+
+### Results (from the evidence file)
+
+| Check | Result |
+|---|---|
+| Marker strings (supplier name, journal description, bank number, restore-point name, `schema_migrations`) in the offsite store or the archive spool | 0 files for every marker |
+| Control: supplier name in the dead primary's own heap files | 2 files (the plaintext exists; only the offsite copy lacks it) |
+| Manifest (5 objects) | verified OK |
+| Fingerprint, 16 tables, restored vs target | **IDENTICAL** |
+| Posted journals, target vs restored (0 on the damaged primary) | 11 / 11 |
+| `ledger_integrity_scan()`, target vs restored | identical (the planted `UNBALANCED_POSTED` row is still detected) |
+| Audit chains failing verification | 0 of 16 tenants |
+| Migrations on the restored instance | 1–32 |
+| Data-checksum failures | 0 |
+| Supplier bank accounts restored | 3 rows, 3 encrypted, 0 plaintext |
+| RTO, restore start to promoted / verified | 1.06 s / 1.21 s (46 MB base, 5 WAL objects) |
+| Restore with the wrong private key | refused: the base backup does not decrypt |
+
+### What this proves and what it does not
+
+- Proven: a backup chain can be kept offsite in a form that discloses nothing, and a fresh host can be rebuilt from it alone to an exact point in time, with the ledger's integrity and audit evidence intact. The bank data key (0032) is not in the backup, so bank account numbers in a restored database still need the API's key.
+- Not proven: the real offsite medium (object storage with retention lock, cross-region copies), the retention and key-rotation schedule, restore at production data volume, and custody of the private key in a vault or HSM. These need staging infrastructure (GATEA-08) and a human-owned key ceremony. The RPO measurement of §2 (archive_timeout) applies unchanged.

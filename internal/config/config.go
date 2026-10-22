@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/serk-group/serk-construction/pkg/datakey"
 	"net/netip"
 	"net/url"
 	"os"
@@ -67,6 +68,17 @@ type Config struct {
 	// addresses and principals are counted. Both are required in production.
 	AbuseDSN string
 	AbuseKey []byte
+
+	// Isolated approval signer (R-SIGNER). In production the API holds no
+	// signing secret: SignerSocket names the serk-signer unix socket and
+	// SERK_APPROVAL_SIGNING_KEY must be absent. In development either works.
+	SignerSocket string
+
+	// Bank account numbers at rest (0032, R-BANK-AT-REST): BankDataKey
+	// encrypts them in the API; BankDataKeyPrevious (optional, rotation)
+	// still decrypts older rows. Required in production.
+	BankDataKey, BankDataKeyPrevious     []byte
+	BankDataKeyID, BankDataKeyPreviousID string
 }
 
 // ErrInvalid wraps every validation failure.
@@ -162,6 +174,15 @@ func Load(src Source) (Config, error) {
 		return Config{}, err
 	}
 	c.AbuseDSN = string(abuse)
+	c.SignerSocket = src.Getenv("SERK_SIGNER_SOCKET")
+	if c.BankDataKey, err = src.secret("SERK_BANK_DATA_KEY"); err != nil {
+		return Config{}, err
+	}
+	if c.BankDataKeyPrevious, err = src.secret("SERK_BANK_DATA_KEY_PREVIOUS"); err != nil {
+		return Config{}, err
+	}
+	c.BankDataKeyID = src.str("SERK_BANK_DATA_KEY_ID", "k1")
+	c.BankDataKeyPreviousID = src.str("SERK_BANK_DATA_KEY_PREVIOUS_ID", "k0")
 	if c.AbuseKey, err = src.secret("SERK_ABUSE_KEY"); err != nil {
 		return Config{}, err
 	}
@@ -224,10 +245,19 @@ func (c Config) Validate() error {
 	if err := checkSecret(c.TenantDBSecret, prod); err != "" {
 		bad("SERK_TENANT_DB_SECRET %s", err)
 	}
-	if err := checkSecret(c.ApprovalSecret, prod); err != "" {
-		bad("SERK_APPROVAL_SIGNING_KEY %s", err)
-	} else if string(c.ApprovalSecret) == string(c.TenantDBSecret) {
-		bad("SERK_APPROVAL_SIGNING_KEY must differ from SERK_TENANT_DB_SECRET")
+	switch {
+	case prod && len(c.ApprovalSecret) > 0:
+		bad("SERK_APPROVAL_SIGNING_KEY must not be given to the API in production: the isolated signer (SERK_SIGNER_SOCKET) holds it")
+	case prod && c.SignerSocket == "":
+		bad("production requires SERK_SIGNER_SOCKET (the serk-signer unix socket)")
+	case c.SignerSocket != "" && len(c.ApprovalSecret) > 0:
+		bad("set SERK_SIGNER_SOCKET or SERK_APPROVAL_SIGNING_KEY, not both")
+	case c.SignerSocket == "":
+		if err := checkSecret(c.ApprovalSecret, prod); err != "" {
+			bad("SERK_APPROVAL_SIGNING_KEY %s", err)
+		} else if string(c.ApprovalSecret) == string(c.TenantDBSecret) {
+			bad("SERK_APPROVAL_SIGNING_KEY must differ from SERK_TENANT_DB_SECRET")
+		}
 	}
 	if c.HealthDSN == "" {
 		bad("SERK_HEALTH_DSN is required (a login role with no table privileges)")
@@ -262,8 +292,30 @@ func (c Config) Validate() error {
 		}
 		if err := checkSecret(c.AbuseKey, prod); err != "" {
 			bad("SERK_ABUSE_KEY %s", err)
-		} else if string(c.AbuseKey) == string(c.TenantDBSecret) || string(c.AbuseKey) == string(c.ApprovalSecret) {
+		} else if string(c.AbuseKey) == string(c.TenantDBSecret) || (len(c.ApprovalSecret) > 0 && string(c.AbuseKey) == string(c.ApprovalSecret)) {
 			bad("SERK_ABUSE_KEY must differ from SERK_TENANT_DB_SECRET and SERK_APPROVAL_SIGNING_KEY")
+		}
+	}
+	switch {
+	case len(c.BankDataKey) == 0:
+		if prod {
+			bad("production requires SERK_BANK_DATA_KEY (bank account numbers are encrypted at rest)")
+		}
+	default:
+		if e := checkSecret(c.BankDataKey, prod); e != "" {
+			bad("SERK_BANK_DATA_KEY %s", e)
+		} else if string(c.BankDataKey) == string(c.TenantDBSecret) || string(c.BankDataKey) == string(c.AbuseKey) || (len(c.ApprovalSecret) > 0 && string(c.BankDataKey) == string(c.ApprovalSecret)) {
+			bad("SERK_BANK_DATA_KEY must differ from every other secret")
+		}
+		if len(c.BankDataKeyPrevious) > 0 {
+			if e := checkSecret(c.BankDataKeyPrevious, prod); e != "" {
+				bad("SERK_BANK_DATA_KEY_PREVIOUS %s", e)
+			} else if c.BankDataKeyPreviousID == c.BankDataKeyID {
+				bad("SERK_BANK_DATA_KEY_PREVIOUS_ID must differ from SERK_BANK_DATA_KEY_ID")
+			}
+		}
+		if c.BankDataKeyID == "" || len(c.BankDataKeyID) > 32 {
+			bad("SERK_BANK_DATA_KEY_ID must be 1-32 characters")
 		}
 	}
 	for tenant, dsn := range c.DedicatedDSNs {
@@ -360,4 +412,100 @@ func checkTLS(u *url.URL, name string, bad func(string, ...any)) {
 	if q.Get("sslmode") != "verify-full" {
 		bad("%s must use sslmode=verify-full in production (got %q)", name, q.Get("sslmode"))
 	}
+}
+
+// SignerConfig is the serk-signer process configuration (R-SIGNER).
+type SignerConfig struct {
+	Env    Env
+	Socket string
+	Master []byte
+	KeyID  string
+	// Token verification: the same identity provider as the API.
+	OIDCIssuer, OIDCAudience, OIDCJWKSURL              string
+	OIDCTenantClaim, OIDCRolesClaim, OIDCProjectsClaim string
+	HS256Secret                                        []byte
+	TokenIssuer, TokenAudience                         string
+	PerActorPerMinute                                  int
+	MetricsListen                                      string
+}
+
+// LoadSigner reads and validates the signer configuration.
+func LoadSigner(src Source) (SignerConfig, error) {
+	c := SignerConfig{
+		Env:               Env(src.str("SERK_ENV", string(Production))),
+		Socket:            src.Getenv("SERK_SIGNER_SOCKET"),
+		KeyID:             src.str("SERK_SIGNER_KEY_ID", "v1"),
+		OIDCIssuer:        src.Getenv("SERK_OIDC_ISSUER"),
+		OIDCAudience:      src.Getenv("SERK_OIDC_AUDIENCE"),
+		OIDCJWKSURL:       src.Getenv("SERK_OIDC_JWKS_URL"),
+		OIDCTenantClaim:   src.str("SERK_OIDC_TENANT_CLAIM", "tid"),
+		OIDCRolesClaim:    src.str("SERK_OIDC_ROLES_CLAIM", "roles"),
+		OIDCProjectsClaim: src.str("SERK_OIDC_PROJECTS_CLAIM", "projects"),
+		TokenIssuer:       src.str("SERK_TOKEN_ISSUER", "serk-id"),
+		TokenAudience:     src.str("SERK_TOKEN_AUDIENCE", "serk-construction"),
+		MetricsListen:     src.str("SERK_METRICS_LISTEN", ""),
+	}
+	var err error
+	if c.Master, err = src.secret("SERK_APPROVAL_SIGNING_KEY"); err != nil {
+		return SignerConfig{}, err
+	}
+	if c.HS256Secret, err = src.secret("SERK_TOKEN_SECRET"); err != nil {
+		return SignerConfig{}, err
+	}
+	if c.PerActorPerMinute, err = src.num("SERK_SIGNER_PER_ACTOR_PER_MIN", 120); err != nil {
+		return SignerConfig{}, err
+	}
+	var errs []string
+	bad := func(f string, a ...any) { errs = append(errs, fmt.Sprintf(f, a...)) }
+	prod := c.Env == Production
+	switch c.Env {
+	case Development, Staging, Production:
+	default:
+		bad("SERK_ENV must be development, staging or production (got %q)", c.Env)
+	}
+	if c.Socket == "" {
+		bad("SERK_SIGNER_SOCKET is required")
+	}
+	if e := checkSecret(c.Master, prod); e != "" {
+		bad("SERK_APPROVAL_SIGNING_KEY %s", e)
+	}
+	if c.KeyID == "" || len(c.KeyID) > 16 || strings.ContainsAny(c.KeyID, "\x1f,") {
+		bad("SERK_SIGNER_KEY_ID must be 1-16 characters")
+	}
+	oidc := c.OIDCIssuer != "" || c.OIDCJWKSURL != "" || c.OIDCAudience != ""
+	switch {
+	case oidc:
+		if c.OIDCIssuer == "" || c.OIDCJWKSURL == "" || c.OIDCAudience == "" {
+			bad("OIDC needs SERK_OIDC_ISSUER, SERK_OIDC_JWKS_URL and SERK_OIDC_AUDIENCE")
+		}
+		if prod && (!strings.HasPrefix(c.OIDCIssuer, "https://") || !strings.HasPrefix(c.OIDCJWKSURL, "https://")) {
+			bad("OIDC issuer and JWKS URL must use https in production")
+		}
+		if len(c.HS256Secret) > 0 {
+			bad("configure either OIDC or SERK_TOKEN_SECRET, not both")
+		}
+	case prod:
+		bad("production requires OIDC (SERK_OIDC_*)")
+	default:
+		if e := checkSecret(c.HS256Secret, false); e != "" {
+			bad("SERK_TOKEN_SECRET %s", e)
+		}
+	}
+	if len(errs) > 0 {
+		return SignerConfig{}, fmt.Errorf("%w (signer, %s):\n  - %s", ErrInvalid, c.Env, strings.Join(errs, "\n  - "))
+	}
+	return c, nil
+}
+
+// BankDataRing builds the data-key ring from the configuration (nil when
+// no key is configured: development without bank details).
+func (c Config) BankDataRing() *datakey.Ring {
+	if len(c.BankDataKey) == 0 {
+		return nil
+	}
+	r := &datakey.Ring{Current: datakey.Key{ID: c.BankDataKeyID, Master: c.BankDataKey}}
+	if len(c.BankDataKeyPrevious) > 0 {
+		r.Previous = []datakey.Key{{ID: c.BankDataKeyPreviousID, Master: c.BankDataKeyPrevious}}
+	}
+	return r
 }

@@ -1,0 +1,39 @@
+### SERK encrypted offsite PITR drill 2026-10-22T13:14:40Z
+### postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1); 1.1.1; archive_timeout=10s; host Linux 6.18.44-fc-v140
+[13:14:40] backup recipient age12r776et7cef3zstuym7clva2vwm9vl74lrp7qv3mktcjuqr9gv9scnl32j (private key kept off the primary)
+[13:14:40] initdb primary (data checksums on); archive_command encrypts to the offsite store
+[13:14:40] base backup as an encrypted tar (nothing leaves the host in plaintext)
+[13:14:41] base backup took 0.32 s; offsite object 46M
+[13:14:41] workload (all migrations + kernel flows incl. a supplier bank account)
+    load: PASS
+[13:14:43] markers: supplier 'ABC STEEL PLC', journal 'Cement delivery — Dangote 50kg x 200', bank number 1000…
+[13:14:43] restore point at LSN 0/37DE2F0; posted journals 11; plaintext bank rows in the database: 0
+[13:14:43] damage after the target: superuser TRUNCATE of the ledger
+[13:14:44] archiver: 5 encrypted objects offsite, failed_count=0
+
+== Proof that nothing left the primary in plaintext
+marker 'ABC STEEL PLC'              in offsite store or spool: 0 file(s)
+marker 'Cement delivery — Dangot' in offsite store or spool: 0 file(s)
+marker '1000987654321'              in offsite store or spool: 0 file(s)
+marker 'serk_offsite_target'        in offsite store or spool: 0 file(s)
+marker 'schema_migrations'          in offsite store or spool: 0 file(s)
+control: supplier marker in the primary's plaintext data files: 2 file(s) (expected > 0)
+manifest: 5 objects; verification: OK
+
+[13:14:44] recovery host: restore from the offsite store only, to 'serk_offsite_target'
+
+== Restore result
+fingerprint (16 tables) restored vs target  : IDENTICAL
+posted journals at target / restored         : 11 / 11 (0 on the damaged primary)
+ledger_integrity_scan() target / restored    : UNBALANCED_POSTED:b0f178f7-1972-4a54-b473-b51c5faf70d8 / UNBALANCED_POSTED:b0f178f7-1972-4a54-b473-b51c5faf70d8
+tenants / audit chains failing verification  : 16 / 0
+schema_migrations on restored instance       : 1-32 (32)
+data-checksum failures                       : 0
+supplier bank accounts restored              : 3 rows, 3 encrypted, 0 plaintext
+RTO: restore start -> promoted               : 1.06 s
+RTO: restore start -> verified               : 1.21 s
+
+[13:14:46] key hygiene: restore with a WRONG private key
+restore with the wrong key                   : refused (base backup does not decrypt)
+
+DRILL VERDICT: PASS (restored from encrypted offsite copy only; no plaintext left the primary; wrong key refused)

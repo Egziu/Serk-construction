@@ -281,8 +281,8 @@ type DocSummary struct {
 var listSQL = map[string]string{
 	"p2p_policy":            `SELECT id::text, 'v' || version, status, created_by, created_at, '', 0::numeric, 'P2P policy' FROM p2p_policies`,
 	"supplier":              `SELECT id::text, code, status, created_by, created_at, '', 0::numeric, name FROM suppliers`,
-	"supplier_bank_account": `SELECT b.id::text, '', b.status, b.created_by, b.created_at, '', 0::numeric, s.code || ' ' || b.bank_name || ' ****' || right(b.account_number, 4) FROM supplier_bank_accounts b JOIN suppliers s ON s.id = b.supplier_id`,
-	"company_bank_account":  `SELECT id::text, '', status, created_by, created_at, '', 0::numeric, name || ' ****' || right(account_number, 4) FROM company_bank_accounts`,
+	"supplier_bank_account": `SELECT b.id::text, '', b.status, b.created_by, b.created_at, '', 0::numeric, s.code || ' ' || b.bank_name || ' ****' || COALESCE(b.account_last4, right(b.account_number, 4)) FROM supplier_bank_accounts b JOIN suppliers s ON s.id = b.supplier_id`,
+	"company_bank_account":  `SELECT id::text, '', status, created_by, created_at, '', 0::numeric, name || ' ****' || COALESCE(account_last4, right(account_number, 4)) FROM company_bank_accounts`,
 	"boq_version":           `SELECT v.id::text, 'v' || v.version, v.status, v.created_by, v.created_at, v.project_id::text, COALESCE((SELECT sum(amount) FROM boq_items i WHERE i.version_id = v.id), 0), v.description FROM boq_versions v`,
 	"purchase_requisition":  `SELECT r.id::text, r.number, r.status, r.requested_by, r.created_at, r.project_id::text, COALESCE((SELECT sum(est_amount) FROM pr_lines l WHERE l.pr_id = r.id), 0), r.justification FROM purchase_requisitions r`,
 	"rfq":                   `SELECT q.id::text, q.number, q.status, q.created_by, q.created_at, r.project_id::text, 0::numeric, r.justification FROM rfqs q JOIN purchase_requisitions r ON r.id = q.pr_id`,
