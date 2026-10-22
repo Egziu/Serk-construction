@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-22T06:38:48Z",
- "source_commit": "38ce1a1",
+ "generated_at": "2026-10-22T06:39:23Z",
+ "source_commit": "a93c06c",
  "release_decision": "NO-GO",
  "release_decision_reason": "Gate A not passed (BLOCKED items); Gate B/C partly evidenced (Journeys A and B), other items not tested or partial; Gate P requires independent human sign-off",
  "deployment_authorization": "NONE. Production deployment and live financial operations require explicit authorization and independent human sign-off.",
