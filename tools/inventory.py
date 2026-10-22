@@ -39,7 +39,7 @@ tests = {}  # name -> file
 for f in sorted(glob.glob(os.path.join(ROOT, "**/*_test.go"), recursive=True)):
     for t in re.findall(r"^func (Test\w+)\(t \*testing\.T\)", open(f).read(), re.M):
         tests[t] = os.path.relpath(f, ROOT)
-LOGS = ["docs/testing/evidence/full-suite-journey-b-backend.txt", "docs/testing/evidence/httpapi-with-console-journey-b.txt"]
+LOGS = ["docs/testing/evidence/full-suite-go1.26.10.txt"]
 results = {}
 for lg in LOGS:  # later logs override earlier ones
     if os.path.exists(os.path.join(ROOT, lg)):

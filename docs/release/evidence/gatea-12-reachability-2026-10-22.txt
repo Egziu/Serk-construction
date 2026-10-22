@@ -1,0 +1,16 @@
+# GATEA-12 reachability check, 2026-10-22T06:23:54Z, from the build workspace
+$ curl -sS --max-time 20 -o /dev/null -w '%{http_code}' https://proxy.golang.org/github.com/jackc/pgx/v5/@v/list
+curl: (6) Could not resolve host: proxy.golang.org
+000
+$ curl -sS --max-time 20 -o /dev/null -w '%{http_code}' https://sum.golang.org/latest
+curl: (56) CONNECT tunnel failed, response 403
+000
+$ curl -sS --max-time 20 -o /dev/null -w '%{http_code}' https://vuln.go.dev/index/db.json.gz
+curl: (56) CONNECT tunnel failed, response 403
+000
+# egress gateway status (recent relay failures):
+2026-10-22T06:23:44.604Z sum.golang.org:443 gateway answered 403 to CONNECT (policy denial or upstream failure)
+2026-10-22T06:23:44.884Z vuln.go.dev:443 gateway answered 403 to CONNECT (policy denial or upstream failure)
+2026-10-22T06:23:54.741Z sum.golang.org:443 gateway answered 403 to CONNECT (policy denial or upstream failure)
+2026-10-22T06:23:55.000Z vuln.go.dev:443 gateway answered 403 to CONNECT (policy denial or upstream failure)
+# Conclusion: official module proxy, checksum database and vulnerability database are unreachable here; go.sum cannot be verified against sum.golang.org and govulncheck cannot run. GATEA-12 stays BLOCKED.

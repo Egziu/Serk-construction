@@ -1,0 +1,32 @@
+MATCH    github.com/davecgh/go-spew v1.1.0/go.mod https://github.com/davecgh/go-spew@346938d642f2 go.sum=h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38= origin=h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+MATCH    github.com/davecgh/go-spew v1.1.1 https://github.com/davecgh/go-spew@8991bc29aa16 go.sum=h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c= origin=h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+MATCH    github.com/davecgh/go-spew v1.1.1/go.mod https://github.com/davecgh/go-spew@8991bc29aa16 go.sum=h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38= origin=h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+MATCH    github.com/google/uuid v1.6.0 https://github.com/google/uuid@0f11ee6918f4 go.sum=h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0= origin=h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
+MATCH    github.com/google/uuid v1.6.0/go.mod https://github.com/google/uuid@0f11ee6918f4 go.sum=h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo= origin=h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+MATCH    github.com/jackc/pgpassfile v1.0.0 https://github.com/jackc/pgpassfile@99d8e8e28945 go.sum=h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM= origin=h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
+MATCH    github.com/jackc/pgpassfile v1.0.0/go.mod https://github.com/jackc/pgpassfile@99d8e8e28945 go.sum=h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg= origin=h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
+MATCH    github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 https://github.com/jackc/pgservicefile@5a60cdf6a761 go.sum=h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo= origin=h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
+MATCH    github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761/go.mod https://github.com/jackc/pgservicefile@5a60cdf6a761 go.sum=h1:5TJZWKEWniPve33vlWYSoGYefn3gLQRzjfDlhSJ9ZKM= origin=h1:5TJZWKEWniPve33vlWYSoGYefn3gLQRzjfDlhSJ9ZKM=
+MATCH    github.com/jackc/pgx/v5 v5.9.2 https://github.com/jackc/pgx@0aeabbcf11d8 go.sum=h1:3ZhOzMWnR4yJ+RW1XImIPsD1aNSz4T4fyP7zlQb56hw= origin=h1:3ZhOzMWnR4yJ+RW1XImIPsD1aNSz4T4fyP7zlQb56hw=
+MATCH    github.com/jackc/pgx/v5 v5.9.2/go.mod https://github.com/jackc/pgx@0aeabbcf11d8 go.sum=h1:mal1tBGAFfLHvZzaYh77YS/eC6IX9OWbRV1QIIM0Jn4= origin=h1:mal1tBGAFfLHvZzaYh77YS/eC6IX9OWbRV1QIIM0Jn4=
+MATCH    github.com/jackc/puddle/v2 v2.2.2 https://github.com/jackc/puddle@bd09d14bd401 go.sum=h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo= origin=h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo=
+MATCH    github.com/jackc/puddle/v2 v2.2.2/go.mod https://github.com/jackc/puddle@bd09d14bd401 go.sum=h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4= origin=h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
+MATCH    github.com/pmezard/go-difflib v1.0.0 https://github.com/pmezard/go-difflib@792786c7400a go.sum=h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM= origin=h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+MATCH    github.com/pmezard/go-difflib v1.0.0/go.mod https://github.com/pmezard/go-difflib@792786c7400a go.sum=h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4= origin=h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+MATCH    github.com/shopspring/decimal v1.4.0 https://github.com/shopspring/decimal@a1bdfc355e9c go.sum=h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp81k= origin=h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp81k=
+MATCH    github.com/shopspring/decimal v1.4.0/go.mod https://github.com/shopspring/decimal@a1bdfc355e9c go.sum=h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME= origin=h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
+MATCH    github.com/stretchr/objx v0.1.0/go.mod https://github.com/stretchr/objx@facf9a85c22f go.sum=h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME= origin=h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
+MATCH    github.com/stretchr/testify v1.11.1 https://github.com/stretchr/testify@2a57335dc9cd go.sum=h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U= origin=h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
+MATCH    github.com/stretchr/testify v1.11.1/go.mod https://github.com/stretchr/testify@2a57335dc9cd go.sum=h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U= origin=h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+MATCH    github.com/stretchr/testify v1.3.0/go.mod https://github.com/stretchr/testify@ffdc059bfe9c go.sum=h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI= origin=h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
+MATCH    github.com/stretchr/testify v1.7.0/go.mod https://github.com/stretchr/testify@acba37e5db06 go.sum=h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg= origin=h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
+MATCH    golang.org/x/sync v0.24.0 https://github.com/golang/sync@36f2d70ecde9 go.sum=h1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA= origin=h1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=
+MATCH    golang.org/x/sync v0.24.0/go.mod https://github.com/golang/sync@36f2d70ecde9 go.sum=h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0= origin=h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0=
+MATCH    golang.org/x/text v0.43.0 https://github.com/golang/text@ac40b0f06c15 go.sum=h1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc= origin=h1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=
+MATCH    golang.org/x/text v0.43.0/go.mod https://github.com/golang/text@ac40b0f06c15 go.sum=h1:hbSIYA/amXcRXTFSZqh8tWHEoqRvvbKPJ2uz/KU+a+s= origin=h1:hbSIYA/amXcRXTFSZqh8tWHEoqRvvbKPJ2uz/KU+a+s=
+MATCH    gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod https://github.com/go-check/check@20d25e280405 go.sum=h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0= origin=h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
+MATCH    gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod https://github.com/go-yaml/yaml@9f266ea9e77c go.sum=h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM= origin=h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+MATCH    gopkg.in/yaml.v3 v3.0.1 https://github.com/go-yaml/yaml@f6f7691b1fde go.sum=h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA= origin=h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
+MATCH    gopkg.in/yaml.v3 v3.0.1/go.mod https://github.com/go-yaml/yaml@f6f7691b1fde go.sum=h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM= origin=h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+
+30 of 30 go.sum lines match the upstream source; 0 do not.

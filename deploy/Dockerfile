@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Production image: serk-api, serk-migrate and serk-relay only. The
 # development token tool (cmd/serk-devtoken) is deliberately not built here.
-FROM golang:1.24-alpine AS build
+FROM golang:1.26.10-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify

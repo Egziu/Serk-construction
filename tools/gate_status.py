@@ -6,7 +6,7 @@ import csv, json, os, subprocess, sys, datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 commit = subprocess.check_output(["git", "-C", ROOT, "rev-parse", "--short", "HEAD"], text=True).strip()
-ENV = "Go 1.24.7, PostgreSQL 16.15 (local disposable cluster), linux/amd64 sandbox, no network to Go proxy/sumdb/vulndb"
+ENV = "Go 1.26.10 (built from the official source tag), PostgreSQL 16.15 (local disposable cluster), linux/amd64 sandbox, no network to Go proxy/sumdb/vulndb"
 FULL = "SERK_TEST_ADMIN_DSN=<disposable> go test -race -count=1 -p 1 ./..."
 AI_REV = "independent AI review agents x2 (not a human sign-off)"
 AI_REV_P2P = "independent AI review agents x2 on 0013/0014 (reviews 3 and 4; not a human sign-off)"

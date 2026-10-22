@@ -1,0 +1,5 @@
+vulndb source: github.com/golang/vulndb @ e0bad56276e98711a598adbab976de7cd914013a 2026-10-20T17:27:29-07:00; 4710 advisories scanned
+build list: go1.26.10 (stdlib/toolchain) + 8 modules supplying packages: github.com/google/uuid@v1.6.0, github.com/jackc/pgpassfile@v1.0.0, github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761, github.com/jackc/pgx/v5@v5.9.2, github.com/jackc/puddle/v2@v2.2.2, github.com/shopspring/decimal@v1.4.0, golang.org/x/sync@v0.24.0, golang.org/x/text@v0.43.0
+295 packages imported (incl. tests)
+
+0 advisories affect versions in the build list; 0 affect packages this repository imports.

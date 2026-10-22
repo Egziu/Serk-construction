@@ -1,0 +1,102 @@
+vulndb source: github.com/golang/vulndb @ e0bad56276e98711a598adbab976de7cd914013a 2026-10-20T17:27:29-07:00; 4710 advisories scanned
+build list: go1.24.7 (stdlib/toolchain) + 9 modules supplying packages: github.com/google/uuid@v1.6.0, github.com/jackc/pgpassfile@v1.0.0, github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761, github.com/jackc/pgx/v5@v5.7.2, github.com/jackc/puddle/v2@v2.2.2, github.com/shopspring/decimal@v1.4.0, golang.org/x/crypto@v0.31.0, golang.org/x/sync@v0.10.0, golang.org/x/text@v0.21.0
+278 packages imported (incl. tests)
+not imported GO-2025-3487 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Potential denial of service in golang.org/x/crypto
+not imported GO-2025-4006 stdlib@1.24.7 affected packages: net/mail; imported: -; Excessive CPU consumption in ParseAddress in net/mail
+IMPORTED     GO-2025-4007 stdlib@1.24.7 affected packages: crypto/x509; imported: crypto/x509; Quadratic complexity when checking name constraints in crypto/x509
+IMPORTED     GO-2025-4008 stdlib@1.24.7 affected packages: crypto/tls; imported: crypto/tls; ALPN negotiation error contains attacker controlled information in crypto/tls
+IMPORTED     GO-2025-4009 stdlib@1.24.7 affected packages: encoding/pem; imported: encoding/pem; Quadratic complexity when parsing some invalid inputs in encoding/pem
+IMPORTED     GO-2025-4010 stdlib@1.24.7 affected packages: net/url; imported: net/url; Insufficient validation of bracketed IPv6 hostnames in net/url
+IMPORTED     GO-2025-4011 stdlib@1.24.7 affected packages: encoding/asn1; imported: encoding/asn1; Parsing DER payload can cause memory exhaustion in encoding/asn1
+IMPORTED     GO-2025-4012 stdlib@1.24.7 affected packages: net/http; imported: net/http; Lack of limit when parsing cookies can cause memory exhaustion in net/http
+IMPORTED     GO-2025-4013 stdlib@1.24.7 affected packages: crypto/x509; imported: crypto/x509; Panic when validating certificates with DSA public keys in crypto/x509
+not imported GO-2025-4014 stdlib@1.24.7 affected packages: archive/tar; imported: -; Unbounded allocation when parsing GNU sparse map in archive/tar
+IMPORTED     GO-2025-4015 stdlib@1.24.7 affected packages: net/textproto; imported: net/textproto; Excessive CPU consumption in Reader.ReadResponse in net/textproto
+not imported GO-2025-4116 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh/agent; imported: -; Potential denial of service in golang.org/x/crypto/ssh/agent
+not imported GO-2025-4134 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Unbounded memory consumption in golang.org/x/crypto/ssh
+not imported GO-2025-4135 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh/agent; imported: -; Malformed constraint may cause denial of service in golang.org/x/crypto/ssh/agent
+IMPORTED     GO-2025-4155 stdlib@1.24.7 affected packages: crypto/x509; imported: crypto/x509; Excessive resource consumption when printing error string for host certificate validation in crypto/x509
+IMPORTED     GO-2025-4175 stdlib@1.24.7 affected packages: crypto/x509; imported: crypto/x509; Improper application of excluded DNS name constraints when verifying wildcard names in crypto/x509
+IMPORTED     GO-2026-4337 stdlib@1.24.7 affected packages: crypto/tls; imported: crypto/tls; Unexpected session resumption in crypto/tls
+not imported GO-2026-4339 toolchain@1.24.7 affected packages: cmd/go; imported: -; Arbitrary file write using cgo pkg-config directive in cmd/go
+IMPORTED     GO-2026-4340 stdlib@1.24.7 affected packages: crypto/tls; imported: crypto/tls; Handshake messages may be processed at the incorrect encryption level in crypto/tls
+IMPORTED     GO-2026-4341 stdlib@1.24.7 affected packages: net/url; imported: net/url; Memory exhaustion in query parameter parsing in net/url
+not imported GO-2026-4342 stdlib@1.24.7 affected packages: archive/zip; imported: -; Excessive CPU consumption when building archive index in archive/zip
+not imported GO-2026-4433 toolchain@1.24.7 affected packages: cmd/cgo; imported: -; Potential code smuggling via doc comments in cmd/cgo
+IMPORTED     GO-2026-4601 stdlib@1.24.7 affected packages: net/url; imported: net/url; Incorrect parsing of IPv6 host literals in net/url
+IMPORTED     GO-2026-4602 stdlib@1.24.7 affected packages: os; imported: os; FileInfo can escape from a Root in os
+not imported GO-2026-4603 stdlib@1.24.7 affected packages: html/template; imported: -; URLs in meta content attribute actions are not escaped in html/template
+IMPORTED     GO-2026-4771 github.com/jackc/pgx/v5@v5.7.2 affected packages: github.com/jackc/pgx/v5/pgproto3; imported: github.com/jackc/pgx/v5/pgproto3; CVE-2026-33815 in github.com/jackc/pgx
+IMPORTED     GO-2026-4772 github.com/jackc/pgx/v5@v5.7.2 affected packages: github.com/jackc/pgx/v5/pgproto3; imported: github.com/jackc/pgx/v5/pgproto3; CVE-2026-33816 in github.com/jackc/pgx
+IMPORTED     GO-2026-4864 stdlib@1.24.7 affected packages: internal/syscall/unix; imported: internal/syscall/unix; TOCTOU permits root escape on Linux via Root.Chmod in os in internal/syscall/unix
+not imported GO-2026-4865 stdlib@1.24.7 affected packages: html/template; imported: -; JsBraceDepth Context Tracking Bugs (XSS) in html/template
+not imported GO-2026-4867 toolchain@1.24.7 affected packages: cmd/compile; imported: -; Miscompilation allows memory corruption via CONVNOP-wrapped array copy in cmd/compile
+not imported GO-2026-4868 toolchain@1.24.7 affected packages: cmd/compile; imported: -; Missing bound checks can lead to memory corruption in safe Go in cmd/compile
+not imported GO-2026-4869 stdlib@1.24.7 affected packages: archive/tar; imported: -; Unbounded allocation for old GNU sparse in archive/tar
+IMPORTED     GO-2026-4870 stdlib@1.24.7 affected packages: crypto/tls; imported: crypto/tls; Unauthenticated TLS 1.3 KeyUpdate record can cause persistent connection retention and DoS in crypto/tls
+not imported GO-2026-4871 toolchain@1.24.7 affected packages: cmd/go; imported: -; Code execution vulnerability in SWIG code generation in cmd/go
+IMPORTED     GO-2026-4918 stdlib@1.24.7 affected packages: net/http; imported: net/http; Infinite loop in HTTP/2 transport when given bad SETTINGS_MAX_FRAME_SIZE in net/http/internal/http2 in golang.org/x/net
+IMPORTED     GO-2026-4946 stdlib@1.24.7 affected packages: crypto/x509; imported: crypto/x509; Inefficient policy validation in crypto/x509
+IMPORTED     GO-2026-4947 stdlib@1.24.7 affected packages: crypto/x509; imported: crypto/x509; Unexpected work during chain building in crypto/x509
+IMPORTED     GO-2026-4970 stdlib@1.24.7 affected packages: os; imported: os; Root escape via symlink plus trailing slash in os
+IMPORTED     GO-2026-4971 stdlib@1.24.7 affected packages: net; imported: net; Panic in Dial and LookupPort when handling NUL byte on Windows in net
+not imported GO-2026-4976 stdlib@1.24.7 affected packages: net/http/httputil; imported: -; ReverseProxy forwards queries with more than urlmaxqueryparams parameters in net/http/httputil
+not imported GO-2026-4977 stdlib@1.24.7 affected packages: net/mail; imported: -; Quadratic string concatenation in consumePhrase in net/mail
+not imported GO-2026-4978 toolchain@1.24.7 affected packages: cmd/go; imported: -; Invoking "go bug" follows symlinks in predictable temporary filenames in cmd/go
+not imported GO-2026-4979 toolchain@1.24.7 affected packages: cmd/go; imported: -; Invoking "go tool pack" does not sanitize output paths in cmd/go
+not imported GO-2026-4980 stdlib@1.24.7 affected packages: html/template; imported: -; Escaper bypass leads to XSS in html/template
+IMPORTED     GO-2026-4981 stdlib@1.24.7 affected packages: net; imported: net; Crash when handling long CNAME response in net
+not imported GO-2026-4982 stdlib@1.24.7 affected packages: html/template; imported: -; Bypass of meta content URL escaping causes XSS in html/template
+not imported GO-2026-4984 toolchain@1.24.7 affected packages: cmd/go; imported: -; Malicious module proxy can bypass checksum database in cmd/go
+not imported GO-2026-4986 stdlib@1.24.7 affected packages: net/mail; imported: -; Quadratic string concatentation in consumeComment in net/mail
+IMPORTED     GO-2026-5004 github.com/jackc/pgx/v5@v5.7.2 affected packages: github.com/jackc/pgx/v5/internal/sanitize; imported: github.com/jackc/pgx/v5/internal/sanitize; SQL Injection via placeholder confusion with dollar quoted string literals in github.com/jackc/pgx
+not imported GO-2026-5005 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh/agent; imported: -; Invoking key constraints not enforced in golang.org/x/crypto/ssh/agent
+not imported GO-2026-5006 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh/agent; imported: -; Invoking agent constraints dropped when forwarding keys in golang.org/x/crypto/ssh/agent
+not imported GO-2026-5013 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Invoking byte arithmetic causes underflow and panic in golang.org/x/crypto/ssh
+not imported GO-2026-5014 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Invoking bypass of certificate restrictions in golang.org/x/crypto/ssh
+not imported GO-2026-5015 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Invoking server panic during CheckHostKey/Authenticate in golang.org/x/crypto/ssh
+not imported GO-2026-5016 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Invoking memory leak when rejecting channels can lead to DoS in golang.org/x/crypto/ssh
+not imported GO-2026-5017 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Invoking client can cause server deadlock on unexpected responses in golang.org/x/crypto/ssh
+not imported GO-2026-5018 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Invoking pathological RSA/DSA parameters may cause DoS in golang.org/x/crypto/ssh
+not imported GO-2026-5019 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Invoking bypass of FIDO/U2F security keys physical interaction in golang.org/x/crypto/ssh
+not imported GO-2026-5020 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Invoking infinite loop on large channel writes in golang.org/x/crypto/ssh
+not imported GO-2026-5021 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh/knownhosts; imported: -; Invoking auth bypass via unenforced @revoked status in golang.org/x/crypto/ssh/knownhosts
+not imported GO-2026-5023 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Invoking VerifiedPublicKeyCallback permissions skip enforcement in golang.org/x/crypto/ssh
+IMPORTED     GO-2026-5026 stdlib@1.24.7 affected packages: net/http, net/http/internal/http2; imported: net/http; Invoking failure to reject ASCII-only Punycode-encoded labels in golang.org/x/net/idna
+not imported GO-2026-5033 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh/agent; imported: -; Invoking pathological inputs can lead to client panic in golang.org/x/crypto/ssh/agent
+IMPORTED     GO-2026-5037 stdlib@1.24.7 affected packages: crypto/x509; imported: crypto/x509; Inefficient candidate hostname parsing in crypto/x509
+IMPORTED     GO-2026-5038 stdlib@1.24.7 affected packages: mime; imported: mime; Quadratic complexity in WordDecoder.DecodeHeader in mime
+IMPORTED     GO-2026-5039 stdlib@1.24.7 affected packages: net/textproto; imported: net/textproto; Arbitrary inputs are included in errors without any escaping in net/textproto
+IMPORTED     GO-2026-5856 stdlib@1.24.7 affected packages: crypto/tls; imported: crypto/tls; Invoking Encrypted Client Hello privacy leak in crypto/tls
+not imported GO-2026-5932 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/openpgp, golang.org/x/crypto/openpgp/packet, golang.org/x/crypto/openpgp/armor, golang.org/x/crypto/openpgp/clearsign, golang.org/x/crypto/openpgp/errors, golang.org/x/crypto/openpgp/elgamal, golang.org/x/crypto/openpgp/s2k; imported: -; The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues
+IMPORTED     GO-2026-5970 golang.org/x/text@v0.21.0 affected packages: golang.org/x/text/unicode/norm; imported: golang.org/x/text/unicode/norm; Infinite loop on invalid input in golang.org/x/text
+IMPORTED     GO-2026-5972 stdlib@1.24.7 affected packages: encoding/asn1; imported: encoding/asn1; Enforce maximum recursion depth in encoding/asn1
+IMPORTED     GO-2026-6088 stdlib@1.24.7 affected packages: encoding/xml; imported: encoding/xml; Add recursion depth guard during decode in encoding/xml
+IMPORTED     GO-2026-6089 stdlib@1.24.7 affected packages: net/http; imported: net/http; Apply ReadHeaderTimeout when doing unencrypted HTTP/2 check in net/http
+IMPORTED     GO-2026-6090 stdlib@1.24.7 affected packages: crypto/tls; imported: crypto/tls; Limit handshake messages we are willing to accept post-handshake in crypto/tls
+not imported GO-2026-6091 stdlib@1.24.7 affected packages: html/template; imported: -; Fix Javascript regexp context tracking in html/template
+not imported GO-2026-6179 toolchain@1.24.7 affected packages: cmd/go; imported: -; Fix transparency log tile verification bypass in golang.org/x/mod/sumdb/tlog
+not imported GO-2026-6180 toolchain@1.24.7 affected packages: cmd/go; imported: -; Ignore unrelated, unauthenticated hashes in Lookup in golang.org/x/mod/sumdb
+IMPORTED     GO-2026-6218 stdlib@1.24.7 affected packages: net/url; imported: net/url; Avoid quadratic complexity in resolvePath in net/url
+not imported GO-2026-6303 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Source-address critical option not enforced for non-public-key auth callbacks in golang.org/x/crypto/ssh
+not imported GO-2026-6354 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Prevent DoS on deadlocked undecided channel in golang.org/x/crypto/ssh
+not imported GO-2026-6355 golang.org/x/crypto@v0.31.0 affected packages: golang.org/x/crypto/ssh; imported: -; Prevent DoS on deadlocked established channel in golang.org/x/crypto/ssh
+not imported GO-2026-6599 stdlib@1.24.7 affected packages: html/template; imported: -; Reset context tracking on consecutive template expressions in html/template
+not imported GO-2026-6600 stdlib@1.24.7 affected packages: html/template; imported: -; Recognize yield as regexp preceder keyword in html/template
+not imported GO-2026-6601 toolchain@1.24.7 affected packages: cmd/go; imported: -; Checksum bypass for golang.org/fips140 in cmd/go
+not imported GO-2026-6602 toolchain@1.24.7 affected packages: cmd/go; imported: -; Checksum database bypass for golang.org/toolchain in cmd/go
+IMPORTED     GO-2026-6603 stdlib@1.24.7 affected packages: net/http; imported: net/http; HTTP/2 server memory exhaustion due to Trailer headers in net/http
+IMPORTED     GO-2026-6604 stdlib@1.24.7 affected packages: os, internal/syscall/windows; imported: os; Root.Mkdir(All) can follow junctions out of the root on Windows in os
+IMPORTED     GO-2026-6605 stdlib@1.24.7 affected packages: net/http, net/http/httputil; imported: net/http; HTTP/1 client connection desynchronization after CONNECT rejection in net/http
+IMPORTED     GO-2026-6607 stdlib@1.24.7 affected packages: crypto/tls; imported: crypto/tls; Reject malformed ECH outer extension references in crypto/tls
+IMPORTED     GO-2026-6608 stdlib@1.24.7 affected packages: net/textproto, mime/multipart; imported: mime/multipart, net/textproto; Memory limit bypass when parsing MIME headers in net/textproto, mime/multipart
+IMPORTED     GO-2026-6609 stdlib@1.24.7 affected packages: net/http; imported: net/http; Lack of limit on size of parsed Range headers in net/http
+IMPORTED     GO-2026-6610 stdlib@1.24.7 affected packages: net/http; imported: net/http; HTTP/2 transport accepts malformed framing-related headers in net/http
+IMPORTED     GO-2026-6611 stdlib@1.24.7 affected packages: net/http; imported: net/http; Excessive CPU consumption from repeated initial window changes in net/http
+IMPORTED     GO-2026-6612 stdlib@1.24.7 affected packages: net/http; imported: net/http; Double flow control refund on HTTP/2 server streams in net/http
+IMPORTED     GO-2026-6613 stdlib@1.24.7 affected packages: net/http; imported: net/http; HTTP/1 server connection desynchronization after 2xx CONNECT response in net/http
+IMPORTED     GO-2026-6617 stdlib@1.24.7 affected packages: net/http; imported: net/http; HTTP/2 server crash due to HPACK encoder race in net/http
+IMPORTED     GO-2026-6629 golang.org/x/text@v0.21.0 affected packages: golang.org/x/text/secure/precis; imported: golang.org/x/text/secure/precis; Panic parsing crafted input in x/text/secure/precis in golang.org/x/text
+IMPORTED     GO-2026-6809 stdlib@1.24.7 affected packages: crypto/x509; imported: crypto/x509; Distrust compromised intermediate certificates in crypto/x509
+
+97 advisories affect versions in the build list; 50 affect packages this repository imports.
