@@ -62,13 +62,14 @@ var p2pTables = map[string]struct{ table, creator, children string }{
 	"supplier_invoice":      {"supplier_invoices", "entered_by", ""},
 	"payment_instruction":   {"payment_instructions", "created_by", ""},
 	// Journey B (0018).
-	"customer":         {"customers", "created_by", ""},
-	"contract_policy":  {"contract_policies", "created_by", ""},
-	"contract":         {"contracts", "created_by", ""},
-	"measurement":      {"measurements", "created_by", ""},
-	"ipc":              {"ipcs", "created_by", ""},
-	"customer_invoice": {"customer_invoices", "created_by", ""},
-	"customer_receipt": {"customer_receipts", "created_by", ""},
+	"customer":             {"customers", "created_by", ""},
+	"contract_policy":      {"contract_policies", "created_by", ""},
+	"contract":             {"contracts", "created_by", ""},
+	"measurement":          {"measurements", "created_by", ""},
+	"ipc":                  {"ipcs", "created_by", ""},
+	"customer_invoice":     {"customer_invoices", "created_by", ""},
+	"customer_receipt":     {"customer_receipts", "created_by", ""},
+	"customer_credit_note": {"customer_credit_notes", "created_by", ""},
 	// Journey C (0021).
 	"stock_item":    {"stock_items", "created_by", ""},
 	"warehouse":     {"warehouses", "created_by", ""},
@@ -292,6 +293,7 @@ var listSQL = map[string]string{
 	"ipc":                   `SELECT i.id::text, i.number, i.status, i.created_by, i.created_at, c.project_id::text, i.amount_due, c.number || ' IPC ' || i.seq || ' to ' || i.period_end FROM ipcs i JOIN contracts c ON c.id = i.contract_id`,
 	"customer_invoice":      `SELECT i.id::text, i.number, i.status, i.created_by, i.created_at, i.project_id::text, i.total, u.name FROM customer_invoices i JOIN customers u ON u.id = i.customer_id`,
 	"customer_receipt":      `SELECT r.id::text, r.number, r.status, r.created_by, r.created_at, '', r.amount, l.reference FROM customer_receipts r JOIN bank_statement_lines l ON l.id = r.statement_line_id`,
+	"customer_credit_note":  `SELECT c.id::text, c.number, c.status, c.created_by, c.created_at, c.project_id::text, c.total, i.number || ' — ' || c.reason FROM customer_credit_notes c JOIN customer_invoices i ON i.id = c.invoice_id`,
 	"stock_item":            `SELECT id::text, code, status, created_by, created_at, '', 0::numeric, name || ' (' || unit || ', ' || valuation_method || ')' FROM stock_items`,
 	"warehouse":             `SELECT id::text, code, status, created_by, created_at, COALESCE(project_id::text, ''), 0::numeric, name FROM warehouses`,
 	"stock_receipt":         `SELECT r.id::text, r.number, 'POSTED', r.created_by, r.created_at, o.project_id::text, r.amount, i.code || ' ' || r.quantity || ' ' || i.unit || ' into ' || w.code FROM stock_receipts r JOIN grns g ON g.id = r.grn_id JOIN purchase_orders o ON o.id = g.po_id JOIN stock_items i ON i.id = r.stock_item_id JOIN warehouses w ON w.id = r.warehouse_id`,
@@ -437,6 +439,7 @@ type ContractPosition struct {
 	AdvanceReceived  decimal.Decimal `json:"advance_received"`
 	AdvanceRecovered decimal.Decimal `json:"advance_recovered"`
 	InvoicedTotal    decimal.Decimal `json:"invoiced_total"`
+	CreditedTotal    decimal.Decimal `json:"credited_total"`
 	Received         decimal.Decimal `json:"received"`
 	ReceivableOpen   decimal.Decimal `json:"receivable_open"`
 }
@@ -445,9 +448,9 @@ type ContractPosition struct {
 func GetContractPosition(ctx context.Context, tx pgx.Tx, contractID string) (ContractPosition, error) {
 	var c ContractPosition
 	err := tx.QueryRow(ctx, `SELECT contract_value, measured_value, certified_gross, retention_held, advance_amount, advance_received,
-		advance_recovered, invoiced_total, received, receivable_open FROM ar_contract_position($1::uuid)`, contractID).Scan(
+		advance_recovered, invoiced_total, credited_total, received, receivable_open FROM ar_contract_position($1::uuid)`, contractID).Scan(
 		&c.ContractValue, &c.MeasuredValue, &c.CertifiedGross, &c.RetentionHeld, &c.AdvanceAmount, &c.AdvanceReceived,
-		&c.AdvanceRecovered, &c.InvoicedTotal, &c.Received, &c.ReceivableOpen)
+		&c.AdvanceRecovered, &c.InvoicedTotal, &c.CreditedTotal, &c.Received, &c.ReceivableOpen)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, ErrNotFound
 	}

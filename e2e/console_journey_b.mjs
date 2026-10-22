@@ -119,6 +119,33 @@ try {
   await receive('CBE-B-001/2', 'Invoice CINV-', '4691000');
   log('invoice approved and paid in full');
 
+  // ---- 6b. Credit note: AR clerk issues one on the paid invoice; the commercial manager's
+  //          approval is refused (nothing is open), so the clerk withdraws it ------------
+  await nav(clerk, `#/doc/customer_invoice/${invID}`, /^Customer invoice CINV-/);
+  await clerk.getByRole('link', { name: 'Issue credit note' }).click();
+  await clerk.getByRole('heading', { level: 1, name: 'Issue credit note' }).waitFor();
+  await clerk.getByLabel('Amount credited (before VAT)').fill('10000');
+  await clerk.getByLabel('Reason').fill('Agreed deduction for late handover of the haul road');
+  await audit(clerk, 'credit note form');
+  await clerk.getByRole('button', { name: 'Issue credit note' }).click();
+  await clerk.getByRole('heading', { level: 1, name: /^Credit note CRN-/ }).waitFor();
+  const cnID = await idFromHash(clerk);
+  const cnView = await clerk.locator('main').textContent();
+  if (!cnView.includes('11,500.00') || !cnView.includes('1,500.00')) fail('the credit note does not show VAT 1,500.00 and total 11,500.00');
+  if (await clerk.getByRole('button', { name: 'Approve', exact: true }).count()) fail('the AR clerk who issued the credit note is offered "Approve"');
+  await nav(com, '#/home', 'My work');
+  await com.getByRole('link', { name: /^1\s*Credit notes to approve/ }).click();
+  await com.getByRole('link', { name: /^CRN-/ }).first().click();
+  await com.getByRole('heading', { level: 1, name: /^Credit note CRN-/ }).waitFor();
+  if (await idFromHash(com) !== cnID) fail('the approval queue opened a different credit note');
+  await com.getByRole('button', { name: 'Approve', exact: true }).click();
+  await com.locator('#alert').filter({ hasText: 'exceeds what is open' }).waitFor();
+  await audit(com, 'credit note refused');
+  await snap(com, 'credit-note-refused');
+  await clerk.getByLabel('Reason for cancel').fill('Invoice already settled in full');
+  await act(clerk, 'Cancel', 'Cancel: done');
+  log('credit note on a settled invoice refused by the database and withdrawn');
+
   // ---- 7. Finance approves and posts the AR journals ------------------------------------
   const fin = await as('finMgr');
   const ctl = await as('controller');

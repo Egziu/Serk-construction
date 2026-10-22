@@ -1,0 +1,1328 @@
+?   	github.com/serk-group/serk-construction/cmd/serk-api	[no test files]
+?   	github.com/serk-group/serk-construction/cmd/serk-devtoken	[no test files]
+?   	github.com/serk-group/serk-construction/cmd/serk-migrate	[no test files]
+?   	github.com/serk-group/serk-construction/cmd/serk-relay	[no test files]
+=== RUN   TestProductionAcceptsHardenedConfig
+--- PASS: TestProductionAcceptsHardenedConfig (0.00s)
+=== RUN   TestProductionRefusesTheOldDemoDefaults
+    config_test.go:70: config: invalid (production):
+          - SERK_DB_BASE_DSN must use sslmode=verify-full in production (got "disable")
+          - SERK_TENANT_DB_SECRET looks like a placeholder or well-known value (contains "change-me"); generate one with `openssl rand -hex 32`
+          - SERK_APPROVAL_SIGNING_KEY must be at least 32 bytes
+          - SERK_HEALTH_DSN must not use a superuser/administrative login (postgres)
+          - SERK_HEALTH_DSN uses a weak password
+          - SERK_HEALTH_DSN must use sslmode=verify-full in production (got "disable")
+          - production requires OIDC (SERK_OIDC_*); shared-secret HS256 tokens are for development and staging only
+          - SERK_SOD_STRICT=false is not allowed in production
+          - SERK_TRUSTED_PROXIES must not contain a wildcard prefix (0.0.0.0/0)
+--- PASS: TestProductionRefusesTheOldDemoDefaults (0.00s)
+=== RUN   TestProductionRules
+--- PASS: TestProductionRules (0.00s)
+=== RUN   TestDevelopmentRelaxations
+--- PASS: TestDevelopmentRelaxations (0.00s)
+=== RUN   TestProductionManifestHasNoDemoDefaults
+--- PASS: TestProductionManifestHasNoDemoDefaults (0.00s)
+=== RUN   TestObservabilityConfig
+--- PASS: TestObservabilityConfig (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/config	1.011s
+=== RUN   TestConsoleBrowserJourneyB
+    console_browser_b_test.go:112: browser journey B (6s):
+        07:05:43.736 a11y ok: contract form
+        07:05:43.880 contract Contract CTR-2026-000001 submitted
+        07:05:44.256 a11y ok: active contract with position
+        07:05:44.547 other-project QS: contract not found
+        07:05:45.010 a11y ok: receipt form (CBE-B-001/1)
+        07:05:45.226 advance received and confirmed
+        07:05:45.601 a11y ok: measurement form
+        07:05:46.009 measurement verified
+        07:05:46.034 a11y ok: IPC form
+        07:05:46.197 a11y ok: IPC certification
+        07:05:46.344 IPC certified (SHA-256 of the signed file computed in the browser)
+        07:05:46.601 a11y ok: approved customer invoice
+        07:05:46.778 a11y ok: receipt form (CBE-B-001/2)
+        07:05:46.927 invoice approved and paid in full
+        07:05:47.017 a11y ok: credit note form
+        07:05:47.317 a11y ok: credit note refused
+        07:05:47.455 credit note on a settled invoice refused by the database and withdrawn
+        07:05:48.164 3 AR journals approved and posted
+        07:05:48.207 a11y ok: reconciliation with receivables
+        07:05:48.490 a11y ok: reconciliation with receivables (dark theme)
+        07:05:48.805 a11y ok: IPC at 390px
+        07:05:48.843 a11y ok: contract at 390px
+        
+        CONSOLE JOURNEY B: PASS (da8cb479-8d54-41a1-a030-db8fe23d7e24)
+--- PASS: TestConsoleBrowserJourneyB (6.17s)
+=== RUN   TestConsoleBrowserJourneyC
+    console_browser_c_test.go:94: browser journey C (4s):
+        07:05:49.807 a11y ok: stock item form
+        07:05:50.418 a11y ok: warehouse form
+        07:05:50.830 a11y ok: put-away form
+        07:05:50.898 a11y ok: stock on hand
+        07:05:50.962 12 t put away at 84,500 (1,014,000)
+        07:05:51.062 a11y ok: stock issue form
+        07:05:51.456 a11y ok: approved stock issue
+        07:05:51.585 a11y ok: stock count form
+        07:05:51.995 issue (422,500) and shortage (42,250) approved
+        07:05:52.639 a11y ok: reconciliation with inventory
+        07:05:52.893 a11y ok: stock on hand at 390px (dark)
+        
+        CONSOLE JOURNEY C: PASS
+--- PASS: TestConsoleBrowserJourneyC (3.98s)
+=== RUN   TestConsoleBrowserJourneyA
+    console_browser_test.go:108: browser journey (11s):
+        07:05:53.546 a11y ok: sign-in page
+        07:05:53.741 a11y ok: home (site engineer)
+        07:05:53.849 a11y ok: requisition form
+        07:05:53.976 requisition Requisition PR-2026-000001 submitted
+        07:05:55.391 rfq issued, 3 quotes recorded
+        07:05:56.664 purchase order approved
+        07:05:57.575 two receipts confirmed
+        07:05:58.372 self-approval refused and explained in the UI
+        07:05:58.697 a11y ok: approved invoice with three-way match
+        07:05:59.482 a11y ok: home (finance manager)
+        07:05:59.924 4 subledger journals approved and posted
+        07:06:02.043 payments PAY-2026-000001 PAY-2026-000002 released and posted
+        07:06:02.259 a11y ok: supplier bank account with reveal
+        07:06:02.259 IA-040-01: payment hidden from site engineer; bank number masked; audited reveal works
+        07:06:02.471 a11y ok: bank statement import with preview
+        07:06:02.864 a11y ok: reconciliation result (dark theme)
+        07:06:03.314 statement imported and reconciled; settlement journals posted
+        07:06:03.353 a11y ok: reconciliation report
+        07:06:03.731 a11y ok: cost report at 390px
+        07:06:03.770 a11y ok: purchase order at 390px
+        07:06:03.891 sign-out revoked the session (401 afterwards)
+        
+        CONSOLE JOURNEY A: PASS
+--- PASS: TestConsoleBrowserJourneyA (11.02s)
+=== RUN   TestAPI_IA04001_DocumentScopeAndBankMasking
+    ia04001_api_test.go:91: duplicate supplier account rejected: 409 map[error:map[code:invariant_violation message:the database refused the change: new row for relation "supplier_bank_accounts" violates check constraint "supplier_bank_accounts_account_name_check"]]
+--- PASS: TestAPI_IA04001_DocumentScopeAndBankMasking (0.23s)
+=== RUN   TestAPIJourneyA_EndToEnd
+    journey_a_api_test.go:304: recon GRNI (goods received not invoiced)            subledger            0 gl            0 diff 0
+    journey_a_api_test.go:304: recon Accounts payable                              subledger            0 gl            0 diff 0
+    journey_a_api_test.go:304: recon Payments in transit: CBE Operating            subledger            0 gl            0 diff 0
+    journey_a_api_test.go:304: recon Bank (reconciled movements): CBE Operating    subledger     -2486875 gl     -2486875 diff 0
+    journey_a_api_test.go:319: cost report: map[actual_other:2500 actual_posted:2162500 available:9937500 budget:12100000 committed:2160000 cost_code:01-MAT cost_code_id:c1fa2d35-b7b2-4fd9-96f7-ab5e2185704f invoiced:2162500 received:2160000 reserved:0]
+--- PASS: TestAPIJourneyA_EndToEnd (0.77s)
+=== RUN   TestAPIJourneyB_ContractToCash
+    journey_b_api_test.go:199: AR recon Accounts receivable: subledger 1548000 gl 1548000 difference 0
+    journey_b_api_test.go:199: AR recon Retention receivable: subledger 432000 gl 432000 difference 0
+    journey_b_api_test.go:199: AR recon Advances received: subledger 0 gl 0 difference 0
+    journey_b_api_test.go:199: AR recon Unapplied money in (statement lines without a confirmed receipt): subledger 0 gl 0 difference 0
+--- PASS: TestAPIJourneyB_ContractToCash (0.48s)
+=== RUN   TestAPIJourneyC_StockValuation
+    journey_c_api_test.go:167: stock recon Inventory: 1200 1200: subledger 831250 gl 831250 difference 0
+    journey_c_api_test.go:167: stock recon Received, not yet put away: 1200: subledger 282000 gl 282000 difference 0
+    journey_c_api_test.go:167: stock recon Stock balances vs documents: 1200: subledger 549250 gl 549250 difference 0
+    journey_c_api_test.go:167: stock recon Cost layers vs stock balances: 1200: subledger 549250 gl 549250 difference 0
+--- PASS: TestAPIJourneyC_StockValuation (0.39s)
+=== RUN   TestAlertDrill_InducedFailuresFireTheRightAlerts
+    metrics_drill_test.go:243: metrics after inducing failures: ledger_violations=1 audit_mismatches=1 outbox_lag_s=3600 dead_letters=1 authority_refusals=1 auth_failures=25 revoked_uses=1
+    metrics_drill_test.go:246: alerts firing: [SerkApprovalRefusedAtDatabase SerkAuditChainMismatch SerkAuthFailureSpike SerkLedgerIntegrityViolation SerkOutboxDeadLetters SerkOutboxLagCritical SerkOutboxLagHigh SerkRevokedSessionUsed]
+    metrics_drill_test.go:258: monitor pool closed: serk_db_health_up=0 -> SerkDBHealthScrapeFailing fires
+--- PASS: TestAlertDrill_InducedFailuresFireTheRightAlerts (0.97s)
+=== RUN   TestRequestTelemetryAndTraceContext
+--- PASS: TestRequestTelemetryAndTraceContext (0.05s)
+=== RUN   TestJWKSVerifier
+--- PASS: TestJWKSVerifier (0.30s)
+=== RUN   TestR5_H1_ExistenceVariantsAndTenantWideRoutes
+    review5_regression_test.go:66: held: GET policy (pm)                              out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:67: held: GET company bank (scoped cfo)                out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:68: held: GET supplier bank (pm)                       out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:69: held: reveal company bank (scoped fm)              out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:71: held: reveal supplier bank (scoped fm)             out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:73: held: approve pending company bank (scoped cfo)    out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:74: held: approve policy (scoped cfo)                  out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: uppercase id         tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"not found"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: braced id            tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"not found"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: no-hyphen id         tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"not found"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: urn id               tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"not found"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: type upper           tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}}
+    review5_regression_test.go:90: type bank_statement  tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}}
+    review5_regression_test.go:112: held: reveal 200 with Cache-Control: no-store
+    review5_regression_test.go:118: info: reveal with a 70 kB purpose -> 422 map[error:map[code:validation message:kernel: invalid input: state the purpose of the reveal (20 to 500 characters)]]
+    review5_regression_test.go:125: scoped accountant GET /v1/journals -> 403 (0 journals)
+    review5_regression_test.go:133: held: scoped controller reconciliation -> 403
+    review5_regression_test.go:141: scoped statement import -> 403 map[error:map[code:forbidden message:insufficient permission]]
+    review5_regression_test.go:144:       same officer reading that account -> 404
+    review5_regression_test.go:146: info: /v1/identity/me for scoped accountant: tenant_wide=false project_ids=[4dadd748-e4c6-43ae-8469-47c14812ec93]
+    review5_regression_test.go:155: server log: 11176 bytes, 43 lines; no full account numbers found unless reported above
+--- PASS: TestR5_H1_ExistenceVariantsAndTenantWideRoutes (0.24s)
+=== RUN   TestR6_API_JourneyB
+    review6_regression_test.go:60: info: customer create with pkind "service" -> 201
+    review6_regression_test.go:67: held: customer approval with pkind "service" -> 403 map[code:forbidden message:insufficient permission]
+    review6_regression_test.go:60: info: customer create with pkind "ai" -> 201
+    review6_regression_test.go:67: held: customer approval with pkind "ai" -> 403 map[code:forbidden message:insufficient permission]
+    review6_regression_test.go:60: info: customer create with pkind "" -> 201
+    review6_regression_test.go:67: held: customer approval with pkind "" -> 403 map[code:forbidden message:insufficient permission]
+    review6_regression_test.go:80: info: contract with retention 20% and advance recovery 100% accepted and activated over HTTP (amount due of every IPC funded by the advance is negative; see kernel TestR6_01)
+    review6_regression_test.go:92: held: contract position: other project 404, nonexistent 404
+    review6_regression_test.go:99: held: profitability: other project 403, nonexistent 403
+    review6_regression_test.go:105: held: project-scoped AR reconciliation -> 403
+    review6_regression_test.go:112: held: other-project QS list contract -> 200 (0 items)
+    review6_regression_test.go:112: held: other-project QS list customer_receipt -> 200 (0 items)
+    review6_regression_test.go:112: held: other-project QS list money_in -> 200 (0 items)
+    review6_regression_test.go:121: held: malformed allocation id -> 422 map[code:validation message:each allocation names exactly one invoice_id or contract_id (canonical UUID)]
+    review6_regression_test.go:128: held: malformed customer_id -> 422 map[code:validation message:project_id and customer_id must be canonical UUIDs]
+    review6_regression_test.go:135: held: negative retention/quantity -> 409 map[code:invariant_violation message:the database refused the change: new row for relation "contracts" violates check constraint "contracts_retention_pct_check"]
+--- PASS: TestR6_API_JourneyB (0.15s)
+=== RUN   TestAPIFullLifecycle
+--- PASS: TestAPIFullLifecycle (0.09s)
+=== RUN   TestAPIRejections
+--- PASS: TestAPIRejections (0.62s)
+=== RUN   TestAPIRateLimit
+--- PASS: TestAPIRateLimit (0.10s)
+=== RUN   TestAPIFXMakerCheckerFlow
+--- PASS: TestAPIFXMakerCheckerFlow (0.09s)
+=== RUN   TestAPIPreAuthFloodProtection
+--- PASS: TestAPIPreAuthFloodProtection (0.05s)
+=== RUN   TestAPISessionRevocationAcrossReplicas
+--- PASS: TestAPISessionRevocationAcrossReplicas (0.06s)
+=== RUN   TestTokenRoundTrip
+--- PASS: TestTokenRoundTrip (0.00s)
+=== RUN   TestTokenRejections
+--- PASS: TestTokenRejections (0.00s)
+=== RUN   TestIsMFA
+--- PASS: TestIsMFA (0.00s)
+=== RUN   TestTokenTimeClaims
+--- PASS: TestTokenTimeClaims (0.00s)
+=== RUN   TestClientIPAndLimiter
+--- PASS: TestClientIPAndLimiter (0.00s)
+=== RUN   TestAPIWorkflowConsole
+--- PASS: TestAPIWorkflowConsole (0.16s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/httpapi	26.944s
+=== RUN   TestAttestation_ReplaySubstitutionExpiryAndTampering
+    approval_attestation_test.go:81: denied attestation for journal A used on journal B:            store: database invariant violated: privilege: journal.approve of journal 3efcf4ee-ff41-40b6-8c90-34219b08e5d7 requires a verified approval attestation for u-approver
+    approval_attestation_test.go:83: denied attestation for u-approver recorded as someone else:    store: database invariant violated: privilege: journal.approve of journal 8a880380-c213-45e6-977e-d7f8ecc6fbec requires a verified approval attestation for u-somebody-else
+    approval_attestation_test.go:95: denied tampered attestation: signature junk:                   store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:95: denied tampered attestation: actor changed:                    store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:95: denied tampered attestation: perms widened:                    store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:95: denied tampered attestation: mfa flipped:                      store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:95: denied tampered attestation: expiry extended:                  store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:99: denied attestation signed with another secret:                 store: database invariant violated: privilege: approval attestation: bad signature
+    approval_attestation_test.go:101: denied tenant-1 attestation presented in a tenant-2 session:   store: database invariant violated: privilege: approval attestation: malformed or for another tenant
+    approval_attestation_test.go:104: denied expired attestation:                                    store: database invariant violated: privilege: approval attestation: expired or not yet valid
+    approval_attestation_test.go:111: denied attestation for content that has since changed:         store: database invariant violated: privilege: approval attestation: subject changed or unknown
+    approval_attestation_test.go:116: denied attestation of a person without journal.approve:        store: database invariant violated: privilege: journal.approve requires permission journal.approve; the attested person holds none of them
+    approval_attestation_test.go:126: denied replay of a used attestation:                           store: database invariant violated: privilege: approval attestation: already used (replay)
+    approval_attestation_test.go:137: denied rewrite attestation evidence:                           store: database invariant violated: privilege: permission denied for table approval_attestations
+    approval_attestation_test.go:138: denied insert attestation evidence directly:                   store: database invariant violated: privilege: permission denied for table approval_attestations
+--- PASS: TestAttestation_ReplaySubstitutionExpiryAndTampering (0.10s)
+=== RUN   TestAttestation_MFAFreshnessIsVerifiedInSQL
+    approval_attestation_test.go:162: denied reopen with mfa=true but a login 2 hours old:           store: database invariant violated: privilege: period.reopen requires a recent multi-factor authentication in the attestation
+    approval_attestation_test.go:163: denied reopen without MFA:                                     store: database invariant violated: privilege: period.reopen requires a recent multi-factor authentication in the attestation
+--- PASS: TestAttestation_MFAFreshnessIsVerifiedInSQL (0.07s)
+=== RUN   TestAttestation_TenantLoginCannotReachKeysOrEscalate
+    approval_attestation_test.go:194: denied read verification keys:                                 store: database invariant violated: privilege: permission denied for table approval_keys
+    approval_attestation_test.go:194: denied become the schema owner:                                store: database invariant violated: privilege: permission denied to set role "postgres"
+    approval_attestation_test.go:194: denied create an object in public:                             store: database invariant violated: privilege: permission denied for schema public
+    approval_attestation_test.go:194: denied create a temporary object:                              store: database invariant violated: privilege: permission denied to create temporary tables in database "postgres"
+    approval_attestation_test.go:194: denied install a key:                                          store: database invariant violated: privilege: permission denied for function approval_key_install
+--- PASS: TestAttestation_TenantLoginCannotReachKeysOrEscalate (0.05s)
+=== RUN   TestAttestation_LegitimateTwoPersonFlowLeavesEvidence
+--- PASS: TestAttestation_LegitimateTwoPersonFlowLeavesEvidence (0.08s)
+=== RUN   TestAttestation_DecisionBoundToStepAndOutcome
+    approval_attestation_test.go:247: denied APPROVE attestation used to record a REJECT:            store: database invariant violated: privilege: the attestation authorises a different step or decision
+    approval_attestation_test.go:250: denied step-1 attestation used for step 0:                     store: database invariant violated: privilege: the attestation authorises a different step or decision
+--- PASS: TestAttestation_DecisionBoundToStepAndOutcome (0.08s)
+=== RUN   TestApprovalProvenance_DirectJournalApprovalAndPosting
+    approval_provenance_test.go:69: denied approve a journal as an invented approver:              store: database invariant violated: privilege: journal.approve of journal 53efdd4d-52a7-4d37-b21a-13ec707940f9 requires a verified approval attestation for invented-approver
+    approval_provenance_test.go:78: denied post a journal as an invented poster:                   store: database invariant violated: privilege: journal.post of journal 53efdd4d-52a7-4d37-b21a-13ec707940f9 requires a verified approval attestation for invented-poster
+    approval_provenance_test.go:80: denied insert a journal that is already APPROVED:              store: database invariant violated: journals are created DRAFT without approval fields
+--- PASS: TestApprovalProvenance_DirectJournalApprovalAndPosting (0.06s)
+=== RUN   TestApprovalProvenance_ForgedWorkflowTrail
+    approval_provenance_test.go:94: denied fabricated review decision + effect + approval:         store: database invariant violated: privilege: workflow.decide of workflow_instance 001877b4-1fb0-402d-82d9-587f40658908 requires a verified approval attestation for invented-1
+    approval_provenance_test.go:103: denied single fabricated decision with mfa=true:               store: database invariant violated: privilege: workflow.decide of workflow_instance 001877b4-1fb0-402d-82d9-587f40658908 requires a verified approval attestation for invented-3
+    approval_provenance_test.go:105: denied start an instance as an invented initiator:             store: database invariant violated: privilege: workflow.start of journal f6bc10c0-7501-4ce8-9376-56995d14571a requires a verified approval attestation for invented-initiator
+    approval_provenance_test.go:108: denied cancel an instance as an invented administrator:        store: database invariant violated: privilege: workflow.cancel of workflow_instance 001877b4-1fb0-402d-82d9-587f40658908 requires a verified approval attestation for invented-admin
+--- PASS: TestApprovalProvenance_ForgedWorkflowTrail (0.08s)
+=== RUN   TestApprovalProvenance_WorkflowDefinitionPublication
+    approval_provenance_test.go:121: denied insert a definition draft as an invented author:        store: database invariant violated: workflow definition body_hash must be the digest of its body
+    approval_provenance_test.go:130: denied publish through workflow_decide_definition as an invented checker: store: database invariant violated: privilege: workflow.decide_definition of workflow_definition e626a820-5672-475b-9154-fddd44d9cf3c requires a verified approval attestation for invented-checker
+--- PASS: TestApprovalProvenance_WorkflowDefinitionPublication (0.05s)
+=== RUN   TestApprovalProvenance_FXApprovals
+    approval_provenance_test.go:142: denied approve an FX source as an invented checker:            store: database invariant violated: privilege: fx.source.approve of fx_source NBE requires a verified approval attestation for invented-checker
+    approval_provenance_test.go:151: denied approve an FX policy as an invented checker:            store: database invariant violated: privilege: fx.policy.decide of fx_policy 867b4988-d658-4d8e-abad-822fccf21aff requires a verified approval attestation for invented-checker
+    approval_provenance_test.go:157: denied approve an FX rate as an invented checker:              store: database invariant violated: privilege: fx.snapshot.approve of fx_snapshot f020ab20-8a79-4bca-a4cf-73a80ede7fdc requires a verified approval attestation for invented-checker
+    approval_provenance_test.go:163: denied approve an out-of-tolerance rate with approver_mfa=true: store: database invariant violated: privilege: fx.snapshot.approve of fx_snapshot 5a28e36e-cfc1-4ee9-9a46-4d9322e557f7 requires a verified approval attestation for invented-cfo
+--- PASS: TestApprovalProvenance_FXApprovals (0.08s)
+=== RUN   TestApprovalProvenance_PeriodsAndWBS
+    approval_provenance_test.go:174: denied close a period as an invented controller:               store: database invariant violated: privilege: period.close of fiscal_period 846a6e8b-708c-4613-9139-4c6e04c1b687 requires a verified approval attestation for invented-controller
+    approval_provenance_test.go:179: denied reopen a period as an invented CFO:                     store: database invariant violated: privilege: period.reopen of fiscal_period 846a6e8b-708c-4613-9139-4c6e04c1b687 requires a verified approval attestation for invented-cfo
+    approval_provenance_test.go:187: denied approve a WBS version as an invented checker:           store: database invariant violated: privilege: wbs.decide of wbs_version f3cfca48-275f-4406-b53b-db8a630f42bf requires a verified approval attestation for invented-checker
+--- PASS: TestApprovalProvenance_PeriodsAndWBS (0.07s)
+=== RUN   TestIndependentReverify_Q1_FXSnapshotAuthorityOnTransition
+    attestation_reverify_test.go:49: before: approved_by=u-approver rejected_by=NULL decided_at=2026-10-22 10:06:13.704597+03 mfa=f exc=f
+    attestation_reverify_test.go:50: held: withdraw (genuine fx.snapshot.withdraw attestation) rewrites approved_by/rejected_by/decided_at/approver_mfa/variance_exception: store: database invariant violated: privilege: fx snapshot approved_by is part of the approval record and cannot be changed here
+    attestation_reverify_test.go:54: after: status=APPROVED approved_by=u-approver rejected_by=NULL decided_at=2026-10-22 10:06:13.704597+03 mfa=f exc=f
+    attestation_reverify_test.go:57: held: reject (genuine attestation) also sets approver_mfa=true/variance_exception=true on a REJECTED snapshot: store: database invariant violated: privilege: fx snapshot variance_exception is part of the approval record and cannot be changed here
+    attestation_reverify_test.go:61: after reject: status=PENDING mfa=f exc=f
+--- PASS: TestIndependentReverify_Q1_FXSnapshotAuthorityOnTransition (0.09s)
+=== RUN   TestIndependentReverify_Q1_WorkflowInstanceEndedBy
+    attestation_reverify_test.go:73: held: tenant login sets ended_by on an ACTIVE instance without ending it: store: database invariant violated: end details are recorded only when the instance ends
+    attestation_reverify_test.go:75: held: tenant login cancels with an invented ended_by: store: database invariant violated: privilege: workflow.cancel of workflow_instance 5d2e95e3-b80d-4ba0-889d-a23c2b1c51ab requires a verified approval attestation for u-wf-admin
+--- PASS: TestIndependentReverify_Q1_WorkflowInstanceEndedBy (0.10s)
+=== RUN   TestIndependentReverify_Q2_Q3_ForgedConsumptionMarker
+    attestation_reverify_test.go:98: close with pre-forged marker: err=store: database invariant violated: privilege: approval evidence is used only by the transition it authorises
+    attestation_reverify_test.go:103: close record: no close record
+    attestation_reverify_test.go:110: held: direct call of fiscal_period_close_record (depth 0): store: database invariant violated: privilege: period close records are written only by the period transition
+    attestation_reverify_test.go:112: held: tenant creates a function: store: database invariant violated: privilege: permission denied for schema public
+    attestation_reverify_test.go:113: held: tenant creates a temp table: store: database invariant violated: privilege: permission denied to create temporary tables in database "postgres"
+    attestation_reverify_test.go:114: held: tenant disables a trigger: store: database invariant violated: privilege: must be owner of table wbs_versions
+    attestation_reverify_test.go:115: held: tenant inserts approval_consumptions directly: store: database invariant violated: privilege: permission denied for table approval_consumptions
+--- PASS: TestIndependentReverify_Q2_Q3_ForgedConsumptionMarker (0.06s)
+=== RUN   TestIndependentReverify_Q2_ReversedViaForgedMarker
+    attestation_reverify_test.go:136: after tx1: J=POSTED R=POSTED
+    attestation_reverify_test.go:138: held: J marked REVERSED in a later tx with a forged consumption marker (unrelated evidence): store: database invariant violated: privilege: approval evidence is used only by the transition it authorises
+    attestation_reverify_test.go:149: final: J=POSTED
+--- PASS: TestIndependentReverify_Q2_ReversedViaForgedMarker (0.10s)
+=== RUN   TestIndependentReverify_Q2_SavepointsAndLiveHash
+    attestation_reverify_test.go:175: held: evidence consumed inside a released savepoint is reused: store: database invariant violated: privilege: approval evidence is used only by the transition it authorises
+    attestation_reverify_test.go:192: rollback-to-savepoint then reuse: err=<nil> consumptions=1 status=APPROVED (expected: one effective approval)
+    attestation_reverify_test.go:196: held: wbs.decide APPROVED evidence still valid after a node was added in the same tx: store: database invariant violated: privilege: wbs_version 040d347f-5bdb-4f4a-aaa6-015d7d1ac55e changed after the approval was attested
+    attestation_reverify_test.go:213: tenant2 sees 0 approval_consumptions rows
+--- PASS: TestIndependentReverify_Q2_SavepointsAndLiveHash (0.08s)
+=== RUN   TestIndependentReverify_Q4_DeferredSuccessorChecks
+    attestation_reverify_test.go:224: held: supersede v1, approve v2 inside a savepoint, roll the savepoint back, commit: store: database invariant violated: privilege: superseding a WBS version requires an approved successor at commit
+    attestation_reverify_test.go:242: held: SET CONSTRAINTS ALL IMMEDIATE then supersede without approved successor: store: database invariant violated: privilege: superseding a WBS version requires an approved successor at commit
+    attestation_reverify_test.go:253: approved WBS versions: 94471a0b-33cc-429b-9d12-a25f86c9dc06=APPROVED,d2e4124f-604b-4d1e-8a75-87ad4bda4fb0=DRAFT
+    attestation_reverify_test.go:261: held: retire p1 + approve p2 + REJECT p2 in the same tx: store: database invariant violated: illegal fx policy transition APPROVED -> REJECTED
+    attestation_reverify_test.go:278: policies: 1=APPROVED,2=PENDING
+--- PASS: TestIndependentReverify_Q4_DeferredSuccessorChecks (0.09s)
+=== RUN   TestIndependentReverify_Q5_WorkflowHistoryBinding
+    attestation_reverify_test.go:290: held: COMPLETED history entry by an invented 'system:' actor, no evidence: store: database invariant violated: privilege: workflow history entry COMPLETED by system:kernel is not backed by the matching verified evidence or instance state
+    attestation_reverify_test.go:292: held: DECIDED history entry for u-cfo with no evidence, actor spelled 'system:u-cfo': store: database invariant violated: privilege: workflow history entry DECIDED by system:u-cfo is not backed by the matching verified evidence or instance state
+    attestation_reverify_test.go:295: held: DECIDED history entry for u-approver on instance W using u-approver's evidence for an unrelated journal: store: database invariant violated: privilege: workflow history entry DECIDED by u-approver is not backed by the matching verified evidence or instance state
+    attestation_reverify_test.go:303: history of W: STARTED/u-preparer
+--- PASS: TestIndependentReverify_Q5_WorkflowHistoryBinding (0.09s)
+=== RUN   TestIndependentReverify_Q2_DefinitionBodyHashColumn
+    attestation_reverify_test.go:311: held: definition inserted with the attested body but an arbitrary body_hash: store: database invariant violated: workflow definition body_hash must be the digest of its body
+    attestation_reverify_test.go:324: stored: none
+--- PASS: TestIndependentReverify_Q2_DefinitionBodyHashColumn (0.05s)
+=== RUN   TestIndependentReverify_Q6_CanonicalNumberForms
+    attestation_reverify_test.go:342: v as 1.0: err=store: database invariant violated: privilege: approval attestation: malformed field v stored=
+    attestation_reverify_test.go:342: v as 1e0: err=<nil> stored=ctx='' perms={journal.approve,principal.human} auth_time=NULL
+    attestation_reverify_test.go:342: auth_time as -0: err=<nil> stored=ctx='' perms={journal.approve,principal.human} auth_time=NULL
+    attestation_reverify_test.go:342: duplicate ctx key with a different first value: err=<nil> stored=ctx='' perms={journal.approve,principal.human} auth_time=NULL
+    attestation_reverify_test.go:342: perms duplicated element: err=<nil> stored=ctx='' perms={journal.approve,principal.human} auth_time=NULL
+    attestation_reverify_test.go:342: unicode escape in actor: err=<nil> stored=ctx='' perms={journal.approve,principal.human} auth_time=NULL
+--- PASS: TestIndependentReverify_Q6_CanonicalNumberForms (0.07s)
+=== RUN   TestIndependentReverify_Q1_LockRewritesClosedBy
+    attestation_reverify_test.go:366: lock by second person: err=<nil>; period: LOCKED closed_by=u-controller-2; records: CLOSE/u-poster, LOCK/u-controller-2
+--- PASS: TestIndependentReverify_Q1_LockRewritesClosedBy (0.07s)
+=== RUN   TestIndependentReverify_Q3_CloseReopenCloseOneTx
+    attestation_reverify_test.go:395: close/reopen/close in one tx: err=<nil>
+--- PASS: TestIndependentReverify_Q3_CloseReopenCloseOneTx (0.06s)
+=== RUN   TestIndependentReview_Q1_AuthorityColumnsWithoutStatusChange
+    attestation_review_test.go:42: covered: tenant login rewrites closed_by/closed_at of a CLOSED period: store: database invariant violated: privilege: fiscal period closed_by is part of the approval record and cannot be changed here
+    attestation_review_test.go:44: closed_by now: u-poster
+    attestation_review_test.go:53: covered: closer reopens own close after closed_by was rewritten (SoD bypass): store: database invariant violated: the user who closed a period cannot reopen it (segregation of duties)
+    attestation_review_test.go:62: covered: tenant login inserts a forged fiscal_period_closes record (actor u-cfo, REOPEN): store: database invariant violated: privilege: permission denied for table fiscal_period_closes
+    attestation_review_test.go:76: covered: tenant login rewrites approved_by/approved_at of an APPROVED WBS version: store: database invariant violated: privilege: WBS version approved_by is part of the approval record and cannot be changed here
+    attestation_review_test.go:78: wbs approved_by now: u-approver
+    attestation_review_test.go:85: covered: tenant login writes posted_by/posted_at on an APPROVED journal (no status change): store: database invariant violated: privilege: journal posted_by is part of the approval record and cannot be changed here
+--- PASS: TestIndependentReview_Q1_AuthorityColumnsWithoutStatusChange (0.08s)
+=== RUN   TestIndependentReview_Q2_InTransactionBinding
+    attestation_review_test.go:96: covered: journal.approve evidence still valid after lines were added in the same tx: store: database invariant violated: privilege: journal ef163e56-7b30-4dcc-868a-64051e6fc50d changed after the approval was attested
+    attestation_review_test.go:109: journal status DRAFT, lines 3
+    attestation_review_test.go:127: covered: WBS v1 SUPERSEDED while successor v2 is REJECTED (same wbs.decide evidence): store: database invariant violated: privilege: a WBS version is superseded only by the attested approval of its successor
+    attestation_review_test.go:138: approved WBS versions for project: 1
+    attestation_review_test.go:146: covered: FX policy v1 RETIRED while successor v2 is REJECTED (same fx.policy.decide evidence): store: database invariant violated: privilege: an FX policy is retired only by the attested approval of its successor
+    attestation_review_test.go:157: approved TRANSACTION policies for entity: 1
+    attestation_review_test.go:163: covered: one workflow.define evidence inserts two definitions whose body does not hash to body_hash: store: database invariant violated: workflow definition body_hash must be the digest of its body
+--- PASS: TestIndependentReview_Q2_InTransactionBinding (0.10s)
+=== RUN   TestIndependentReview_Q3_CanonicalAmbiguity
+    attestation_review_test.go:201: covered: store: database invariant violated: privilege: approval attestation: malformed (unexpected or missing fields)
+--- PASS: TestIndependentReview_Q3_CanonicalAmbiguity (0.06s)
+=== RUN   TestIndependentReview_Q5_ExpiryUsesTransactionStart
+    attestation_review_test.go:225: covered: attestation accepted after its exp (wall clock) because now() is the tx start: store: database invariant violated: privilege: approval attestation: expired or not yet valid
+--- PASS: TestIndependentReview_Q5_ExpiryUsesTransactionStart (5.08s)
+=== RUN   TestIndependentReview_Q1_InsertInNonInitialStatus
+    attestation_review_test.go:247: covered: tenant login: fx snapshot born APPROVED: store: database invariant violated: fx snapshots are recorded PENDING; approval is a separate maker/checker step (SC-03)
+    attestation_review_test.go:247: covered: tenant login: wbs version born APPROVED: store: database invariant violated: WBS versions are created DRAFT
+    attestation_review_test.go:247: covered: tenant login: workflow definition born PUBLISHED: store: database invariant violated: workflow definition body_hash must be the digest of its body
+    attestation_review_test.go:247: covered: tenant login: period born CLOSED: store: database invariant violated: fiscal periods are created OPEN
+    attestation_review_test.go:247: covered: tenant login: period born OPEN with reopened_by: store: database invariant violated: fiscal periods are created OPEN
+    attestation_review_test.go:247: covered: tenant login: fx source born APPROVED: store: database invariant violated: fx sources are created PENDING and approved by a second person
+    attestation_review_test.go:247: covered: tenant login: journal born APPROVED: store: database invariant violated: journals are created DRAFT without approval fields
+    attestation_review_test.go:247: covered: tenant login: journal born DRAFT with posted_by: store: database invariant violated: journals are created DRAFT without approval fields
+    attestation_review_test.go:247: covered: tenant login: fx policy born APPROVED: store: database invariant violated: fx policies are created PENDING and approved by a second person
+--- PASS: TestIndependentReview_Q1_InsertInNonInitialStatus (0.05s)
+=== RUN   TestIndependentReview_HardeningControls
+    attestation_review_test.go:259: covered: one attestation consumed twice: store: database invariant violated: privilege: approval evidence is used only by the transition it authorises
+    attestation_review_test.go:273: covered: period.close attested for CLOSED used to LOCK: store: database invariant violated: privilege: the attestation authorises a different decision (CLOSED), not LOCKED
+    attestation_review_test.go:286: covered: direct call of fiscal_period_close_record: store: database invariant violated: privilege: period close records are written only by the period transition
+    attestation_review_test.go:296: covered: forged DECIDED history entry: store: database invariant violated: privilege: workflow history entry DECIDED by u-cfo is not backed by the matching verified evidence or instance state
+    attestation_review_test.go:298: covered: workflow effect without the executor's decision: store: database invariant violated: privilege: workflow effect on journal 9a047fef-4fa8-447a-9383-a2493730eb69 without the executing person's verified decision in this transaction
+    attestation_review_test.go:300: covered: workflow effect with someone else's decision evidence: store: database invariant violated: privilege: workflow effect on journal 9a047fef-4fa8-447a-9383-a2493730eb69 without the executing person's verified decision in this transaction
+    attestation_review_test.go:319: covered: strict shape: iat as a string: store: database invariant violated: privilege: approval attestation: malformed field iat
+    attestation_review_test.go:319: covered: strict shape: mfa as a string: store: database invariant violated: privilege: approval attestation: malformed permissions or mfa
+    attestation_review_test.go:319: covered: strict shape: comma in permissions: store: database invariant violated: privilege: approval attestation: malformed permissions or mfa
+    attestation_review_test.go:319: covered: strict shape: extra field: store: database invariant violated: privilege: approval attestation: malformed (unexpected or missing fields)
+--- PASS: TestIndependentReview_HardeningControls (0.13s)
+=== RUN   TestIndependentReview_SupersedeNeedsApprovedSuccessorAtCommit
+    attestation_review_test.go:346: covered: v1 superseded on an APPROVE attestation for v2 that is never carried out: store: database invariant violated: privilege: superseding a WBS version requires an approved successor at commit
+--- PASS: TestIndependentReview_SupersedeNeedsApprovedSuccessorAtCommit (0.07s)
+=== RUN   TestJourneyB_CreditNote
+    credit_note_test.go:33: IPC b62ea334: cumulative 5310000 previous 0 this 5310000 retention 265500 recovery 0 VAT 796500 due 5841000
+    credit_note_test.go:39: refused: a credit note on a DRAFT invoice                               ledger: illegal status transition: document is DRAFT
+    credit_note_test.go:46: refused: a credit note without a reason                                 kernel: a reason of at least 5 characters is required
+    credit_note_test.go:48: refused: credits beyond the invoice gross                               store: database invariant violated: credits of invoice CINV-2026-000001 (5310000.010000 with this one) would exceed its gross 5310000.000000
+    credit_note_test.go:50: refused: an amount finer than the currency                              store: database invariant violated: credit note amount 100.001000 ETB has more than 2 decimal place(s) (SC-14)
+    credit_note_test.go:52: refused: issue by someone without ar.credit.create                      auth: forbidden: ar.credit.create
+    credit_note_test.go:66: refused: approval without fresh MFA                                     auth: recent multi-factor authentication required (within 10m0s)
+    credit_note_test.go:70: refused: self-approval of a credit note                                 auth: segregation of duties violation: the creator of a credit note cannot approve or reject it
+    credit_note_test.go:74: refused: approval by an AI principal                                    auth: forbidden: ar.credit.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    credit_note_test.go:79: refused: direct approval without attestation or journal                 store: database invariant violated: privilege: ar.credit.approve of customer_credit_note 9b1f7e9b-2cd5-411f-bbfc-401ecddb86f1 requires a verified approval attestation for u-x
+    credit_note_test.go:84: refused: direct edit of the credited amount                             store: database invariant violated: privilege: permission denied for table customer_credit_notes
+    credit_note_test.go:96: refused: a receipt allocated to the credited part                       store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 5841000.000000): it would be over-allocated, is credited, or is not payable
+    credit_note_test.go:105: refused: a credit beyond what is open on the invoice                    store: database invariant violated: credit note CRN-2026-000002 (11500.000000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 5611000.000000, credited 230000.000000)
+    credit_note_test.go:106: refused: cancellation by an AI principal                                auth: forbidden: ar.credit.cancel is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    credit_note_test.go:109: refused: approving a cancelled credit note                              ledger: illegal status transition: document is CANCELLED
+    credit_note_test.go:115: refused: reversing an AR_CREDIT journal                                 kernel: invalid input: AR_CREDIT journals are not reversed; correct the source document instead
+    credit_note_test.go:122: GL 1100 = 0
+    credit_note_test.go:122: GL 1150 = 265500
+    credit_note_test.go:122: GL 2300 = -766500
+    credit_note_test.go:122: GL 4000 = -5110000
+    credit_note_test.go:128: AR recon Accounts receivable                                                subledger              0 gl              0 diff 0 open 0
+    credit_note_test.go:128: AR recon Retention receivable                                               subledger         265500 gl         265500 diff 0 open 0
+    credit_note_test.go:128: AR recon Advances received                                                  subledger              0 gl              0 diff 0 open 0
+    credit_note_test.go:128: AR recon Unapplied money in (statement lines without a confirmed receipt)   subledger        5841000 gl        5841000 diff 0 open 1
+    credit_note_test.go:149: credit note 9b1f7e9b: journal 0aefddbe; position {ContractValue:23060000 MeasuredValue:5310000 CertifiedGross:5310000 RetentionHeld:265500 AdvanceAmount:1000000 AdvanceReceived:0 AdvanceRecovered:0 InvoicedTotal:5841000 CreditedTotal:230000 Received:5611000 ReceivableOpen:0}; revenue 5110000
+--- PASS: TestJourneyB_CreditNote (0.38s)
+=== RUN   TestJourneyB_CreditNoteRacesReceipt
+    credit_note_test.go:175: refused: concurrent credit and full receipt: one succeeded, the other store: database invariant violated: credit note CRN-2026-000001 (230000.000000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 5841000.000000, credited 0)
+--- PASS: TestJourneyB_CreditNoteRacesReceipt (0.27s)
+=== RUN   TestSC08_PostWaitsForInFlightCloseThenRefuses
+    gate_a_concurrency_test.go:86: close err=ERROR: period.close of fiscal_period 2ba281ca-d9dd-4312-83fc-f4042d041aa3 requires a verified approval attestation for u-poster (SQLSTATE 42501) | post err=<nil> | period=OPEN journal=POSTED
+--- PASS: TestSC08_PostWaitsForInFlightCloseThenRefuses (0.48s)
+=== RUN   TestSC08_PostBlockedByUncommittedCloseIsRefused
+    gate_a_concurrency_test.go:136: post after concurrent close -> store: database invariant violated: fiscal period is CLOSED — posting refused
+--- PASS: TestSC08_PostBlockedByUncommittedCloseIsRefused (0.47s)
+=== RUN   TestSC08_CloseWaitsForInFlightPostAndIncludesIt
+    gate_a_concurrency_test.go:186: closing TB after waiting: {Action:CLOSE Actor:u-poster JournalCount:1 TBDebits:115000.000000 TBCredits:115000.000000 TBHash:676b8ff4e360eaec40b84d274773ce2712a7eda0e21212807760b433d35aa26e RecordedAt:2026-10-22 10:06:22.146295 +0300 EAT}
+--- PASS: TestSC08_CloseWaitsForInFlightPostAndIncludesIt (0.50s)
+=== RUN   TestSC08_LineInsertWaitsForInFlightFXWithdrawal
+    gate_a_concurrency_test.go:220: create after concurrent withdrawal -> store: database invariant violated: fx snapshot 0d030339-e662-4501-b14d-9a87fdf9c1fd is DISPUTED, not APPROVED
+--- PASS: TestSC08_LineInsertWaitsForInFlightFXWithdrawal (0.49s)
+=== RUN   TestSC08_FXWithdrawalWaitsForInFlightLineAndRefuses
+    gate_a_concurrency_test.go:253: withdraw after concurrent line insert -> store: database invariant violated: snapshot 8f5bf682-4018-40c2-b589-0b5decab81ef is referenced by journal lines and cannot be withdrawn
+--- PASS: TestSC08_FXWithdrawalWaitsForInFlightLineAndRefuses (0.52s)
+=== RUN   TestSC08_RawFXWithdrawalWaitsForInFlightLine
+--- PASS: TestSC08_RawFXWithdrawalWaitsForInFlightLine (0.54s)
+=== RUN   TestSC10_CostCodesAreValidatedAgainstApprovedWBS
+--- PASS: TestSC10_CostCodesAreValidatedAgainstApprovedWBS (0.14s)
+=== RUN   TestSC02_WritePathEnforcesFXPolicy
+    gate_a_fx_test.go:60: future-effective (10-20 > event 10-15)        -> ledger: line rejected: line 1: snapshot abccef4e-7823-457e-aff6-9c38075863ec is not the rate selected by FX policy v1 for this event (expected d39ed8dd-a402-4958-8483-8197f1f973c6)
+    gate_a_fx_test.go:60: stale (75 days > policy 30)                   -> ledger: line rejected: line 1: snapshot 6e540141-5d2c-4180-aa44-31646afbe7b8 is not the rate selected by FX policy v1 for this event (expected d39ed8dd-a402-4958-8483-8197f1f973c6)
+    gate_a_fx_test.go:60: approved but older than the selected rate     -> ledger: line rejected: line 1: snapshot 2cb1c9f6-b982-47e2-b3c7-3853d39686cf is not the rate selected by FX policy v1 for this event (expected d39ed8dd-a402-4958-8483-8197f1f973c6)
+    gate_a_fx_test.go:60: wrong rate type (COMMERCIAL vs OFFICIAL)      -> ledger: line rejected: line 1: snapshot 619e4e75-56ac-4aa8-bc3e-8ceba5806412 is not the rate selected by FX policy v1 for this event (expected d39ed8dd-a402-4958-8483-8197f1f973c6)
+    gate_a_fx_test.go:60: trusted source not admitted by the policy     -> ledger: line rejected: line 1: snapshot 5c5de564-8388-40a9-b073-3475bbff3c61 is not the rate selected by FX policy v1 for this event (expected d39ed8dd-a402-4958-8483-8197f1f973c6)
+    gate_a_fx_test.go:60: selected rate but amount does not reconcile   -> ledger: line rejected: line 1 amount 5726.00 ETB does not reconcile to 100.00 USD x 57.25 = 5725.00 ETB
+--- PASS: TestSC02_WritePathEnforcesFXPolicy (0.15s)
+=== RUN   TestSC02_DatabaseRejectsIneligibleFXAndRechecksAtPost
+    gate_a_fx_test.go:116: raw applied rate differs         -> store: database invariant violated: applied_rate 58.000000000000 differs from the policy-eligible snapshot rate 57.250000000000
+    gate_a_fx_test.go:116: raw amount does not reconcile    -> store: database invariant violated: line 1 amount 6000.000000 does not reconcile to 100.000000 x 57.250000000000 = 5725.000000000000000000
+    gate_a_fx_test.go:116: raw future-effective             -> store: database invariant violated: snapshot is effective from 2026-10-20 03:00:00+03, after the business event 2026-10-15 12:00:00+03
+    gate_a_fx_test.go:116: raw stale                        -> store: database invariant violated: snapshot effective 2026-08-01 03:00:00+03 is stale for event 2026-10-15 12:00:00+03 (policy max 720:00:00)
+    gate_a_fx_test.go:116: raw pending                      -> store: database invariant violated: fx snapshot 8f90a7d7-53e9-4a57-9081-a7e364a30e34 is PENDING, not APPROVED
+    gate_a_fx_test.go:116: raw inverse when policy forbids  -> store: database invariant violated: policy does not allow inverse rates
+    gate_a_fx_test.go:116: raw no policy binding            -> store: database invariant violated: foreign-currency line 1 has no FX policy binding (SC-02)
+    gate_a_fx_test.go:116: raw wrong policy version         -> store: database invariant violated: fx policy 83d9b2c3-36d4-4374-a7b3-d5f13c5c6ce1/v7 is not an approved policy of entity 691f8cc1-3c8a-4f2e-b5b9-652e09628cd5
+--- PASS: TestSC02_DatabaseRejectsIneligibleFXAndRechecksAtPost (0.14s)
+=== RUN   TestSC03_FXMakerChecker
+--- PASS: TestSC03_FXMakerChecker (0.11s)
+=== RUN   TestSC07_FXCommandsEmitAtomicOutboxEvents
+--- PASS: TestSC07_FXCommandsEmitAtomicOutboxEvents (0.07s)
+=== RUN   TestSC05_ScopedPrincipalsCannotReachUnassignedJournals
+--- PASS: TestSC05_ScopedPrincipalsCannotReachUnassignedJournals (0.07s)
+=== RUN   TestSC01_PostedLineCannotBeReassignedOrMutated
+    gate_a_ledger_test.go:87: change POSTED line project                              -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line tenant                               -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line legal entity                         -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: delete POSTED line                                      -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: move DRAFT line into POSTED journal                     -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line account                              -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line memo                                 -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: insert extra line into POSTED journal                   -> store: database invariant violated: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03)
+    gate_a_ledger_test.go:87: move line between two DRAFT journals                    -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: renumber DRAFT line (identity immutable even in draft)  -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: move POSTED line 3 into DRAFT journal (audit scenario)  -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: move APPROVED line into DRAFT journal                   -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: renumber POSTED line                                    -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:87: change POSTED line amount                               -> store: database invariant violated: privilege: permission denied for table journal_lines
+    gate_a_ledger_test.go:100: [owner] change POSTED line amount                       -> ERROR: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] change POSTED line project                      -> ERROR: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] change POSTED line legal entity                 -> ERROR: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] delete POSTED line                              -> ERROR: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] move DRAFT line into POSTED journal             -> ERROR: journal line identity (journal, tenant, entity, line_no) is immutable (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] change POSTED line account                      -> ERROR: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] change POSTED line memo                         -> ERROR: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] insert extra line into POSTED journal           -> ERROR: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] move line between two DRAFT journals            -> ERROR: journal line identity (journal, tenant, entity, line_no) is immutable (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] renumber DRAFT line (identity immutable even in draft) -> ERROR: journal line identity (journal, tenant, entity, line_no) is immutable (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] move POSTED line 3 into DRAFT journal (audit scenario) -> ERROR: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] move APPROVED line into DRAFT journal           -> ERROR: lines of APPROVED journal 58e83800-0c90-46b3-b068-638235bbea3b are immutable (LAW 03) (SQLSTATE 23000)
+    gate_a_ledger_test.go:100: [owner] renumber POSTED line                            -> ERROR: lines of POSTED journal ffbd3846-0fdb-4607-bc2a-c81e8e43468f are immutable (LAW 03) (SQLSTATE 23000)
+--- PASS: TestSC01_PostedLineCannotBeReassignedOrMutated (0.12s)
+=== RUN   TestSC01_IntegrityScanDetectsPriorExploitation
+--- PASS: TestSC01_IntegrityScanDetectsPriorExploitation (0.08s)
+=== RUN   TestSC14_DatabaseEnforcesCurrencyPrecision
+    gate_a_ledger_test.go:226: ETB 100.001  ok=false -> store: database invariant violated: amount 100.001000 ETB has more than 2 decimal place(s) (SC-14)
+    gate_a_ledger_test.go:226: ETB 100.0049 ok=false -> store: database invariant violated: amount 100.004900 ETB has more than 2 decimal place(s) (SC-14)
+    gate_a_ledger_test.go:226: ETB 100.01   ok=true -> <nil>
+    gate_a_ledger_test.go:226: UGX 100.5    ok=false -> store: database invariant violated: amount 100.500000 UGX has more than 0 decimal place(s) (SC-14)
+    gate_a_ledger_test.go:226: UGX 100      ok=true -> <nil>
+    gate_a_ledger_test.go:226: TND 1.0001   ok=false -> store: database invariant violated: amount 1.000100 TND has more than 3 decimal place(s) (SC-14)
+    gate_a_ledger_test.go:226: TND 1.001    ok=true -> <nil>
+--- PASS: TestSC14_DatabaseEnforcesCurrencyPrecision (0.09s)
+=== RUN   TestSC04_CompromisedTenantCredentialCannotReachOtherTenant
+--- PASS: TestSC04_CompromisedTenantCredentialCannotReachOtherTenant (0.08s)
+=== RUN   TestSC04_SharedLoginRetiredAndMisroutingFailsClosed
+--- PASS: TestSC04_SharedLoginRetiredAndMisroutingFailsClosed (0.09s)
+=== RUN   TestSC04_DedicatedDatabaseTier
+--- PASS: TestSC04_DedicatedDatabaseTier (0.96s)
+=== RUN   TestGovernedAI_DraftOnly
+    governed_ai_test.go:33: held: AI principal drafted customer invoice 7a10a1ba
+    governed_ai_test.go:46: refused: customer invoice approval by kind ai                           auth: forbidden: ar.invoice.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:49: refused: customer approval by kind ai                                   auth: forbidden: customer.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:52: refused: contract approval by kind ai                                   auth: forbidden: contract.decide is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:46: refused: customer invoice approval by kind service                      auth: forbidden: ar.invoice.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:49: refused: customer approval by kind service                              auth: forbidden: customer.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:52: refused: contract approval by kind service                              auth: forbidden: contract.decide is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:46: refused: customer invoice approval by kind                              auth: forbidden: ar.invoice.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:49: refused: customer approval by kind                                      auth: forbidden: customer.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:52: refused: contract approval by kind                                      auth: forbidden: contract.decide is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:73: refused: SQL: signed journal.approve attestation without principal.human store: database invariant violated: privilege: journal.approve is a decision reserved to principals the identity provider asserts are human (actor u-approver)
+--- PASS: TestGovernedAI_DraftOnly (0.31s)
+=== RUN   TestIA04001_PrivilegedRevealIsPermissionedFreshAndAudited
+--- PASS: TestIA04001_PrivilegedRevealIsPermissionedFreshAndAudited (0.34s)
+=== RUN   TestIA04001_EntityLevelDocumentsNeedTenantWideScope
+    ia04001_test.go:84: refused site engineer               payment_instruction   not found
+    ia04001_test.go:84: refused site engineer               p2p_policy            not found
+    ia04001_test.go:84: refused site engineer               company_bank_account  not found
+    ia04001_test.go:84: refused storekeeper                 payment_instruction   not found
+    ia04001_test.go:84: refused storekeeper                 p2p_policy            not found
+    ia04001_test.go:84: refused storekeeper                 company_bank_account  not found
+    ia04001_test.go:84: refused other-project manager       payment_instruction   not found
+    ia04001_test.go:84: refused other-project manager       p2p_policy            not found
+    ia04001_test.go:84: refused other-project manager       company_bank_account  not found
+    ia04001_test.go:84: refused project-restricted analyst  payment_instruction   not found
+    ia04001_test.go:84: refused project-restricted analyst  p2p_policy            not found
+    ia04001_test.go:84: refused project-restricted analyst  company_bank_account  not found
+    ia04001_test.go:84: refused project manager             payment_instruction   not found
+    ia04001_test.go:84: refused project manager             p2p_policy            not found
+    ia04001_test.go:84: refused project manager             company_bank_account  not found
+--- PASS: TestIA04001_EntityLevelDocumentsNeedTenantWideScope (0.30s)
+=== RUN   TestIA04001_BankAccountNumbersMaskedEverywhere
+--- PASS: TestIA04001_BankAccountNumbersMaskedEverywhere (0.30s)
+=== RUN   TestJourneyA_SegregationOfDutiesAndBudget
+    journey_a_controls_test.go:44: refused BOQ approved by its author:                                  auth: segregation of duties violation: the creator of a BOQ cannot approve or reject it
+    journey_a_controls_test.go:46: refused raw self-approval of the BOQ with a genuine attestation:     store: database invariant violated: new row for relation "boq_versions" violates check constraint "boq_maker_checker"
+    journey_a_controls_test.go:60: refused raw approval of an over-budget PR:                           store: database invariant violated: requisition exceeds the approved BOQ budget: cost code 01-MAT: needs 17200000.000000, available 12100000.000000 (budget 12100000.000000, committed 0, reserved 0, other actual 0)
+    journey_a_controls_test.go:68: refused PR approved by its requester:                                auth: segregation of duties violation: the creator of a requisition cannot approve or reject it
+--- PASS: TestJourneyA_SegregationOfDutiesAndBudget (0.19s)
+=== RUN   TestJourneyA_ProcurementRules
+    journey_a_controls_test.go:88: refused RFQ issued to 1 supplier without justification:              store: database invariant violated: an RFQ is issued to at least 3 suppliers (invited 1) unless single-sourcing is justified
+    journey_a_controls_test.go:99: refused quote evaluated by the person who recorded it:               auth: segregation of duties violation: the creator of a quote cannot approve or reject it
+    journey_a_controls_test.go:103: refused award to a dearer compliant quote without a reason:          store: database invariant violated: awarding other than the lowest compliant quote requires a documented reason (20+ characters)
+    journey_a_controls_test.go:113: refused raw PO with a line at a price other than the award:          store: database invariant violated: PO line 1 must carry the awarded price and the requisitioned quantity, cost code, description and unit
+    journey_a_controls_test.go:128: refused PO approved by its author:                                   auth: segregation of duties violation: the creator of a purchase order cannot approve or reject it
+    journey_a_controls_test.go:136: refused raw re-pointing of an approved PO to another supplier:       store: database invariant violated: privilege: purchase order column approved_by cannot be changed in this transition
+--- PASS: TestJourneyA_ProcurementRules (0.26s)
+=== RUN   TestJourneyA_ReceiptAndMatchingControls
+    journey_a_controls_test.go:155: refused receipt of 21.5 t against 20 t ordered (5% tolerance):       store: database invariant violated: PO line 1: cumulative receipts 21.5000 exceed ordered 20.0000 beyond the over-receipt tolerance
+    journey_a_controls_test.go:160: refused receipt confirmed by the storekeeper who recorded it:        auth: segregation of duties violation: the creator of a goods receipt cannot approve or reject it
+    journey_a_controls_test.go:184: refused receipt confirmed with a journal that undervalues it:        store: database invariant violated: journal 2bb838ba-1bbb-4fdc-85fd-9a6a2bce1f76 lines do not equal the accounting of P2P_GRN bfbec569-e0da-4f9d-9c72-da8431823b57 (expected 13213992-17ac-41f2-81d6-74587708cd4a|DEBIT|845000.000000|1c8f9caf-44ad-40ad-a9e2-f787dcea0ebf|4d5ac185-f2e9-4c13-97bf-2c21f50db431;7e6a467c-0f18-4b2f-bee5-016982b67c7a|CREDIT|845000.000000|1c8f9caf-44ad-40ad-a9e2-f787dcea0ebf|-, got 13213992-17ac-41f2-81d6-74587708cd4a|DEBIT|1.000000|1c8f9caf-44ad-40ad-a9e2-f787dcea0ebf|4d5ac185-f2e9-4c13-97bf-2c21f50db431;7e6a467c-0f18-4b2f-bee5-016982b67c7a|CREDIT|1.000000|1c8f9caf-44ad-40ad-a9e2-f787dcea0ebf|-)
+    journey_a_controls_test.go:193: refused invoice for 12 t when 10 t were received:                    store: database invariant violated: PO line 1: billed quantity 12.0000 exceeds confirmed receipts 10.0000 (3-way match)
+    journey_a_controls_test.go:199: refused invoice whose VAT is not subtotal x policy rate:             store: database invariant violated: invoice tax 120000.000000 does not equal subtotal x policy VAT rate (126750.00)
+    journey_a_controls_test.go:208: refused AP supervisor approving a price exception:                   auth: forbidden: the invoice is a match exception; approval needs ap.approve_exception
+    journey_a_controls_test.go:212: refused exception approval without MFA:                              auth: recent multi-factor authentication required (within 10m0s)
+    journey_a_controls_test.go:215: refused exception approval with a 5-character reason:                kernel: invalid input: approving a match exception needs a reason of 20+ characters
+    journey_a_controls_test.go:217: refused raw approval of an exception with a MATCHED attestation:     store: database invariant violated: privilege: the attestation authorises a different decision (MATCHED), not EXCEPTION
+    journey_a_controls_test.go:220: refused raw rewrite of match_status:                                 store: database invariant violated: privilege: permission denied for table supplier_invoices
+    journey_a_controls_test.go:226: refused duplicate invoice 'inv 11' vs 'INV-11':                      store: database invariant violated: supplier_invoices_no_duplicates
+--- PASS: TestJourneyA_ReceiptAndMatchingControls (0.43s)
+=== RUN   TestJourneyA_PaymentControls
+    journey_a_controls_test.go:247: refused second payment taking the invoice beyond its total:          store: database invariant violated: invoice S-1 cannot take this allocation (status APPROVED, total 388700.000000, would be paid 400000.000000)
+    journey_a_controls_test.go:253: refused payment approved by its preparer:                            auth: segregation of duties violation: the creator of a payment cannot approve or reject it
+    journey_a_controls_test.go:257: refused payment approval without MFA:                                auth: recent multi-factor authentication required (within 10m0s)
+    journey_a_controls_test.go:260: refused payment approval by an AI principal:                         store: database invariant violated: privilege: payments are authorised only by human principals (actor ai:payments-copilot)
+    journey_a_controls_test.go:267: refused payment approval by a principal of kind "":                  auth: forbidden: payment.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    journey_a_controls_test.go:267: refused payment approval by a principal of kind "service":           auth: forbidden: payment.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    journey_a_controls_test.go:267: refused payment approval by a principal of kind "ai":                auth: forbidden: payment.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    journey_a_controls_test.go:275: refused approval after the payee bank details changed:               store: database invariant violated: the supplier bank details are no longer the approved details this payment was prepared against
+    journey_a_controls_test.go:281: refused bank details approved by the person who entered them:        auth: segregation of duties violation: the creator of a supplier bank account cannot approve or reject it
+    journey_a_controls_test.go:297: refused payment released by its approver:                            store: database invariant violated: new row for relation "payment_instructions" violates check constraint "payment_release_separation"
+    journey_a_controls_test.go:300: refused payment released by its preparer:                            store: database invariant violated: the person who prepared a payment cannot release it
+    journey_a_controls_test.go:304: refused raw settlement without a bank statement:                     store: database invariant violated: privilege: a payment is settled only by reconciling it with a bank statement line
+    journey_a_controls_test.go:306: refused raw bank statement import:                                   store: database invariant violated: privilege: bank.import of bank_statement_source aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa requires a verified approval attestation for u-treasury
+    journey_a_controls_test.go:310: refused statement that does not balance:                             store: database invariant violated: statement S-1 does not balance: opening 1000.000000 + lines -2.000000 <> closing 999.000000
+    journey_a_controls_test.go:313: refused statement import by treasury:                                auth: forbidden: bank.import
+    journey_a_controls_test.go:333: refused re-import of the same statement file:                        store: database invariant violated: statement opening balance 1000000.000000 does not continue the previous closing balance 611300.000000
+--- PASS: TestJourneyA_PaymentControls (0.52s)
+=== RUN   TestJourneyA_SubledgerJournalIntegrity
+    journey_a_controls_test.go:346: refused cancel a goods-receipt journal:                              store: database invariant violated: subledger journals are not cancelled; correct the source document
+    journey_a_controls_test.go:348: refused raw journal with a reserved source type and no document:     store: database invariant violated: journal 7e99a027-d41f-4847-b8a8-f573a485551e uses reserved source type P2P_INVOICE but no P2P_INVOICE document references it
+--- PASS: TestJourneyA_SubledgerJournalIntegrity (0.30s)
+=== RUN   TestJourneyA_OverBudgetHighValuePOEscalation
+    journey_a_controls_test.go:384: refused override without MFA:                                        auth: recent multi-factor authentication required (within 10m0s)
+    journey_a_controls_test.go:386: refused raw approval of an over-budget PO with a plain APPROVED attestation: store: database invariant violated: privilege: the attestation authorises a different decision (APPROVED), not APPROVED_OVER_BUDGET
+--- PASS: TestJourneyA_OverBudgetHighValuePOEscalation (0.24s)
+=== RUN   TestJourneyA_RoundingMatchesGo
+--- PASS: TestJourneyA_RoundingMatchesGo (0.64s)
+=== RUN   TestJourneyA_BOQToBankReconciliationToGL
+    journey_a_test.go:294: reconciliation: matched 2, unmatched [{LineNo:2 Amount:300000 Reason:money in: receipts are reconciled in Journey B} {LineNo:4 Amount:-525 Reason:no released payment with this amount and reference}]
+    journey_a_test.go:301: recon GRNI (goods received not invoiced)            subledger               0 gl               0 diff 0 unposted/unmatched 0
+    journey_a_test.go:301: recon Accounts payable                              subledger               0 gl               0 diff 0 unposted/unmatched 0
+    journey_a_test.go:301: recon Payments in transit: CBE Operating            subledger               0 gl               0 diff 0 unposted/unmatched 0
+    journey_a_test.go:301: recon Bank (reconciled movements): CBE Operating    subledger        -2486875 gl        -2486875 diff 0 unposted/unmatched 2
+    journey_a_test.go:320: cost 01-MAT: budget 12100000 committed 2160000 received 2160000 invoiced 2162500 actual 2162500 other 2500 available 9937500
+    journey_a_test.go:347: settled payments 2, P2P outbox events 54, audit entries (receipt..bank) 25
+--- PASS: TestJourneyA_BOQToBankReconciliationToGL (0.79s)
+=== RUN   TestJourneyB_ContractToCashToGL
+    journey_b_test.go:216: IPC a225d517: cumulative 5310000 previous 0 this 5310000 retention 265500 recovery 1000000 VAT 646500 due 4691000
+    journey_b_test.go:223: IPC 5688693f: cumulative 8640000 previous 5310000 this 3330000 retention 166500 recovery 0 VAT 499500 due 3663000
+    journey_b_test.go:245: contract position: {ContractValue:23060000 MeasuredValue:8640000 CertifiedGross:8640000 RetentionHeld:432000 AdvanceAmount:1000000 AdvanceReceived:1000000 AdvanceRecovered:1000000 InvoicedTotal:8354000 CreditedTotal:0 Received:6691000 ReceivableOpen:1663000}
+    journey_b_test.go:252: GL 2300 = -1146000
+    journey_b_test.go:252: GL 4000 = -8640000
+    journey_b_test.go:252: GL 1000 = 7691000
+    journey_b_test.go:252: GL 1100 = 1663000
+    journey_b_test.go:252: GL 1150 = 432000
+    journey_b_test.go:252: GL 2200 = 0
+    journey_b_test.go:263: AR recon Accounts receivable                                                subledger        1663000 gl        1663000 diff 0 open 0
+    journey_b_test.go:263: AR recon Retention receivable                                               subledger         432000 gl         432000 diff 0 open 0
+    journey_b_test.go:263: AR recon Advances received                                                  subledger              0 gl              0 diff 0 open 0
+    journey_b_test.go:263: AR recon Unapplied money in (statement lines without a confirmed receipt)   subledger              0 gl              0 diff 0 open 0
+    journey_b_test.go:279: P2P recon Bank (reconciled movements): CBE Operating: subledger 7691000 gl 7691000 diff 0 unmatched 0
+    journey_b_test.go:291: project profitability: revenue 8640000 cost 0 margin 8640000
+--- PASS: TestJourneyB_ContractToCashToGL (0.48s)
+=== RUN   TestJourneyB_Controls
+    journey_b_test.go:320: refused: contract with an advance above the contract value              store: database invariant violated: the advance (23060001.000000) exceeds the contract value (23060000.000000)
+    journey_b_test.go:327: refused: contract approval with stale MFA                               auth: recent multi-factor authentication required (within 10m0s)
+    journey_b_test.go:329: refused: contract approved by its own author                            auth: segregation of duties violation: the creator of a contract cannot approve or reject it
+    journey_b_test.go:337: refused: measurement above the contract quantity                        store: database invariant violated: contract line 1: cumulative measured 10000.0010 exceeds the contract quantity 10000.0000 (a variation is required)
+    journey_b_test.go:339: refused: measurement of a nonexistent contract line                     store: database invariant violated: measurement line refers to contract line 9 which does not exist
+    journey_b_test.go:342: refused: second measurement for the same period                         store: database invariant violated: measurements_one_per_period
+    journey_b_test.go:347: refused: measurement verified by its own author                         auth: segregation of duties violation: the creator of a measurement cannot approve or reject it
+    journey_b_test.go:354: refused: measurement by a QS of another project                         store: not found
+    journey_b_test.go:362: refused: IPC certified by its preparer                                  auth: segregation of duties violation: the creator of a IPC cannot approve or reject it
+    journey_b_test.go:363: refused: IPC certification without fresh MFA                            auth: recent multi-factor authentication required (within 10m0s)
+    journey_b_test.go:364: refused: IPC certification without the certificate hash                 kernel: invalid input: certification needs the client's certificate reference and the SHA-256 of the signed certificate
+    journey_b_test.go:366: refused: certification of a stale IPC                                   store: database invariant violated: IPC IPC-2026-000001 is stale: measurements, certificates or advance receipts changed since it was prepared; cancel and prepare it again
+    journey_b_test.go:369: IPC 01ae7b69: cumulative 5345000 previous 0 this 5345000 retention 267250 recovery 0 VAT 801750 due 5879500
+    journey_b_test.go:377: refused: AI principal approves a customer invoice                       auth: forbidden: ar.invoice.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    journey_b_test.go:379: refused: invoice approved without ar.invoice.approve                    auth: forbidden: ar.invoice.approve
+    journey_b_test.go:388: refused: editing the lines of a generated AR journal                    store: database invariant violated: privilege: permission denied for table journal_lines
+    journey_b_test.go:397: refused: receipt confirmed by the person who imported the statement     store: database invariant violated: a receipt is allocated and confirmed by people independent of the statement import
+    journey_b_test.go:406: refused: advance receipt above the agreed advance                       store: database invariant violated: contract CTR-2026-000001 cannot take this advance (agreed advance 1000000.000000)
+    journey_b_test.go:414: refused: allocation that over-allocates an invoice already part paid    store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 5879500.000000): it would be over-allocated, is credited, or is not payable
+    journey_b_test.go:419: refused: allocations short of the amount received                       kernel: invalid input: allocations (1000000) must equal the amount received (1500000)
+    journey_b_test.go:432: refused: confirming a receipt whose allocations were altered directly   must equal the amount received (refused by the journal builder: ledger: journal does not balance: debits 1500000.00 ETB credits 1500001.00 ETB)
+    journey_b_test.go:441: refused: closing a period with an approved journal awaiting posting     store: database invariant violated: period FY2026-Q4 has 1 approved journal(s) awaiting posting; post or cancel them before closing
+    journey_b_test.go:446: refused: a second invoice for the same IPC                              store: database invariant violated: customer invoices are issued DRAFT from a CERTIFIED IPC
+    journey_b_test.go:462: refused: approving and posting an AR journal into a closed period       fiscal period is CLOSED — posting refused
+--- PASS: TestJourneyB_Controls (0.59s)
+=== RUN   TestJourneyB_CertificateHashConstant
+--- PASS: TestJourneyB_CertificateHashConstant (0.00s)
+=== RUN   TestJourneyB_CancelReceipt
+    journey_b_test.go:491: note: over-allocation is refused only at confirmation; recorded draft cf7f3e69
+    journey_b_test.go:496: refused: cancelling without a reason                                    kernel: a reason of at least 5 characters is required
+    journey_b_test.go:499: refused: cancellation by an AI principal                                auth: forbidden: ar.receipt.cancel is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    journey_b_test.go:502: refused: confirming a cancelled receipt                                 ledger: illegal status transition: document is CANCELLED
+--- PASS: TestJourneyB_CancelReceipt (0.34s)
+=== RUN   TestJourneyC_StockValuationToGL
+    journey_c_test.go:152: issue 4c6a38f3 valued 113200
+    journey_c_test.go:152: issue e3f27a81 valued 1272000
+    journey_c_test.go:179: closing balance 05289d6b: 6.5 at 559000
+    journey_c_test.go:179: closing balance f8018731: 335 at 316016.67
+    journey_c_test.go:195: stock recon Inventory: 1200 Inventory                            subledger    922516.67 gl    922516.67 diff 0 open 0
+    journey_c_test.go:195: stock recon Received, not yet put away: 1200                     subledger        47500 gl        47500 diff 0 open 1
+    journey_c_test.go:195: stock recon Stock balances vs documents: 1200                    subledger    875016.67 gl    875016.67 diff 0 open 0
+    journey_c_test.go:195: stock recon Cost layers vs stock balances: 1200                  subledger    875016.67 gl    875016.67 diff 0 open 0
+--- PASS: TestJourneyC_StockValuationToGL (0.68s)
+=== RUN   TestJourneyC_Controls
+    journey_c_test.go:236: refused: stock item on a control account                                store: database invariant violated: the inventory account must be an active ASSET account that is not a bank, payables or receivables control account
+    journey_c_test.go:241: refused: stock item approved by its creator                             auth: segregation of duties violation: the creator of a stock item cannot approve or reject it
+    journey_c_test.go:245: refused: put-away beyond the goods receipt line                         store: database invariant violated: put-away 12.0001 exceeds what the goods receipt line still holds (0 of 12.0000 already put away)
+    journey_c_test.go:249: refused: put-away of a receipt posted to an expense account             store: database invariant violated: the goods receipt line must have been posted to the item's inventory account, in the item's unit, for an ACTIVE item of the entity
+    journey_c_test.go:258: refused: direct change of a stock balance                               store: database invariant violated: privilege: stock valuation state (stock_balances) is written only by stock documents
+    journey_c_test.go:263: refused: calling the valuation engine directly                          store: database invariant violated: privilege: stock is received only by a stock document
+    journey_c_test.go:269: refused: issue beyond the stock on hand                                 store: database invariant violated: insufficient stock of STEEL-G60 in the warehouse: 12.0000 on hand, 12.5000 requested
+    journey_c_test.go:274: refused: issue approved by its preparer                                 auth: segregation of duties violation: the creator of a stock issue cannot approve or reject it
+    journey_c_test.go:278: refused: issue approved by an AI principal                              auth: forbidden: stock.issue.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    journey_c_test.go:287: refused: editing the lines of a stock journal                           store: database invariant violated: privilege: permission denied for table journal_lines
+    journey_c_test.go:290: refused: reversing a stock journal                                      kernel: invalid input: STK_ISSUE journals are not reversed; correct the source document instead
+    journey_c_test.go:301: refused: approving a stale count                                        store: database invariant violated: count SCT-2026-000001 is stale: the book quantity changed from 11.0000 to 10.0000 since it was recorded; count again
+    journey_c_test.go:304: refused: a count that agrees with the books                             store: database invariant violated: the count agrees with the books: nothing to adjust
+    journey_c_test.go:313: refused: a surplus with no cost basis                                   store: database invariant violated: no cost basis for a surplus of SAND-01: receive it through purchasing
+    journey_c_test.go:315: refused: count approved by the storekeeper                              auth: forbidden: stock.adjust.approve
+    journey_c_test.go:321: refused: issue from another project's store                             store: not found
+    journey_c_test.go:344: refused: concurrent over-issue: one approved, the other store: database invariant violated: insufficient stock of STEEL-G60 in the warehouse: 4.0000 on hand, 6.0000 requested
+--- PASS: TestJourneyC_Controls (0.61s)
+=== RUN   TestJournalBoundToLegalEntity
+--- PASS: TestJournalBoundToLegalEntity (0.17s)
+=== RUN   TestApprovedContentIsFrozen
+--- PASS: TestApprovedContentIsFrozen (0.08s)
+=== RUN   TestReversedLinkCannotBeForged
+--- PASS: TestReversedLinkCannotBeForged (0.13s)
+=== RUN   TestProjectRestrictionCoversLines
+--- PASS: TestProjectRestrictionCoversLines (0.03s)
+=== RUN   TestConcurrentIdenticalCreatesAreIdempotent
+--- PASS: TestConcurrentIdenticalCreatesAreIdempotent (0.10s)
+=== RUN   TestAuditChainLinearUnderConcurrency
+--- PASS: TestAuditChainLinearUnderConcurrency (0.33s)
+=== RUN   TestOutboxAndPeriodsCannotBeTamperedByAppRole
+--- PASS: TestOutboxAndPeriodsCannotBeTamperedByAppRole (0.09s)
+=== RUN   TestHappyPathPostsAndBalancesAccounts
+--- PASS: TestHappyPathPostsAndBalancesAccounts (0.07s)
+=== RUN   TestUnbalancedRejectedInGoAndInDatabase
+--- PASS: TestUnbalancedRejectedInGoAndInDatabase (0.06s)
+=== RUN   TestSegregationOfDuties
+--- PASS: TestSegregationOfDuties (0.08s)
+=== RUN   TestTenantIsolation
+--- PASS: TestTenantIsolation (0.11s)
+=== RUN   TestPostedJournalIsImmutable
+--- PASS: TestPostedJournalIsImmutable (0.08s)
+=== RUN   TestIdempotentReplayAndConflict
+--- PASS: TestIdempotentReplayAndConflict (0.05s)
+=== RUN   TestReversalFlow
+--- PASS: TestReversalFlow (0.13s)
+=== RUN   TestClosedPeriodBlocksPosting
+--- PASS: TestClosedPeriodBlocksPosting (0.14s)
+=== RUN   TestProjectAttributeRestriction
+--- PASS: TestProjectAttributeRestriction (0.09s)
+=== RUN   TestOptimisticConcurrency
+--- PASS: TestOptimisticConcurrency (0.05s)
+=== RUN   TestExampleWorkflowDefinitionsAreValid
+--- PASS: TestExampleWorkflowDefinitionsAreValid (0.00s)
+=== RUN   TestPrivileges_CatalogInvariants
+--- PASS: TestPrivileges_CatalogInvariants (0.04s)
+=== RUN   TestPrivileges_NewFunctionsAreClosedByDefault
+--- PASS: TestPrivileges_NewFunctionsAreClosedByDefault (0.05s)
+=== RUN   TestPrivileges_NonTenantRolesAreRefused
+--- PASS: TestPrivileges_NonTenantRolesAreRefused (0.07s)
+=== RUN   TestPrivileges_TenantLoginCannotRewriteHistory
+    privilege_test.go:158: denied disable the attestation guard:                          store: database invariant violated: privilege: must be owner of table journals
+    privilege_test.go:158: denied rewrite approval evidence:                              store: database invariant violated: privilege: permission denied for table approval_attestations
+    privilege_test.go:158: denied edit a journal line amount:                             store: database invariant violated: privilege: permission denied for table journal_lines
+    privilege_test.go:158: denied rewrite the audit log:                                  store: database invariant violated: privilege: permission denied for table audit_log
+    privilege_test.go:158: denied change a journal's business date:                       store: database invariant violated: privilege: permission denied for table journals
+    privilege_test.go:158: denied delete a journal:                                       store: database invariant violated: privilege: permission denied for table journals
+    privilege_test.go:158: denied truncate journal lines:                                 store: database invariant violated: privilege: permission denied for table journal_lines
+    privilege_test.go:158: denied delete approval evidence:                               store: database invariant violated: privilege: permission denied for table approval_attestations
+    privilege_test.go:158: denied drop the audit chain:                                   store: database invariant violated: privilege: permission denied for table audit_log
+--- PASS: TestPrivileges_TenantLoginCannotRewriteHistory (0.04s)
+=== RUN   TestPrivileges_MonitorSeesAggregatesOnly
+--- PASS: TestPrivileges_MonitorSeesAggregatesOnly (0.06s)
+=== RUN   TestR3_01_SubledgerJournalLinesAppendedAfterBinding
+    review3_regression_test.go:89: held: raw append of a balanced pair to a CONFIRMED receipt's DRAFT journal   store: database invariant violated: privilege: lines of subledger journal a74b313d-7ced-4905-98e9-2d8c5ca776cf are written only by the transaction that generated it
+    review3_regression_test.go:102: held: journal.approve (genuine finance attestation) of a tampered P2P_GRN journal store: database invariant violated: subledger journal a74b313d-7ced-4905-98e9-2d8c5ca776cf no longer equals the accounting of P2P_GRN 6a88424d-8525-44a0-a911-7bab8ed8316a (expected ae520e6e-9cb4-4a49-b67a-1332b58719a6|CREDIT|422500.000000|364622e0-1722-49b4-b082-16b811fba12c|-;b6701f5f-b057-4f6a-9c43-2ab7341542ce|DEBIT|422500.000000|364622e0-1722-49b4-b082-16b811fba12c|52b0a7f6-c2e1-4e48-8af2-929b173eb7ed, got 75b73069-bf7f-4891-b93c-c9bf9be72caa|CREDIT|1000000.000000|364622e0-1722-49b4-b082-16b811fba12c|-;ae520e6e-9cb4-4a49-b67a-1332b58719a6|CREDIT|422500.000000|364622e0-1722-49b4-b082-16b811fba12c|-;b6701f5f-b057-4f6a-9c43-2ab7341542ce|DEBIT|1000000.000000|364622e0-1722-49b4-b082-16b811fba12c|52b0a7f6-c2e1-4e48-8af2-929b173eb7ed;b6701f5f-b057-4f6a-9c43-2ab7341542ce|DEBIT|422500.000000|364622e0-1722-49b4-b082-16b811fba12c|52b0a7f6-c2e1-4e48-8af2-929b173eb7ed)
+--- PASS: TestR3_01_SubledgerJournalLinesAppendedAfterBinding (0.40s)
+=== RUN   TestR3_02_NoDeleteOrTruncate
+    review3_regression_test.go:118: held: DELETE FROM p2p_counters                                               store: database invariant violated: privilege: permission denied for table p2p_counters
+    review3_regression_test.go:119: held: TRUNCATE p2p_counters                                                  store: database invariant violated: privilege: permission denied for table p2p_counters
+    review3_regression_test.go:118: held: DELETE FROM p2p_policies                                               store: database invariant violated: privilege: permission denied for table p2p_policies
+    review3_regression_test.go:119: held: TRUNCATE p2p_policies                                                  store: database invariant violated: privilege: permission denied for table p2p_policies
+    review3_regression_test.go:118: held: DELETE FROM suppliers                                                  store: database invariant violated: privilege: permission denied for table suppliers
+    review3_regression_test.go:119: held: TRUNCATE suppliers                                                     store: database invariant violated: privilege: permission denied for table suppliers
+    review3_regression_test.go:118: held: DELETE FROM supplier_bank_accounts                                     store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    review3_regression_test.go:119: held: TRUNCATE supplier_bank_accounts                                        store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    review3_regression_test.go:118: held: DELETE FROM boq_versions                                               store: database invariant violated: privilege: permission denied for table boq_versions
+    review3_regression_test.go:119: held: TRUNCATE boq_versions                                                  store: database invariant violated: privilege: permission denied for table boq_versions
+    review3_regression_test.go:118: held: DELETE FROM boq_items                                                  store: database invariant violated: privilege: permission denied for table boq_items
+    review3_regression_test.go:119: held: TRUNCATE boq_items                                                     store: database invariant violated: privilege: permission denied for table boq_items
+    review3_regression_test.go:118: held: DELETE FROM purchase_requisitions                                      store: database invariant violated: privilege: permission denied for table purchase_requisitions
+    review3_regression_test.go:119: held: TRUNCATE purchase_requisitions                                         store: database invariant violated: privilege: permission denied for table purchase_requisitions
+    review3_regression_test.go:118: held: DELETE FROM pr_lines                                                   store: database invariant violated: privilege: permission denied for table pr_lines
+    review3_regression_test.go:119: held: TRUNCATE pr_lines                                                      store: database invariant violated: privilege: permission denied for table pr_lines
+    review3_regression_test.go:118: held: DELETE FROM rfqs                                                       store: database invariant violated: privilege: permission denied for table rfqs
+    review3_regression_test.go:119: held: TRUNCATE rfqs                                                          store: database invariant violated: privilege: permission denied for table rfqs
+    review3_regression_test.go:118: held: DELETE FROM rfq_suppliers                                              store: database invariant violated: privilege: permission denied for table rfq_suppliers
+    review3_regression_test.go:119: held: TRUNCATE rfq_suppliers                                                 store: database invariant violated: privilege: permission denied for table rfq_suppliers
+    review3_regression_test.go:118: held: DELETE FROM rfq_quotes                                                 store: database invariant violated: privilege: permission denied for table rfq_quotes
+    review3_regression_test.go:119: held: TRUNCATE rfq_quotes                                                    store: database invariant violated: privilege: permission denied for table rfq_quotes
+    review3_regression_test.go:118: held: DELETE FROM rfq_quote_lines                                            store: database invariant violated: privilege: permission denied for table rfq_quote_lines
+    review3_regression_test.go:119: held: TRUNCATE rfq_quote_lines                                               store: database invariant violated: privilege: permission denied for table rfq_quote_lines
+    review3_regression_test.go:118: held: DELETE FROM purchase_orders                                            store: database invariant violated: privilege: permission denied for table purchase_orders
+    review3_regression_test.go:119: held: TRUNCATE purchase_orders                                               store: database invariant violated: privilege: permission denied for table purchase_orders
+    review3_regression_test.go:118: held: DELETE FROM po_lines                                                   store: database invariant violated: privilege: permission denied for table po_lines
+    review3_regression_test.go:119: held: TRUNCATE po_lines                                                      store: database invariant violated: privilege: permission denied for table po_lines
+    review3_regression_test.go:118: held: DELETE FROM grns                                                       store: database invariant violated: privilege: permission denied for table grns
+    review3_regression_test.go:119: held: TRUNCATE grns                                                          store: database invariant violated: privilege: permission denied for table grns
+    review3_regression_test.go:118: held: DELETE FROM grn_lines                                                  store: database invariant violated: privilege: permission denied for table grn_lines
+    review3_regression_test.go:119: held: TRUNCATE grn_lines                                                     store: database invariant violated: privilege: permission denied for table grn_lines
+    review3_regression_test.go:118: held: DELETE FROM supplier_invoices                                          store: database invariant violated: privilege: permission denied for table supplier_invoices
+    review3_regression_test.go:119: held: TRUNCATE supplier_invoices                                             store: database invariant violated: privilege: permission denied for table supplier_invoices
+    review3_regression_test.go:118: held: DELETE FROM invoice_lines                                              store: database invariant violated: privilege: permission denied for table invoice_lines
+    review3_regression_test.go:119: held: TRUNCATE invoice_lines                                                 store: database invariant violated: privilege: permission denied for table invoice_lines
+    review3_regression_test.go:118: held: DELETE FROM company_bank_accounts                                      store: database invariant violated: privilege: permission denied for table company_bank_accounts
+    review3_regression_test.go:119: held: TRUNCATE company_bank_accounts                                         store: database invariant violated: privilege: permission denied for table company_bank_accounts
+    review3_regression_test.go:118: held: DELETE FROM payment_instructions                                       store: database invariant violated: privilege: permission denied for table payment_instructions
+    review3_regression_test.go:119: held: TRUNCATE payment_instructions                                          store: database invariant violated: privilege: permission denied for table payment_instructions
+    review3_regression_test.go:118: held: DELETE FROM payment_allocations                                        store: database invariant violated: privilege: permission denied for table payment_allocations
+    review3_regression_test.go:119: held: TRUNCATE payment_allocations                                           store: database invariant violated: privilege: permission denied for table payment_allocations
+    review3_regression_test.go:118: held: DELETE FROM bank_statements                                            store: database invariant violated: privilege: permission denied for table bank_statements
+    review3_regression_test.go:119: held: TRUNCATE bank_statements                                               store: database invariant violated: privilege: permission denied for table bank_statements
+    review3_regression_test.go:118: held: DELETE FROM bank_statement_lines                                       store: database invariant violated: privilege: permission denied for table bank_statement_lines
+    review3_regression_test.go:119: held: TRUNCATE bank_statement_lines                                          store: database invariant violated: privilege: permission denied for table bank_statement_lines
+--- PASS: TestR3_02_NoDeleteOrTruncate (0.06s)
+=== RUN   TestR3_03_ChildRowsFrozenAfterParentLeavesDraft
+    review3_regression_test.go:133: held: INSERT boq_items into APPROVED BOQ                                     store: database invariant violated: BOQ items change only while the version is DRAFT
+    review3_regression_test.go:134: held: UPDATE boq_items quantity of APPROVED BOQ                              store: database invariant violated: BOQ items change only while the version is DRAFT
+    review3_regression_test.go:135: held: INSERT pr_lines into APPROVED PR                                       store: database invariant violated: requisition lines change only while DRAFT
+    review3_regression_test.go:136: held: UPDATE pr_lines of APPROVED PR                                         store: database invariant violated: requisition lines change only while DRAFT
+    review3_regression_test.go:137: held: INSERT rfq_suppliers into AWARDED RFQ                                  store: database invariant violated: suppliers are invited only while the RFQ is DRAFT
+    review3_regression_test.go:138: held: INSERT rfq_quote_lines into evaluated/awarded quote                    store: database invariant violated: quote lines are recorded only while the RFQ is ISSUED and the quote is not yet evaluated
+    review3_regression_test.go:139: held: UPDATE rfq_quote_lines price of awarded quote                          store: database invariant violated: privilege: permission denied for table rfq_quote_lines
+    review3_regression_test.go:140: held: INSERT po_lines into APPROVED PO                                       store: database invariant violated: PO lines are added only while the PO is DRAFT
+    review3_regression_test.go:141: held: UPDATE po_lines price/qty/amount of APPROVED PO                        store: database invariant violated: privilege: permission denied for table po_lines
+    review3_regression_test.go:142: held: INSERT grn_lines into CONFIRMED GRN                                    store: database invariant violated: receipt lines are added only while the receipt is DRAFT
+    review3_regression_test.go:143: held: UPDATE grn_lines qty of CONFIRMED GRN                                  store: database invariant violated: privilege: permission denied for table grn_lines
+    review3_regression_test.go:144: held: INSERT invoice_lines into APPROVED invoice                             store: database invariant violated: invoice lines are added only while the invoice is DRAFT
+    review3_regression_test.go:145: held: UPDATE invoice_lines of APPROVED invoice                               store: database invariant violated: privilege: permission denied for table invoice_lines
+    review3_regression_test.go:146: held: UPDATE supplier_invoices amounts                                       store: database invariant violated: privilege: permission denied for table supplier_invoices
+    review3_regression_test.go:147: held: INSERT payment_allocations into SUBMITTED payment                      store: database invariant violated: allocations are added only while the payment is DRAFT
+    review3_regression_test.go:148: held: UPDATE payment_allocations amount                                      store: database invariant violated: privilege: permission denied for table payment_allocations
+    review3_regression_test.go:149: held: UPDATE payment_instructions amount                                     store: database invariant violated: privilege: permission denied for table payment_instructions
+    review3_regression_test.go:150: held: UPDATE boq_items moving it to another version                          store: database invariant violated: privilege: permission denied for table boq_items
+--- PASS: TestR3_03_ChildRowsFrozenAfterParentLeavesDraft (0.32s)
+=== RUN   TestR3_04_LinesAddedAfterAttestation
+    review3_regression_test.go:161: held: GRN submitted after an extra line was added post-attestation           store: database invariant violated: privilege: grn 959a6488-0ccf-4b74-b871-7988b6e7c7a4 changed after the approval was attested
+    review3_regression_test.go:175: held: payment submitted after amount+allocation changed post-attestation     store: database invariant violated: allocations (101.000000) must equal the payment amount (100.000000)
+--- PASS: TestR3_04_LinesAddedAfterAttestation (0.38s)
+=== RUN   TestR3_05_DualApprovalWithOneAttestation
+    review3_regression_test.go:198: held: one CFO attestation: PARTIALLY_APPROVED then APPROVED                  store: database invariant violated: privilege: payments are authorised only by principals the identity provider asserts are human (actor u-finance-manager)
+    review3_regression_test.go:208: held: single approval straight to APPROVED above the dual threshold          store: database invariant violated: this payment needs two approver(s): amount, invoice or supplier exposure at or above 500000.000000 ETB within 30 days (first approval -> PARTIALLY_APPROVED)
+    review3_regression_test.go:210: held: same person as first and second approver                               store: database invariant violated: new row for relation "payment_instructions" violates check constraint "payment_dual_distinct"
+--- PASS: TestR3_05_DualApprovalWithOneAttestation (0.34s)
+=== RUN   TestR3_06_AnotherDocumentsAttestation
+    review3_regression_test.go:237: held: confirm GRN 2 with GRN 1's confirm attestation                         store: database invariant violated: privilege: grn.confirm of grn 366e13c8-9bb2-4ff2-8990-90003a4fdd5e requires a verified approval attestation for u-site-engineer
+--- PASS: TestR3_06_AnotherDocumentsAttestation (0.25s)
+=== RUN   TestR3_07_ForgedMakerThenSelfApproval
+    review3_regression_test.go:269: held: finance manager inserts supplier bank details naming 'u-buyer' as maker store: database invariant violated: privilege: supplier.bank.create of supplier_bank_account 6da9fc2d-d67b-4ace-bc0f-e4f6252ca67a requires a verified approval attestation for u-buyer
+    review3_regression_test.go:272: held: procurement manager inserts a supplier naming 'u-buyer' as maker       store: database invariant violated: privilege: supplier.create of supplier 5fe9fa4f-98dd-4749-b05e-7777f6a7bb07 requires a verified approval attestation for u-buyer
+    review3_regression_test.go:274: held: CFO inserts a company bank account naming 'u-treasury' as maker        store: database invariant violated: privilege: bankacct.create of company_bank_account c91883ff-d933-49db-9edb-a4aa3e04e572 requires a verified approval attestation for u-treasury
+    review3_regression_test.go:277: held: CFO inserts a policy (25% tolerances, no dual approval) naming 'u-controller' as maker store: database invariant violated: privilege: p2p.policy.create of p2p_policy e42b7b6c-2bcd-4bd3-af00-6b05788b725c requires a verified approval attestation for u-controller
+    review3_regression_test.go:290: held: site engineer records a quote naming 'u-buyer' as receiver (to evaluate it) store: database invariant violated: privilege: rfq.quote.record of rfq_quote 6b47706f-3393-4edc-96fb-83c0a95f1b82 requires a verified approval attestation for u-buyer
+--- PASS: TestR3_07_ForgedMakerThenSelfApproval (0.19s)
+=== RUN   TestR3_08_HumanOnlyByNamingConvention
+    review3_regression_test.go:309: held: payment approved by non-human principal ai.payments-copilot            store: database invariant violated: privilege: payments are authorised only by human principals (actor ai.payments-copilot)
+    review3_regression_test.go:309: held: payment approved by non-human principal svc/payments-bot               store: database invariant violated: privilege: payments are authorised only by human principals (actor svc/payments-bot)
+--- PASS: TestR3_08_HumanOnlyByNamingConvention (0.31s)
+=== RUN   TestR3_09_FabricatedStatementSettlesPayment
+    review3_regression_test.go:334: held: statement with lines typed by the payment's releaser (raw SQL, releaser's attestation) store: database invariant violated: privilege: bank.import requires permission bank.import; the attested person holds none of them
+    review3_regression_test.go:350: held: stored lines differ from the attested file's content                   store: database invariant violated: privilege: statement GENUINE-1: the stored lines are not the content parsed from the attested statement file
+    review3_regression_test.go:376: held: payment not settled from the releaser's own statement (RELEASED; reconcile err=<nil>, {Matched:[] Unmatched:[{LineNo:1 Amount:-485875 Reason:a payment is settled only by a statement imported by someone independent of the payment}]})
+    review3_regression_test.go:383: held: database independence rule: a payment is settled only by a statement imported by someone independent of the payment
+--- PASS: TestR3_09_FabricatedStatementSettlesPayment (0.35s)
+=== RUN   TestR3_10_StatementAppendAndContinuity
+    review3_regression_test.go:392: held: append a line to an existing statement                                 store: database invariant violated: statement lines are imported together with their statement
+    review3_regression_test.go:393: held: rewrite a statement line amount/reference                              store: database invariant violated: privilege: permission denied for table bank_statement_lines
+    review3_regression_test.go:394: held: rewrite statement closing balance                                      store: database invariant violated: privilege: permission denied for table bank_statements
+    review3_regression_test.go:397: held: back-dated statement with an opening balance that continues nothing    store: database invariant violated: a statement dated 2026-10-12 precedes an already imported statement of this account
+--- PASS: TestR3_10_StatementAppendAndContinuity (0.12s)
+=== RUN   TestR3_11_CrossTenant
+    review3_regression_test.go:442: held: functions return nothing for tenant 1 ids (expected_lines=0, subject_text=NULL, lines_text='', recon rows=0)
+    review3_regression_test.go:447: held: tenant 2 inserts a supplier into tenant 1                              store: database invariant violated: privilege: new row violates row-level security policy for table "suppliers"
+    review3_regression_test.go:451: held: tenant 2 sets tenant 1's counters                                      store: database invariant violated: privilege: new row violates row-level security policy for table "p2p_counters"
+    review3_regression_test.go:465: held: tenant 2 UPDATE of tenant 1 invoice: 0 rows (RLS hides the row)
+    review3_regression_test.go:479: held: the only P2P definer is p2p_account_digest (pinned search_path, no PUBLIC execute, read-only)
+    review3_regression_test.go:486: held: no new p2p function or P2P trigger function is SECURITY DEFINER
+--- PASS: TestR3_11_CrossTenant (0.30s)
+=== RUN   TestR3_12_POLineToBankGLAccount
+    review3_regression_test.go:511: held: PO line whose receipt debits the bank GL account (Cash at Bank)        store: database invariant violated: PO line 1 cannot post receipts to a control account (bank, payments in transit, GRNI, AP, VAT input or price variance)
+--- PASS: TestR3_12_POLineToBankGLAccount (0.18s)
+=== RUN   TestR3_13_SplitPaymentsPreparerReleaseNumbering
+    review3_regression_test.go:527: held: split payment 1 went to PARTIALLY_APPROVED (second approver required)
+    review3_regression_test.go:527: held: split payment 2 went to PARTIALLY_APPROVED (second approver required)
+    review3_regression_test.go:542: held: payment released by its preparer                                       store: database invariant violated: the person who prepared a payment cannot release it
+    review3_regression_test.go:555: held: next payment number after 999999 is PAY-2026-1000000
+--- PASS: TestR3_13_SplitPaymentsPreparerReleaseNumbering (0.40s)
+=== RUN   TestR3_14_PolicyControlAccountsAndLateQuotes
+    review3_regression_test.go:566: held: successor policy swapping the GRNI and AP control accounts             store: database invariant violated: a successor P2P policy keeps the GRNI and AP control accounts of the approved policy
+    review3_regression_test.go:570: held: policy using the bank GL account as VAT input                          store: database invariant violated: P2P control accounts must not be bank, payments-in-transit or PO cost accounts
+    review3_regression_test.go:581: held: quote recorded after the RFQ due time                                  store: database invariant violated: the RFQ closed for quotes at its due time
+--- PASS: TestR3_14_PolicyControlAccountsAndLateQuotes (2.67s)
+=== RUN   TestR4_01_CreatorBinding
+    review4_regression_test.go:117: held: tenant login SET session_replication_role = replica                    store: database invariant violated: privilege: permission denied to set parameter "session_replication_role"
+    review4_regression_test.go:118: held: tenant login ALTER TABLE suppliers DISABLE TRIGGER suppliers_created_by store: database invariant violated: privilege: must be owner of table suppliers
+    review4_regression_test.go:119: held: tenant login UPDATE suppliers.created_by                               store: database invariant violated: privilege: permission denied for table suppliers
+    review4_regression_test.go:120: held: tenant login UPDATE supplier_bank_accounts.created_by                  store: database invariant violated: privilege: permission denied for table supplier_bank_accounts
+    review4_regression_test.go:121: held: tenant login UPDATE rfq_quotes.received_by                             store: database invariant violated: privilege: permission denied for table rfq_quotes
+    review4_regression_test.go:122: held: tenant login CREATE FUNCTION (to call approval_use from its own trigger) store: database invariant violated: privilege: permission denied for schema public
+    review4_regression_test.go:125: held: SET CONSTRAINTS ALL IMMEDIATE, forged supplier + checker's own create attestation store: database invariant violated: privilege: supplier.create of supplier d7da354a-46f0-460a-adea-03c42ec3202a requires a verified approval attestation for u-buyer
+    review4_regression_test.go:135: held: SET CONSTRAINTS suppliers_created_by DEFERRED then forged insert       store: database invariant violated: privilege: supplier.create of supplier 80026c13-cdd4-4a4a-8a97-8d6dad028558 requires a verified approval attestation for u-buyer
+    review4_regression_test.go:144: held: forged row X alongside row Y that carries u-buyer's genuine create attestation store: database invariant violated: privilege: supplier.create of supplier 0232f72a-ebad-4158-80fe-ac21f302298d requires a verified approval attestation for u-buyer
+    review4_regression_test.go:156: held: two supplier rows in one INSERT with one create attestation            store: database invariant violated: privilege: supplier.create of supplier 92928a68-9a9b-48c1-8ccf-759079f29c16 requires a verified approval attestation for u-buyer
+    review4_regression_test.go:186: held: bank details attested at creation then approved (mutated) in the same transaction store: database invariant violated: privilege: supplier_bank_account d392bf82-e50e-4ed6-99a0-b712a387ded9 changed after the approval was attested
+    review4_regression_test.go:202: held: raw quote line after creation: store: database invariant violated: privilege: rfq_quote lines are written only by the attested creation of the rfq_quote
+--- PASS: TestR4_01_CreatorBinding (0.18s)
+=== RUN   TestR4_02_StatementDigestDifferential
+    review4_regression_test.go:274: DIFF negative-zero opening            imported; go digest == sql digest (65010aa895f9...) stored=-1.500000 5041597c310a58
+    review4_regression_test.go:274: DIFF pipe/newline/CR in text          imported; go digest == sql digest (66ed2435804f...) stored=-2.000000 617c620d0a7c63
+    review4_regression_test.go:274: DIFF combining vs precomposed         imported; go digest == sql digest (ed92bd29acd5...) stored=-0.010000 65cc81
+    review4_regression_test.go:263: DIFF 6 decimals on a 2-decimal currency import refused: store: database invariant violated: statement line -0.000001 ETB has more than 2 decimal place(s) (SC-14)
+    review4_regression_test.go:274: DIFF emoji, tab, U+2028               imported; go digest == sql digest (398b5b1fdfae...) stored=100.000000 f09f988009e280a8
+    review4_regression_test.go:274: DIFF lone surrogate                   imported; go digest == sql digest (88c46b9d68ee...) stored=-2.000000 efbfbd
+    review4_regression_test.go:274: DIFF invalid UTF-8 byte               imported; go digest == sql digest (634b94f8a6cb...) stored=-3.000000 626164efbfbd62797465
+    review4_regression_test.go:258: DIFF 7 decimals non-zero              parse refused: kernel: invalid input: line 1 amount has more than 6 decimal places
+    review4_regression_test.go:258: DIFF NUL in reference                 parse refused: kernel: invalid input: line 1 reference must be valid text of at most 500 bytes
+    review4_regression_test.go:274: DIFF 18 integer digits                imported; go digest == sql digest (a2fcbb96c0cb...) stored=999999999999999999.990000 696e;-999999999999999999.990000 6f7574
+    review4_regression_test.go:258: DIFF 19 integer digits                parse refused: kernel: invalid input: line 1 amount is out of range
+    review4_regression_test.go:258: DIFF zero amount                      parse refused: kernel: invalid input: line 1 amount is zero
+    review4_regression_test.go:274: DIFF unicode statement_no             imported; go digest == sql digest (01c0e90515af...) stored=-1.000000 75
+    review4_regression_test.go:258: DIFF duplicate JSON key (last wins)   parse refused: kernel: invalid input: statement file: duplicate key "amount"
+    review4_regression_test.go:258: DIFF amount as string with spaces     parse refused: kernel: invalid input: statement file: error decoding string ' -1 ': can't convert  -1  to decimal
+--- PASS: TestR4_02_StatementDigestDifferential (0.18s)
+=== RUN   TestR4_03_StatementLinesBinding
+    review4_regression_test.go:290: held: stored lines reordered (same multiset) vs attested file                store: database invariant violated: privilege: statement R4-L1: the stored lines are not the content parsed from the attested statement file
+    review4_regression_test.go:294: held: extra line inserted in the same tx after the header                    store: database invariant violated: statement R4-L2 does not balance: opening 0.000000 + lines -20.000000 <> closing -30.000000
+    review4_regression_test.go:302: held: line_no gap (1,3) with otherwise identical lines                       store: database invariant violated: privilege: statement R4-L3: the stored lines are not the content parsed from the attested statement file
+    review4_regression_test.go:306: held: reference changed only in letter case                                  store: database invariant violated: privilege: statement R4-L4: the stored lines are not the content parsed from the attested statement file
+    review4_regression_test.go:319: held: control: the same raw path stores the unaltered file
+--- PASS: TestR4_03_StatementLinesBinding (0.14s)
+=== RUN   TestR4_04_ReconcilerSeparation
+    review4_regression_test.go:368: held: control: releaser reconciles own payment, matched_by = releaser        store: database invariant violated: the person who released a payment cannot reconcile it
+    review4_regression_test.go:374: held: matched_by NULL: store: database invariant violated: a reconciled statement line names its reconciler and its importer
+    review4_regression_test.go:379: OBSERVATION: principal 'U-TREASURY-2' (case variant of the releaser 'u-treasury-2') AutoReconcile: err=<nil> matched=0 unmatched=[{LineNo:1 Amount:-1000 Reason:the reconciler must be independent of the statement import and of the payment} {LineNo:2 Amount:-2000 Reason:the reconciler must be independent of the statement import and of the payment} {LineNo:3 Amount:-3000 Reason:the reconciler must be independent of the statement import and of the payment}]; PAY-2026-000003 status=RELEASED
+--- PASS: TestR4_04_ReconcilerSeparation (0.46s)
+=== RUN   TestR4_05_StatementContinuityRace
+    review4_regression_test.go:433: held: second import waited for the first and was refused: store: database invariant violated: statement opening balance -10.000000 does not continue the previous closing balance -30.000000 (R4-A:-10.000000->-30.000000, R4-P:0.000000->-10.000000)
+--- PASS: TestR4_05_StatementContinuityRace (0.26s)
+=== RUN   TestR4_06_JournalFreeze
+    review4_regression_test.go:448: OBSERVATION: tenant login column privilege on journals.created_txid INSERT/UPDATE = false/false
+    review4_regression_test.go:452: OBSERVATION: types: txid_current()=bigint, journals.created_txid=bigint, current txid=228559
+    review4_regression_test.go:457: held: UPDATE journals.created_txid of a P2P journal                          store: database invariant violated: privilege: permission denied for table journals
+    review4_regression_test.go:458: held: DELETE a P2P journal line                                              store: database invariant violated: privilege: permission denied for table journal_lines
+    review4_regression_test.go:459: held: UPDATE a P2P journal line amount                                       store: database invariant violated: privilege: permission denied for table journal_lines
+    review4_regression_test.go:460: held: UPDATE journal_lines.journal_id moving a line into the P2P journal     store: database invariant violated: privilege: permission denied for table journal_lines
+    review4_regression_test.go:467: held: raw GRN confirm whose P2P journal is inserted with created_txid = txid_current()+5 store: database invariant violated: privilege: permission denied for table journals
+    review4_regression_test.go:515: OBSERVATION: lines appended after p2p_assert_journal in the generating tx were committed (journal 672aa5b3-05a3-4ea8-8559-e10fb9664949); M1 now rests on the rebind trigger
+    review4_regression_test.go:516: held: raw journal.approve (genuine attestation) of that journal              store: database invariant violated: subledger journal 672aa5b3-05a3-4ea8-8559-e10fb9664949 no longer equals the accounting of P2P_GRN ca07bcff-f98e-47dd-82c5-280ace206085 (expected 2b585920-ec51-4a39-b678-c54d6392370c|CREDIT|84500.000000|826052a3-3b81-4915-ad24-f8f32d16f9a8|-;dc136df4-4e45-401d-99ad-e431b21ee7d5|DEBIT|84500.000000|826052a3-3b81-4915-ad24-f8f32d16f9a8|aec716ed-e01e-4aed-ae29-7a2be3722509, got 2b585920-ec51-4a39-b678-c54d6392370c|CREDIT|84500.000000|826052a3-3b81-4915-ad24-f8f32d16f9a8|-;a4fee997-7459-4001-9bce-c5c6f2213828|CREDIT|1000000.000000|826052a3-3b81-4915-ad24-f8f32d16f9a8|-;dc136df4-4e45-401d-99ad-e431b21ee7d5|DEBIT|1000000.000000|826052a3-3b81-4915-ad24-f8f32d16f9a8|aec716ed-e01e-4aed-ae29-7a2be3722509;dc136df4-4e45-401d-99ad-e431b21ee7d5|DEBIT|84500.000000|826052a3-3b81-4915-ad24-f8f32d16f9a8|aec716ed-e01e-4aed-ae29-7a2be3722509)
+    review4_regression_test.go:521: held: legitimate P2P_GRN journal approved and posted
+--- PASS: TestR4_06_JournalFreeze (0.38s)
+=== RUN   TestR4_07_PolicySuccessorGRNI
+    review4_regression_test.go:551: held: successor with different GRNI: store: database invariant violated: a successor P2P policy keeps the GRNI and AP control accounts of the policy in force
+--- PASS: TestR4_07_PolicySuccessorGRNI (0.30s)
+=== RUN   TestR4_08_HumanMarker
+    review4_regression_test.go:592: OBSERVATION: Permissions() with a role granting principal.human: [Principal.human ap.approve_exception bank.details.reveal customer.approve fx.approve fx.policy.approve fx.read journal.approve journal.read p2p.read payment.approve scope.tenant_wide stock.item.approve supplier.bank.approve wbs.approve workflow.read]
+    review4_regression_test.go:596: held: AI principal whose role lists principal.human approves a payment       auth: forbidden: payment.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review4_regression_test.go:600: held: principal with kind 'Human' (wrong case) approves a payment            auth: forbidden: payment.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review4_regression_test.go:603: held: AI-kind attestation + same actor's human journal.approve attestation in the tx auth: forbidden: payment.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review4_regression_test.go:637: held: marker borrowed from another payment's attestation: auth: forbidden: payment.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+--- PASS: TestR4_08_HumanMarker (0.35s)
+=== RUN   TestR4_09_ControlAccounts
+    review4_regression_test.go:653: held: company bank account registered on an account PO lines already use     store: database invariant violated: bank and payments-in-transit accounts must be distinct and not used as P2P control or PO cost accounts
+    review4_regression_test.go:666: held: legitimate successor between confirm and post: approve ok, post ok=true 
+    review4_regression_test.go:677: held: PO line on retired VAT input account: store: database invariant violated: PO line 1 cannot post receipts to a control account (bank, payments in transit, GRNI, AP, VAT input or price variance)
+    review4_regression_test.go:680: OBSERVATION: PO line accepted on an unregistered cash-type ASSET account 1010 'Petty cash' (only registered control accounts are excluded)
+    review4_regression_test.go:687: held: PO line on payments-in-transit: store: database invariant violated: PO line 1 cannot post receipts to a control account (bank, payments in transit, GRNI, AP, VAT input or price variance)
+--- PASS: TestR4_09_ControlAccounts (0.44s)
+=== RUN   TestR5_01_TenantWideCheckIsNotTheVisibilityPolicy
+    review5_regression_test.go:71: held: scoped PreparePayment refused: auth: forbidden: payments are entity-level and need tenant-wide scope
+    review5_regression_test.go:84: scoped import with wrong opening balance: auth: forbidden: bank statements need tenant-wide scope
+    review5_regression_test.go:89: held: scoped import refused: auth: forbidden: bank statements need tenant-wide scope
+    review5_regression_test.go:92:       (the same officer gets not-found reading that company account: store: not found)
+    review5_regression_test.go:109: held: scoped AutoReconcile refused: auth: forbidden: reconciliation needs tenant-wide scope
+    review5_regression_test.go:133: held: scoped ListJournals: 0 rows, auth: forbidden: journal worklists need tenant-wide scope
+    review5_regression_test.go:142: held: scoped GLReconciliation refused: auth: forbidden: reconciliation needs tenant-wide scope
+--- PASS: TestR5_01_TenantWideCheckIsNotTheVisibilityPolicy (0.51s)
+=== RUN   TestR5_02_MaskingAcrossAllDetailTypesAndStores
+    review5_regression_test.go:228: held: 117 successful detail reads across 12 types and 8 principals (+ lists): no full account number, no bank_snapshot
+    review5_regression_test.go:233: info: bank_statement list for accountant: [{"id":"2523759a-3de5-4a46-8436-4fd91c1daea8","number":"R5-M-1","status":"RECONCILED","created_by":"u-bank-officer","created_at":"2026-10-22T10:06:45.034671+03:00","amount":"902825","label":"CBE Opera
+    review5_regression_test.go:256: held: full number 10...77 stored in company_bank_accounts (58 rows) (expected master table)
+    review5_regression_test.go:256: held: full number 10...89 stored in supplier_bank_accounts (53 rows) (expected master table)
+    review5_regression_test.go:274: info: audit supplier.bank.add    {"account": "****6789", "supplier_id": "49779d25-ac2a-401c-b042-530bd834bd4c", "bank_account_id": "7dedef93-f662-4114-a257-ff009cb1e306"}
+    review5_regression_test.go:274: info: audit bank.details.reveal  {"account": "****6789", "purpose": "Independent review 5: verify payee details before release", "document_type": "supplier_bank_account", "mfa_auth_time": "2026-10-22T07:06:44.660022028Z"}
+    review5_regression_test.go:274: info: audit bank.details.reveal  {"account": "****8777", "purpose": "Independent review 5: verify payee details before release", "document_type": "company_bank_account", "mfa_auth_time": "2026-10-22T07:06:44.660022028Z"}
+--- PASS: TestR5_02_MaskingAcrossAllDetailTypesAndStores (0.78s)
+=== RUN   TestR5_03_CompanyAccountNumberGuessOracle
+    review5_regression_test.go:292: wrong guess -> <nil>
+    review5_regression_test.go:293: right guess -> kernel: invalid input: this bank account cannot be registered; contact treasury administration
+    review5_regression_test.go:309: held (accepted residual): duplicate refused generically and audited
+    review5_regression_test.go:317: supplier duplicate -> <nil> (no uniqueness: no oracle, but duplicates allowed)
+    review5_regression_test.go:323: held: invalid supplier account rejected without echo: store: database invariant violated: new row for relation "supplier_bank_accounts" violates check constraint "supplier_bank_accounts_account_number_check"
+--- PASS: TestR5_03_CompanyAccountNumberGuessOracle (0.14s)
+=== RUN   TestR5_04_Reveal
+    review5_regression_test.go:346: held: reveal type "payment_instruction"    -> not found
+    review5_regression_test.go:346: held: reveal type "supplier"               -> not found
+    review5_regression_test.go:346: held: reveal type "Supplier_Bank_Account"  -> not found
+    review5_regression_test.go:346: held: reveal type "supplier_bank_account " -> not found
+    review5_regression_test.go:346: held: reveal type "SUPPLIER_BANK_ACCOUNT"  -> not found
+    review5_regression_test.go:353: held: whitespace-padded purpose refused
+    review5_regression_test.go:359: info: purpose "aaaaaaaaaaaaaaaaaaaa" (20 runes) accepted
+    review5_regression_test.go:367: MFA age 9m0s -> <nil>
+    review5_regression_test.go:367: MFA age 11m0s -> auth: recent multi-factor authentication required (within 10m0s)
+    review5_regression_test.go:386: held: 2 identical reveals -> 2 audit records
+    review5_regression_test.go:397: held: reveal out-of-scope == nonexistent: store: not found
+    review5_regression_test.go:399: info: audit records for 3 refused reveal attempts: 0 (failed attempts leave no audit trail)
+    review5_regression_test.go:404: held: cross-tenant reveal -> not found
+    review5_regression_test.go:414: held: reveal with a revoked session -> kernel: session revoked
+    review5_regression_test.go:420: info: GetP2PDoc does not re-check revocation in the kernel (the HTTP layer does, on every request)
+    review5_regression_test.go:440: held: store: not found
+    review5_regression_test.go:450: held: reveal without p2p.read -> auth: forbidden: p2p.read
+--- PASS: TestR5_04_Reveal (0.35s)
+=== RUN   TestR5_05_MutationExistenceDisclosure
+    review5_regression_test.go:499: held: ApprovePayment(scoped FM)            real == random: store: not found
+    review5_regression_test.go:499: held: ReleasePayment(scoped treasury2)     real == random: store: not found
+    review5_regression_test.go:499: held: CancelPayment(scoped treasury)       real == random: store: not found
+    review5_regression_test.go:499: held: SubmitPayment(scoped treasury)       real == random: store: not found
+    review5_regression_test.go:499: held: DecideP2PPolicy(scoped cfo)          real == random: store: not found
+    review5_regression_test.go:499: held: ApproveCompanyBank(scoped cfo)       real == random: store: not found
+    review5_regression_test.go:499: held: ApproveSupplierBank(scoped FM)       real == random: store: not found
+    review5_regression_test.go:499: held: DecidePR(other-project PM)           real == random: store: not found
+    review5_regression_test.go:499: held: GetP2PDoc payment(pm)                real == random: store: not found
+    review5_regression_test.go:499: held: GetP2PDoc PR(other PM)               real == random: store: not found
+    review5_regression_test.go:521: locked out-of-scope payment: store: not found after 4ms; nonexistent: store: not found after 0s
+--- PASS: TestR5_05_MutationExistenceDisclosure (0.33s)
+=== RUN   TestR5_06_ScopeSemantics
+    review5_regression_test.go:540: held: no roles -> forbidden for real and random ids and lists (auth: forbidden: p2p.read)
+    review5_regression_test.go:547: held: p2p.read with empty project list and no tenant_wide -> not found
+    review5_regression_test.go:561: held: tenant_wide role + project list confined to its projects
+    review5_regression_test.go:566: project list ["", UPPER(project)] reading purchase_order -> store: not found
+    review5_regression_test.go:566: project list ["", UPPER(project)] reading payment_instruction -> store: not found
+    review5_regression_test.go:566: project list ["", UPPER(project)] reading p2p_policy -> store: not found
+    review5_regression_test.go:577: held: cross-tenant ids -> not found
+    review5_regression_test.go:582: type "Payment_Instruction"    real -> p2p: unknown document type | random -> p2p: unknown document type
+    review5_regression_test.go:582: type "PAYMENT_INSTRUCTION"    real -> p2p: unknown document type | random -> p2p: unknown document type
+    review5_regression_test.go:582: type "payment_instruction "   real -> p2p: unknown document type | random -> p2p: unknown document type
+    review5_regression_test.go:582: type "bank_statement"         real -> p2p: unknown document type | random -> p2p: unknown document type
+    review5_regression_test.go:582: type "bank_statement_line"    real -> p2p: unknown document type | random -> p2p: unknown document type
+    review5_regression_test.go:582: type "journal"                real -> p2p: unknown document type | random -> p2p: unknown document type
+    review5_regression_test.go:582: type ""                       real -> p2p: unknown document type | random -> p2p: unknown document type
+    review5_regression_test.go:591: id "B30C49BF-029C-47BB-B1F4-F54D3DB3B9E1"         pm -> store: not found | cfo -> err=<nil> detail=0B
+    review5_regression_test.go:591: id "{b30c49bf-029c-47bb-b1f4-f54d3db3b9e1}"       pm -> store: not found | cfo -> err=<nil> detail=0B
+    review5_regression_test.go:591: id "b30c49bf029c47bbb1f4f54d3db3b9e1"             pm -> store: not found | cfo -> err=<nil> detail=0B
+    review5_regression_test.go:591: id "urn:uuid:b30c49bf-029c-47bb-b1f4-f54d3db3b9e1" pm -> store: not found | cfo -> err=ERROR: invalid input syntax for type uuid: "urn:uuid:b30c49bf-029c-47bb-b1f4-f54d3db3b9e1" (SQLSTATE 22P02) detail=0B
+    review5_regression_test.go:591: id "x' OR '1'='1"                                 pm -> store: not found | cfo -> err=ERROR: invalid input syntax for type uuid: "x' OR '1'='1" (SQLSTATE 22P02) detail=0B
+    review5_regression_test.go:600: info: storekeeper (p2p.read only) reads RFQ with all quotes/prices: 3253B
+    review5_regression_test.go:603: info: storekeeper reads supplier master (tax id) by design: {"approved_at":"2026-10-22T10:06:46.288101+03:00","approved_by":"u-proc-manager","blocked_reason":null,"code":"ABC-STEEL","created_at":"2026-10-22T10:06:46.2832
+--- PASS: TestR5_06_ScopeSemantics (0.51s)
+=== RUN   TestR5_07_AttestationHashConfirmsGuessedAccountNumber
+    review5_regression_test.go:637: held: no match after 100000 guesses
+--- PASS: TestR5_07_AttestationHashConfirmsGuessedAccountNumber (0.64s)
+=== RUN   TestR6_01_NegativeAmountDue
+    review6_regression_test.go:109: held: amount due 10500.000000 (gross 350000.000000, retention 70000.000000, recovery 280000.000000, VAT 10500.000000)
+    review6_regression_test.go:120: held (after 0020): recovery is capped, so the amount due is non-negative and the invoice approves normally
+--- PASS: TestR6_01_NegativeAmountDue (0.27s)
+=== RUN   TestR6_02_SubCentAllocations
+    review6_regression_test.go:135: held: sub-cent allocation refused at recording: store: database invariant violated: receipt allocation 199.995000 ETB has more than 2 decimal place(s) (SC-14)
+--- PASS: TestR6_02_SubCentAllocations (0.23s)
+=== RUN   TestR6_03_AdvanceRecoveryEdges
+    review6_regression_test.go:164: held: IPC1 recovery limited to the advance received: 300000.000000
+    review6_regression_test.go:172: held: certify an IPC prepared before an advance receipt (stale)              store: database invariant violated: IPC IPC-2026-000002 is stale: measurements, certificates or advance receipts changed since it was prepared; cancel and prepare it again
+    review6_regression_test.go:176: info: IPC3 this_gross/recovery/total recovered = 350000.000000/175000.000000/475000.000000 (catch-up of IPC1's shortfall is capped by 50% of this gross)
+    review6_regression_test.go:181: held: total recovered 475000.000000 <= advance received 1000000
+--- PASS: TestR6_03_AdvanceRecoveryEdges (0.30s)
+=== RUN   TestR6_04_IPCPeriodUnconstrained
+    review6_regression_test.go:195: held: IPC period before contract signature refused: store: database invariant violated: the certificate period must end on or after the contract signature (2026-10-01) and the last verified measurement (2026-10-20), and after the last certificate (<NULL>)
+--- PASS: TestR6_04_IPCPeriodUnconstrained (0.19s)
+=== RUN   TestR6_05_RawWorkflowSkips
+    review6_regression_test.go:214: held: INSERT an IPC directly as CERTIFIED                                    store: database invariant violated: IPCs are prepared DRAFT for an ACTIVE contract
+    review6_regression_test.go:216: held: INSERT a measurement directly as VERIFIED                              store: database invariant violated: measurements are recorded DRAFT against an ACTIVE contract
+    review6_regression_test.go:218: held: INSERT a contract directly as ACTIVE                                   store: database invariant violated: contracts are created DRAFT in the entity's functional currency
+    review6_regression_test.go:220: held: INSERT a contract line after activation                                store: database invariant violated: contract lines change only while the contract is DRAFT
+    review6_regression_test.go:221: held: UPDATE a contract line rate after activation                           store: database invariant violated: privilege: permission denied for table contract_lines
+    review6_regression_test.go:222: held: DELETE a contract line after activation                                store: database invariant violated: privilege: permission denied for table contract_lines
+    review6_regression_test.go:223: held: UPDATE retention_pct on an ACTIVE contract                             store: database invariant violated: privilege: permission denied for table contracts
+    review6_regression_test.go:224: held: UPDATE a verified measurement quantity                                 store: database invariant violated: privilege: permission denied for table measurement_lines
+    review6_regression_test.go:225: held: INSERT a measurement line into a VERIFIED measurement                  store: database invariant violated: measurement lines change only while the measurement is DRAFT
+    review6_regression_test.go:229: held: UPDATE an IPC's amount_due                                             store: database invariant violated: privilege: permission denied for table ipcs
+    review6_regression_test.go:230: held: DRAFT IPC -> CERTIFIED skipping SUBMITTED (attested certifier)         store: database invariant violated: illegal IPC transition DRAFT -> CERTIFIED
+    review6_regression_test.go:233: held: certify an IPC with an attestation lacking MFA                         store: database invariant violated: privilege: ipc.certify requires a recent multi-factor authentication in the attestation
+    review6_regression_test.go:235: held: certify as a different actor than attested                             store: database invariant violated: privilege: ipc.certify of ipc 43715d27-b1c9-4eb3-9f64-d71bc282acfe requires a verified approval attestation for u-cfo
+    review6_regression_test.go:238: held: CERTIFIED -> INVOICED without an invoice approval                      store: database invariant violated: privilege: an IPC becomes INVOICED only with the attested approval of its customer invoice
+    review6_regression_test.go:243: held: INSERT a customer invoice with caller figures (second invoice for the IPC) store: database invariant violated: customer_invoices_ipc_id_key
+    review6_regression_test.go:245: held: approve the invoice without its journal (attested approver)            store: database invariant violated: AR_INVOICE 9bc63f65-1cf8-4d86-9107-8bd66ad313b3 has no generated journal
+    review6_regression_test.go:248: held: approve the invoice with a MANUAL-source journal carrying its exact lines store: database invariant violated: journal 03a8ca9c-45a8-4602-b7ab-31b7aa436269 is not the DRAFT AR_INVOICE journal of 9bc63f65-1cf8-4d86-9107-8bd66ad313b3 (entity, currency, date)
+    review6_regression_test.go:275: held: manual journal with reserved source type AR_INVOICE                    store: database invariant violated: journal 403c0a2e-66c8-44e3-934b-f404deb11694 uses reserved source type AR_INVOICE but no AR_INVOICE document references it
+    review6_regression_test.go:275: held: manual journal with reserved source type AR_RECEIPT                    store: database invariant violated: journal 62cadd1a-3872-4f47-8b39-4f1fcecb350e uses reserved source type AR_RECEIPT but no AR_RECEIPT document references it
+    review6_regression_test.go:275: held: manual journal with reserved source type AR_OTHER                      store: database invariant violated: journal 59333da8-fa82-45ea-9ba1-63587acd657b uses reserved source type AR_OTHER but no AR_OTHER document references it
+    review6_regression_test.go:282: held: approve invoice B with invoice A's attestation                         store: database invariant violated: privilege: ar.invoice.approve of customer_invoice 50d1959b-7000-4a86-b734-89072d690dd6 requires a verified approval attestation for u-ar-supervisor
+    review6_regression_test.go:292: held: approve invoice B bound to invoice A's journal                         store: database invariant violated: journal 7a2b747a-2a4e-4f15-b48d-29d1c321e41f is not the DRAFT AR_INVOICE journal of 50d1959b-7000-4a86-b734-89072d690dd6 (entity, currency, date)
+    review6_regression_test.go:294: held: change the approved invoice's journal_id                               store: database invariant violated: privilege: customer invoice column journal_id cannot be changed in this transition
+    review6_regression_test.go:298: held: receipt for a money-out statement line                                 store: database invariant violated: a receipt is recorded for an unmatched money-in statement line
+    review6_regression_test.go:301: held: receipt INSERTed as CONFIRMED                                          store: database invariant violated: receipts are recorded DRAFT
+    review6_regression_test.go:304: held: receipt with a caller-chosen amount (no attestation)                   store: database invariant violated: privilege: ar.receipt.create of customer_receipt 10e0b6eb-1651-489c-abd1-d66bbe6bc7bb requires a verified approval attestation for u-ar-clerk
+    review6_regression_test.go:308: held: add an allocation after confirmation                                   store: database invariant violated: allocations are added only while the receipt is DRAFT
+    review6_regression_test.go:309: held: change an allocation after confirmation                                store: database invariant violated: privilege: permission denied for table receipt_allocations
+    review6_regression_test.go:310: held: delete an allocation after confirmation                                store: database invariant violated: privilege: permission denied for table receipt_allocations
+    review6_regression_test.go:311: held: match the receipted money-in line to something else                    store: database invariant violated: statement line 1 does not match payment <NULL> (must be RELEASED from this account, same amount out, reference containing the payment number)
+--- PASS: TestR6_05_RawWorkflowSkips (0.34s)
+=== RUN   TestR6_06_ReceiptCancelAndLineReuse
+    review6_regression_test.go:329: info: re-recording the line while the wrong draft exists: store: database invariant violated: customer_receipts_one_live_per_line
+    review6_regression_test.go:337: held: line re-usable after cancellation
+    review6_regression_test.go:343: info: AR recon "Unapplied money in (statement lines without a confirmed receipt)": 35000 in 1 lines (permanently, for this line)
+--- PASS: TestR6_06_ReceiptCancelAndLineReuse (0.26s)
+=== RUN   TestR6_07_ForeignCurrencyReceiptToAdvance
+    review6_regression_test.go:375: held: USD receipt to ETB contract advance refused at recording: store: database invariant violated: an allocation must be to an invoice or contract of the receipt's entity and currency
+--- PASS: TestR6_07_ForeignCurrencyReceiptToAdvance (0.24s)
+=== RUN   TestR6_08_ReversedInvoiceJournal
+    review6_regression_test.go:407: held: reversal of an AR journal refused: kernel: invalid input: AR_INVOICE journals are not reversed; correct the source document instead
+--- PASS: TestR6_08_ReversedInvoiceJournal (0.24s)
+=== RUN   TestR6_09_ContractPolicySuccession
+    review6_regression_test.go:487: held: a successor is possible (same <nil> / fresh store: database invariant violated: a successor contract policy keeps the AR, retention and advance control accounts / vat <nil>)
+    review6_regression_test.go:504: held: company bank account on the AR control account refused: store: database invariant violated: bank and payments-in-transit accounts must not be receivable, retention, advance, VAT output or revenue control accounts
+    review6_regression_test.go:513: held: P2P policy on an AR control account refused: store: database invariant violated: P2P control accounts must not be receivable, retention, advance, VAT output or revenue control accounts
+--- PASS: TestR6_09_ContractPolicySuccession (0.17s)
+=== RUN   TestR6_10_ManualJournalOnARControl
+    review6_regression_test.go:542: info: a manual journal Dr AR / Cr contract revenue 5,000 was created, approved and posted (no control-account guard on manual journals)
+    review6_regression_test.go:550: held: AR reconciliation detects it: difference -5000
+    review6_regression_test.go:556: info: project profitability revenue 0 (the manual revenue is on the project)
+--- PASS: TestR6_10_ManualJournalOnARControl (0.18s)
+=== RUN   TestR6_11_HumanRuleAndDraftParity
+    review6_regression_test.go:596: held: Go and SQL draft-action lists agree on 74 actions; draft (non-human allowed): [ap.submit ar.invoice.create ar.receipt.create bank.import bankacct.create boq.submit contract.policy.create contract.submit customer.create grn.submit ipc.submit measure.submit payment.submit po.create pr.submit rfq.quote.record supplier.bank.create supplier.create workflow.start .create]
+    review6_regression_test.go:607: held: IPC certification by kind "service"                                    auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:607: held: IPC certification by kind "ai"                                         auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:607: held: IPC certification by kind ""                                           auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:607: held: IPC certification by kind "Human"                                      auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:607: held: IPC certification by kind "human "                                     auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:614: held: measurement verification by a service principal                        auth: forbidden: measure.verify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:615: held: measurement rejection by a service principal                           auth: forbidden: measure.verify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:618: held: IPC cancellation by an AI principal                                    auth: forbidden: ipc.cancel is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:631: held: signed ipc.certify attestation without principal.human                 store: database invariant violated: privilege: ipc.certify is a decision reserved to principals the identity provider asserts are human (actor u-commercial)
+    review6_regression_test.go:645: info: an AI principal recorded receipt 8b508d31 (draft action, by design)
+    review6_regression_test.go:646: held: confirm a receipt using the AI's ar.receipt.create attestation         store: database invariant violated: privilege: ar.receipt.confirm of customer_receipt 8b508d31-2b14-47d8-9fdc-68901c60529e requires a verified approval attestation for u-bot-clerk
+    review6_regression_test.go:656: held: receipt confirmation by a service principal                            auth: forbidden: ar.receipt.confirm is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+--- PASS: TestR6_11_HumanRuleAndDraftParity (0.26s)
+=== RUN   TestR6_12_SoDCombinedRoles
+    review6_regression_test.go:672: held: invoice approved by its issuer (ar_clerk+ar_supervisor)                auth: segregation of duties violation: the creator of a customer invoice cannot approve or reject it
+    review6_regression_test.go:673: held: raw: invoice approved by its issuer with a genuine attestation         store: database invariant violated: AR_INVOICE 139bfa75-bb67-4545-b2ec-78623da772a3 has no generated journal
+    review6_regression_test.go:692: info: importer with differently-cased id records:  store: database invariant violated: a receipt is recorded by someone independent of the statement import
+--- PASS: TestR6_12_SoDCombinedRoles (0.24s)
+=== RUN   TestR6_13_Visibility
+    review6_regression_test.go:761: info: u-outsider (tenant 4cd12ff6) gets zero profitability for project A (RLS: no data)
+    review6_regression_test.go:766: info: u-outsider gets an empty AR reconciliation for tenant-1's entity (RLS: no data)
+    review6_regression_test.go:769: held (unless OPEN above): project-B and tenant-2 principals cannot read/list/position/profitability/reconcile project-A Journey B documents; out-of-scope == nonexistent
+    review6_regression_test.go:774: held: project-B AR clerk issues an invoice for a project-A IPC               store: not found
+    review6_regression_test.go:777: held: project-B AR clerk records a receipt (entity level)                    auth: forbidden: receipts need tenant-wide scope
+    review6_regression_test.go:781: held: project-A QS measures a project-B contract                             store: not found
+    review6_regression_test.go:783: info: ContractPosition calls loadDoc (SELECT ... FOR UPDATE) although it only reads
+--- PASS: TestR6_13_Visibility (0.40s)
+=== RUN   TestR6_02b_SubCentAllocationsBalanced
+    review6_regression_test.go:798: held: record a receipt with allocations 199.994 + 0.006 (refused at recording since 0020) store: database invariant violated: receipt allocation 199.994000 ETB has more than 2 decimal place(s) (SC-14)
+--- PASS: TestR6_02b_SubCentAllocationsBalanced (0.22s)
+=== RUN   TestR6_14_ConcurrentConfirmations
+    review6_regression_test.go:830: info: concurrent confirmation refused: store: database invariant violated: contract CTR-2026-000001 cannot take this advance (agreed advance 1000000.000000)
+    review6_regression_test.go:830: info: concurrent confirmation refused: store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 38500.000000): it would be over-allocated, is credited, or is not payable
+    review6_regression_test.go:838: held: concurrent confirmations: 2 succeeded; invoice allocated 23100 of 38500; advance received 600000 of 1000000
+--- PASS: TestR6_14_ConcurrentConfirmations (0.32s)
+=== RUN   TestR6_15_ConcurrentMeasurementVerification
+    review6_regression_test.go:863: info: store: database invariant violated: contract line 3: cumulative measured 140.0000 exceeds the contract quantity 120.0000 (a variation is required)
+    review6_regression_test.go:870: held: verified quantity 70 <= 120 under concurrent verification
+--- PASS: TestR6_15_ConcurrentMeasurementVerification (0.20s)
+=== RUN   TestSessions_RevocationKillsOldTokensIncludingInFlightApprovals
+--- PASS: TestSessions_RevocationKillsOldTokensIncludingInFlightApprovals (0.08s)
+=== RUN   TestSessions_WhoMayRevokeAndLogout
+--- PASS: TestSessions_WhoMayRevokeAndLogout (0.05s)
+=== RUN   TestSessions_TenantLoginCannotUndoOrBackdateRevocations
+    sessions_test.go:126: denied delete a revocation:                                    store: database invariant violated: privilege: permission denied for table session_revocations
+    sessions_test.go:126: denied move a cut-off into the past:                           store: database invariant violated: privilege: permission denied for table session_revocations
+    sessions_test.go:126: denied truncate the revocation list:                           store: database invariant violated: privilege: permission denied for table session_revocations
+    sessions_test.go:154: denied insert a revocation into another tenant:                store: database invariant violated: privilege: new row violates row-level security policy for table "session_revocations"
+--- PASS: TestSessions_TenantLoginCannotUndoOrBackdateRevocations (0.06s)
+=== RUN   TestParseStatementRefusesAmbiguousOrInvalidFiles
+    statement_parse_test.go:32: refused NUL in reference:      kernel: invalid input: line 1 reference must be valid text of at most 500 bytes
+    statement_parse_test.go:32: refused zero amount:           kernel: invalid input: line 1 amount is zero
+    statement_parse_test.go:32: refused 19 integer digits:     kernel: invalid input: line 1 amount is out of range
+    statement_parse_test.go:32: refused 7 decimals:            kernel: invalid input: line 1 amount has more than 6 decimal places
+    statement_parse_test.go:32: refused bad date:              kernel: invalid input: statement_date "22/10/2026" must be YYYY-MM-DD
+    statement_parse_test.go:32: refused duplicate key:         kernel: invalid input: statement file: duplicate key "statement_no"
+    statement_parse_test.go:32: refused not a bank account id: kernel: invalid input: company_bank_id must be a bank account id
+    statement_parse_test.go:32: refused duplicate line key:    kernel: invalid input: statement file: duplicate key "amount"
+    statement_parse_test.go:32: refused unknown field:         kernel: invalid input: statement file: json: unknown field "note"
+    statement_parse_test.go:32: refused trailing data:         kernel: invalid input: statement file has trailing data
+--- PASS: TestParseStatementRefusesAmbiguousOrInvalidFiles (0.00s)
+=== RUN   TestSupplierExposureNeedsDualApproval
+    supplier_exposure_test.go:40: held: second payment to the same supplier within 30 days needs a second approver (PARTIALLY_APPROVED)
+    supplier_exposure_test.go:45: refused raw single approval of a split payment:                      store: database invariant violated: this payment needs two approver(s): amount, invoice or supplier exposure at or above 500000.000000 ETB within 30 days (first approval -> PARTIALLY_APPROVED)
+--- PASS: TestSupplierExposureNeedsDualApproval (0.46s)
+=== RUN   TestSupplierExposureWindowAndConcurrency
+    supplier_exposure_test.go:81: held: concurrent payment 1: PARTIALLY_APPROVED <nil>
+    supplier_exposure_test.go:81: held: concurrent payment 2: PARTIALLY_APPROVED <nil>
+--- PASS: TestSupplierExposureWindowAndConcurrency (0.47s)
+=== RUN   TestReverify_RV1_ResumeKeepsWholeQuorumExcluded
+--- PASS: TestReverify_RV1_ResumeKeepsWholeQuorumExcluded (0.14s)
+=== RUN   TestReverify_RV2_StartAndPublishDoNotDeadlock
+--- PASS: TestReverify_RV2_StartAndPublishDoNotDeadlock (0.14s)
+=== RUN   TestReverify_RV3_NoCrossTenantGateBlocking
+--- PASS: TestReverify_RV3_NoCrossTenantGateBlocking (0.07s)
+=== RUN   TestReverify_RV4_CancelHonoursScope
+--- PASS: TestReverify_RV4_CancelHonoursScope (0.08s)
+=== RUN   TestReverify_RV5_EffectAfterExpiryRefused
+--- PASS: TestReverify_RV5_EffectAfterExpiryRefused (0.09s)
+=== RUN   TestReverify_RV6_NoRetirementOutsideTheDecideFunction
+--- PASS: TestReverify_RV6_NoRetirementOutsideTheDecideFunction (0.08s)
+=== RUN   TestReverify_RV7_GoSQLRouteEquivalence
+--- PASS: TestReverify_RV7_GoSQLRouteEquivalence (0.33s)
+=== RUN   TestReview_R1_OptionalDefinitionCannotBypassMandatory
+--- PASS: TestReview_R1_OptionalDefinitionCannotBypassMandatory (0.10s)
+=== RUN   TestReview_R2_ForgedRouteOrFactsRefused
+--- PASS: TestReview_R2_ForgedRouteOrFactsRefused (0.09s)
+=== RUN   TestReview_R3_DirectRetirementRefused
+--- PASS: TestReview_R3_DirectRetirementRefused (0.07s)
+=== RUN   TestReview_R4_ApprovedJournalIsNeverStranded
+--- PASS: TestReview_R4_ApprovedJournalIsNeverStranded (0.21s)
+=== RUN   TestReview_R5_ExpiredStepCannotBeDecided
+--- PASS: TestReview_R5_ExpiredStepCannotBeDecided (0.08s)
+=== RUN   TestReview_R6_SupersededVersionCannotAct
+--- PASS: TestReview_R6_SupersededVersionCannotAct (0.09s)
+=== RUN   TestReview_R7_QuorumMustExcludeMaker
+--- PASS: TestReview_R7_QuorumMustExcludeMaker (0.04s)
+=== RUN   TestReview_R8_GateHoldsDuringVersionSwitch
+--- PASS: TestReview_R8_GateHoldsDuringVersionSwitch (0.48s)
+=== RUN   TestReview_R9_FinishedInstanceIsImmutable
+--- PASS: TestReview_R9_FinishedInstanceIsImmutable (0.09s)
+=== RUN   TestReview_R11_ConsoleLeaksNothing
+--- PASS: TestReview_R11_ConsoleLeaksNothing (0.10s)
+=== RUN   TestWorkflow_MandatoryJournalWorkflowReplacesDirectPath
+--- PASS: TestWorkflow_MandatoryJournalWorkflowReplacesDirectPath (0.12s)
+=== RUN   TestWorkflow_HighValueNeedsQuorumOfDistinctExecutivesWithMFA
+--- PASS: TestWorkflow_HighValueNeedsQuorumOfDistinctExecutivesWithMFA (0.13s)
+=== RUN   TestWorkflow_DatabaseRefusesForgedTrail
+--- PASS: TestWorkflow_DatabaseRefusesForgedTrail (0.12s)
+=== RUN   TestWorkflow_RejectionRunsCompensationAsTheRejector
+--- PASS: TestWorkflow_RejectionRunsCompensationAsTheRejector (0.09s)
+=== RUN   TestWorkflow_EffectFailureRollsBackAndIsRecorded
+--- PASS: TestWorkflow_EffectFailureRollsBackAndIsRecorded (0.16s)
+=== RUN   TestWorkflow_SubjectChangedAfterStartIsRefused
+--- PASS: TestWorkflow_SubjectChangedAfterStartIsRefused (0.11s)
+=== RUN   TestWorkflow_TimersEscalateOnceAndExpire
+--- PASS: TestWorkflow_TimersEscalateOnceAndExpire (0.11s)
+=== RUN   TestWorkflow_DefinitionGovernance
+--- PASS: TestWorkflow_DefinitionGovernance (0.11s)
+=== RUN   TestWorkflow_ConcurrentDecisionsExecuteTheEffectOnce
+--- PASS: TestWorkflow_ConcurrentDecisionsExecuteTheEffectOnce (0.11s)
+=== RUN   TestWorkflow_TenantIsolation
+--- PASS: TestWorkflow_TenantIsolation (0.08s)
+=== RUN   TestWorkflow_FXApprovalKeepsVarianceControls
+--- PASS: TestWorkflow_FXApprovalKeepsVarianceControls (0.14s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/kernel	44.237s
+=== RUN   TestExpositionFormat
+--- PASS: TestExpositionFormat (0.00s)
+=== RUN   TestTraceparent
+--- PASS: TestTraceparent (0.00s)
+=== RUN   TestDBHealthWithoutPoolReportsDown
+--- PASS: TestDBHealthWithoutPoolReportsDown (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/obs	1.011s
+=== RUN   TestRelayDeliversInOrderExactlyOnceWhenHealthy
+--- PASS: TestRelayDeliversInOrderExactlyOnceWhenHealthy (0.09s)
+=== RUN   TestRelayCrashAfterPublishRedeliversAndConsumerDedupes
+--- PASS: TestRelayCrashAfterPublishRedeliversAndConsumerDedupes (0.08s)
+=== RUN   TestRelayRetryDeadLetterHeadOfLineAndReplay
+--- PASS: TestRelayRetryDeadLetterHeadOfLineAndReplay (0.07s)
+=== RUN   TestWebhookSignedDeliveryAndReceiverChecks
+--- PASS: TestWebhookSignedDeliveryAndReceiverChecks (0.07s)
+=== RUN   TestBackoff
+--- PASS: TestBackoff (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/relay	1.327s
+?   	github.com/serk-group/serk-construction/internal/store/postgres	[no test files]
+?   	github.com/serk-group/serk-construction/internal/testdb	[no test files]
+?   	github.com/serk-group/serk-construction/internal/webui	[no test files]
+=== RUN   TestSignVerifyAndTamper
+--- PASS: TestSignVerifyAndTamper (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/attest	1.009s
+=== RUN   TestDefaultRolesSeparateDuties
+--- PASS: TestDefaultRolesSeparateDuties (0.00s)
+=== RUN   TestRequire
+--- PASS: TestRequire (0.00s)
+=== RUN   TestScopeSC05
+--- PASS: TestScopeSC05 (0.00s)
+=== RUN   TestStepUp
+--- PASS: TestStepUp (0.00s)
+=== RUN   TestSoD
+--- PASS: TestSoD (0.00s)
+=== RUN   TestReservedPermissionsNotGrantableByRoles
+--- PASS: TestReservedPermissionsNotGrantableByRoles (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/auth	1.009s
+=== RUN   TestDeflateToBaseline
+--- PASS: TestDeflateToBaseline (0.00s)
+=== RUN   TestComputeAndZeroDenominatorPolicy
+--- PASS: TestComputeAndZeroDenominatorPolicy (0.00s)
+=== RUN   TestBasisGuards
+--- PASS: TestBasisGuards (0.00s)
+=== RUN   TestCostToCost
+--- PASS: TestCostToCost (0.00s)
+=== RUN   TestSC09_InflationDoesNotMasqueradeAsOverrun
+--- PASS: TestSC09_InflationDoesNotMasqueradeAsOverrun (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/evm	1.011s
+=== RUN   TestSelectLatestEffectiveApproved
+--- PASS: TestSelectLatestEffectiveApproved (0.00s)
+=== RUN   TestSelectNeverUsesPendingOrFutureRates
+--- PASS: TestSelectNeverUsesPendingOrFutureRates (0.00s)
+=== RUN   TestKnowledgeCutoffRespected
+--- PASS: TestKnowledgeCutoffRespected (0.00s)
+=== RUN   TestSourcePriorityAndStaleness
+--- PASS: TestSourcePriorityAndStaleness (0.00s)
+=== RUN   TestInverseDerivationOnlyWhenAllowed
+--- PASS: TestInverseDerivationOnlyWhenAllowed (0.00s)
+=== RUN   TestConvertIsExactAndBoundToSnapshot
+--- PASS: TestConvertIsExactAndBoundToSnapshot (0.00s)
+=== RUN   TestRemeasurementSigns
+--- PASS: TestRemeasurementSigns (0.00s)
+=== RUN   TestSnapshotValidate
+--- PASS: TestSnapshotValidate (0.00s)
+=== RUN   TestDeterministicTieBreak
+--- PASS: TestDeterministicTieBreak (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/fx	1.010s
+=== RUN   TestValidJournal
+--- PASS: TestValidJournal (0.00s)
+=== RUN   TestUnbalancedRejected
+--- PASS: TestUnbalancedRejected (0.00s)
+=== RUN   TestLineRules
+--- PASS: TestLineRules (0.00s)
+=== RUN   TestStateMachine
+--- PASS: TestStateMachine (0.00s)
+=== RUN   TestReversalMirrorsLines
+--- PASS: TestReversalMirrorsLines (0.00s)
+=== RUN   TestAccountValidate
+--- PASS: TestAccountValidate (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/ledger	1.014s
+=== RUN   TestParseQuantisesToMinorUnits
+--- PASS: TestParseQuantisesToMinorUnits (0.00s)
+=== RUN   TestUnknownCurrencyRejected
+--- PASS: TestUnknownCurrencyRejected (0.00s)
+=== RUN   TestCurrencyMismatch
+--- PASS: TestCurrencyMismatch (0.00s)
+=== RUN   TestArithmeticIsExact
+--- PASS: TestArithmeticIsExact (0.00s)
+=== RUN   TestAllocateConservesEveryMinorUnit
+--- PASS: TestAllocateConservesEveryMinorUnit (0.00s)
+=== RUN   TestJSONRoundTrip
+--- PASS: TestJSONRoundTrip (0.00s)
+=== RUN   TestMinorAndRegister
+--- PASS: TestMinorAndRegister (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/money	1.014s
+=== RUN   TestRulesValidate
+--- PASS: TestRulesValidate (0.00s)
+=== RUN   TestEffectiveDatingAndReviewStatus
+--- PASS: TestEffectiveDatingAndReviewStatus (0.00s)
+=== RUN   TestAmbiguityIsAnError
+--- PASS: TestAmbiguityIsAnError (0.00s)
+=== RUN   TestComputeNetBase
+--- PASS: TestComputeNetBase (0.00s)
+=== RUN   TestComputeGrossBaseIsExact
+--- PASS: TestComputeGrossBaseIsExact (0.00s)
+=== RUN   TestThreshold
+--- PASS: TestThreshold (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/tax	1.015s
+=== RUN   TestValidDefinitionAndRouting
+--- PASS: TestValidDefinitionAndRouting (0.00s)
+=== RUN   TestValidatorRefusesUnsafeDefinitions
+--- PASS: TestValidatorRefusesUnsafeDefinitions (0.00s)
+PASS
+ok  	github.com/serk-group/serk-construction/pkg/workflow	1.015s
+exit=0

@@ -1,0 +1,32 @@
+=== RUN   TestJourneyB_CreditNote
+    credit_note_test.go:33: IPC 9e3df123: cumulative 5310000 previous 0 this 5310000 retention 265500 recovery 0 VAT 796500 due 5841000
+    credit_note_test.go:39: refused: a credit note on a DRAFT invoice                               ledger: illegal status transition: document is DRAFT
+    credit_note_test.go:46: refused: a credit note without a reason                                 kernel: a reason of at least 5 characters is required
+    credit_note_test.go:48: refused: credits beyond the invoice gross                               store: database invariant violated: credits of invoice CINV-2026-000001 (5310000.010000 with this one) would exceed its gross 5310000.000000
+    credit_note_test.go:50: refused: an amount finer than the currency                              store: database invariant violated: credit note amount 100.001000 ETB has more than 2 decimal place(s) (SC-14)
+    credit_note_test.go:52: refused: issue by someone without ar.credit.create                      auth: forbidden: ar.credit.create
+    credit_note_test.go:66: refused: approval without fresh MFA                                     auth: recent multi-factor authentication required (within 10m0s)
+    credit_note_test.go:70: refused: self-approval of a credit note                                 auth: segregation of duties violation: the creator of a credit note cannot approve or reject it
+    credit_note_test.go:74: refused: approval by an AI principal                                    auth: forbidden: ar.credit.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    credit_note_test.go:79: refused: direct approval without attestation or journal                 store: database invariant violated: privilege: ar.credit.approve of customer_credit_note 12d0aff0-33bc-4d85-b5b0-b056afcff5bc requires a verified approval attestation for u-x
+    credit_note_test.go:84: refused: direct edit of the credited amount                             store: database invariant violated: privilege: permission denied for table customer_credit_notes
+    credit_note_test.go:96: refused: a receipt allocated to the credited part                       store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 5841000.000000): it would be over-allocated, is credited, or is not payable
+    credit_note_test.go:105: refused: a credit beyond what is open on the invoice                    store: database invariant violated: credit note CRN-2026-000002 (11500.000000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 5611000.000000, credited 230000.000000)
+    credit_note_test.go:106: refused: cancellation by an AI principal                                auth: forbidden: ar.credit.cancel is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    credit_note_test.go:109: refused: approving a cancelled credit note                              ledger: illegal status transition: document is CANCELLED
+    credit_note_test.go:115: refused: reversing an AR_CREDIT journal                                 kernel: invalid input: AR_CREDIT journals are not reversed; correct the source document instead
+    credit_note_test.go:122: GL 4000 = -5110000
+    credit_note_test.go:122: GL 1100 = 0
+    credit_note_test.go:122: GL 1150 = 265500
+    credit_note_test.go:122: GL 2300 = -766500
+    credit_note_test.go:128: AR recon Accounts receivable                                                subledger              0 gl              0 diff 0 open 0
+    credit_note_test.go:128: AR recon Retention receivable                                               subledger         265500 gl         265500 diff 0 open 0
+    credit_note_test.go:128: AR recon Advances received                                                  subledger              0 gl              0 diff 0 open 0
+    credit_note_test.go:128: AR recon Unapplied money in (statement lines without a confirmed receipt)   subledger        5841000 gl        5841000 diff 0 open 1
+    credit_note_test.go:149: credit note 12d0aff0: journal a7e002e1; position {ContractValue:23060000 MeasuredValue:5310000 CertifiedGross:5310000 RetentionHeld:265500 AdvanceAmount:1000000 AdvanceReceived:0 AdvanceRecovered:0 InvoicedTotal:5841000 CreditedTotal:230000 Received:5611000 ReceivableOpen:0}; revenue 5110000
+--- PASS: TestJourneyB_CreditNote (0.39s)
+=== RUN   TestJourneyB_CreditNoteRacesReceipt
+    credit_note_test.go:175: refused: concurrent credit and full receipt: one succeeded, the other store: database invariant violated: credit note CRN-2026-000001 (230000.000000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 5841000.000000, credited 0)
+--- PASS: TestJourneyB_CreditNoteRacesReceipt (0.30s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/kernel	1.705s

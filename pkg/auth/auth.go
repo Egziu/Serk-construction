@@ -109,6 +109,8 @@ const (
 	PermARInvoiceApprove      Permission = "ar.invoice.approve"
 	PermARReceiptCreate       Permission = "ar.receipt.create"
 	PermARReceiptConfirm      Permission = "ar.receipt.confirm"
+	PermARCreditCreate        Permission = "ar.credit.create"
+	PermARCreditApprove       Permission = "ar.credit.approve"
 
 	// Stock valuation (Journey C). Maker/checker pairs are held by different
 	// seed roles (TestDefaultRolesSeparateDuties).
@@ -159,7 +161,7 @@ var DefaultRoles = map[string]Role{
 	"security_admin": {Name: "security_admin", Permissions: []Permission{PermIdentityRevoke, PermAuditRead}},
 	// Journey A operational roles.
 	"estimator":           {Name: "estimator", Permissions: []Permission{PermBOQManage, PermP2PRead}},
-	"commercial_manager":  {Name: "commercial_manager", Permissions: []Permission{PermBOQApprove, PermContractManage, PermIPCCertify, PermP2PRead}},
+	"commercial_manager":  {Name: "commercial_manager", Permissions: []Permission{PermBOQApprove, PermContractManage, PermIPCCertify, PermARCreditApprove, PermP2PRead}},
 	"site_engineer":       {Name: "site_engineer", Permissions: []Permission{PermPRCreate, PermGRNConfirm, PermRFQEvaluate, PermMeasureVerify, PermStockIssueApprove, PermP2PRead}},
 	"storekeeper":         {Name: "storekeeper", Permissions: []Permission{PermGRNCreate, PermStockReceive, PermStockIssue, PermStockCount, PermP2PRead}},
 	"procurement_officer": {Name: "procurement_officer", Permissions: []Permission{PermSupplierManage, PermRFQManage, PermPOManage, PermStockItemManage, PermP2PRead}},
@@ -168,7 +170,7 @@ var DefaultRoles = map[string]Role{
 	"ap_supervisor":       {Name: "ap_supervisor", Permissions: []Permission{PermAPApprove, PermP2PRead}},
 	// Journey B operational roles.
 	"quantity_surveyor": {Name: "quantity_surveyor", Permissions: []Permission{PermMeasureCreate, PermIPCPrepare, PermP2PRead}},
-	"ar_clerk": {Name: "ar_clerk", Permissions: []Permission{PermCustomerManage, PermARInvoiceCreate, PermARReceiptCreate, PermScopeTenantWide,
+	"ar_clerk": {Name: "ar_clerk", Permissions: []Permission{PermCustomerManage, PermARInvoiceCreate, PermARReceiptCreate, PermARCreditCreate, PermScopeTenantWide,
 		PermP2PRead}},
 	// Approves stock count adjustments. Separate from the journal chain: the
 	// adjustment journal it generates is approved by finance and posted by a

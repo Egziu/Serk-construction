@@ -112,7 +112,7 @@ func TestAPIJourneyB_ContractToCash(t *testing.T) {
 	receive("ERA ADVANCE", map[string]any{"contract_id": ctr, "amount": "1000000"})
 
 	// Measurement, IPC, invoice, receipt.
-	cycle := func(period string, q [3]string, ref, wantDue, receiptLine, receiptAmount string) {
+	cycle := func(period string, q [3]string, ref, wantDue, receiptLine, receiptAmount string) string {
 		t.Helper()
 		var lines []map[string]any
 		for i, x := range q {
@@ -145,9 +145,31 @@ func TestAPIJourneyB_ContractToCash(t *testing.T) {
 		}
 		journals = append(journals, a.call(200, "POST", "/v1/customer-invoices/"+inv+"/approve", arSup, nil)["journal_id"].(string))
 		receive(receiptLine, map[string]any{"invoice_id": inv, "amount": receiptAmount})
+		return inv
 	}
 	cycle("2026-10-15", [3]string{"4000", "300", "20"}, "ERA-IPC-01", "4691000", "ERA IPC 1", "4691000")
-	cycle("2026-10-20", [3]string{"3000", "200", "10"}, "ERA-IPC-02", "3663000", "ERA PART IPC 2", "2000000")
+	inv2 := cycle("2026-10-20", [3]string{"3000", "200", "10"}, "ERA-IPC-02", "3663000", "ERA PART IPC 2", "2000000")
+
+	// Credit note on IPC 2's invoice (0022): net 100,000 + VAT 15,000. The AR
+	// clerk issues it; the commercial manager approves with fresh MFA.
+	cn := a.id("POST", "/v1/customer-invoices/"+inv2+"/credit-notes", arClerk, map[string]any{"net_amount": "100000", "credit_date": today,
+		"reason": "Agreed deduction for defective concrete, IPC 2"})
+	if d := a.call(200, "GET", "/v1/p2p/customer_credit_note/"+cn, arClerk, nil)["detail"].(map[string]any); !decOf(t, d["total"]).Equal(decimal.RequireFromString("115000")) {
+		t.Errorf("credit note total: %v", d["total"])
+	}
+	if st, _ := a.do("POST", "/v1/credit-notes/"+cn+"/approve", commercial, nil); st != 401 {
+		t.Errorf("credit note approval without fresh MFA: %d, want 401", st)
+	}
+	if st, _ := a.do("POST", "/v1/credit-notes/"+cn+"/approve", a.tok("u-ar-supervisor", nil, true, "ar_supervisor"), nil); st != 403 {
+		t.Errorf("credit note approval by the AR supervisor (no ar.credit.approve): %d, want 403", st)
+	}
+	if st, _ := a.do("GET", "/v1/p2p/customer_credit_note/"+cn, otherQS, nil); st != 404 {
+		t.Errorf("other-project QS reads the credit note: %d", st)
+	}
+	if st, _ := a.do("POST", "/v1/customer-invoices/"+inv2+"/credit-notes", arClerk, map[string]any{"net_amount": "100000", "credit_date": today, "reason": ""}); st != 422 {
+		t.Errorf("credit note without a reason: %d, want 422", st)
+	}
+	journals = append(journals, a.call(200, "POST", "/v1/credit-notes/"+cn+"/approve", commercialMFA, nil)["journal_id"].(string))
 
 	// Finance approves and posts the AR journals.
 	for _, r := range a.call(200, "POST", "/v1/journals/approve-batch", finMgr, map[string]any{"journal_ids": journals})["results"].([]any) {
@@ -164,7 +186,7 @@ func TestAPIJourneyB_ContractToCash(t *testing.T) {
 	// Position, reconciliation, profitability.
 	pos := a.call(200, "GET", "/v1/contracts/"+ctr+"/position", commercial, nil)
 	for k, want := range map[string]string{"contract_value": "23060000", "certified_gross": "8640000", "retention_held": "432000", "invoiced_total": "8354000",
-		"received": "6691000", "receivable_open": "1663000"} {
+		"credited_total": "115000", "received": "6691000", "receivable_open": "1548000"} {
 		if got := decOf(t, pos[k]); !got.Equal(decimal.RequireFromString(want)) {
 			t.Errorf("position %s: %s, want %s", k, got, want)
 		}
@@ -187,7 +209,7 @@ func TestAPIJourneyB_ContractToCash(t *testing.T) {
 		t.Errorf("project-scoped commercial manager reads the entity AR reconciliation: %d", st)
 	}
 	prof := a.call(200, "GET", "/v1/projects/"+a.project+"/profitability", controller, nil)
-	if !decOf(t, prof["revenue_posted"]).Equal(decimal.RequireFromString("8640000")) {
+	if !decOf(t, prof["revenue_posted"]).Equal(decimal.RequireFromString("8540000")) {
 		t.Errorf("profitability: %v", prof)
 	}
 	// Receipts are entity-level documents: hidden from project roles.

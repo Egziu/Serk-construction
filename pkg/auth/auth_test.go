@@ -24,7 +24,7 @@ func TestDefaultRolesSeparateDuties(t *testing.T) {
 		{PermBankImport, PermPaymentPrepare}, {PermBankImport, PermPaymentApprove}, {PermBankImport, PermPaymentRelease},
 		{PermCustomerManage, PermCustomerApprove}, {PermContractPolicyManage, PermContractPolicyApprove}, {PermContractManage, PermContractApprove},
 		{PermMeasureCreate, PermMeasureVerify}, {PermIPCPrepare, PermIPCCertify}, {PermARInvoiceCreate, PermARInvoiceApprove},
-		{PermARReceiptCreate, PermARReceiptConfirm}, {PermBankImport, PermARReceiptConfirm}, {PermBankImport, PermARReceiptCreate},
+		{PermARReceiptCreate, PermARReceiptConfirm}, {PermARCreditCreate, PermARCreditApprove}, {PermBankImport, PermARReceiptConfirm}, {PermBankImport, PermARReceiptCreate},
 		{PermStockItemManage, PermStockItemApprove}, {PermStockIssue, PermStockIssueApprove}, {PermStockCount, PermStockAdjustApprove},
 		{PermGRNCreate, PermStockIssueApprove},
 	}

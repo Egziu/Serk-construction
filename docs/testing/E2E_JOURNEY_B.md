@@ -123,3 +123,46 @@ Each refusal is asserted with its reason. The run log is in `docs/testing/eviden
 **Periods**
 - A period closed while an approved journal awaits posting.
 - Approval or posting into a closed period.
+
+## Credit note (`TestJourneyB_CreditNote`, migration 0022)
+
+This is a separate world with no advance received.
+
+**IPC 1**
+
+| Item | Amount |
+|---|---|
+| Gross | 5,310,000 |
+| Retention 5% | 265,500 |
+| Advance recovery | 0 |
+| VAT 15% on 5,310,000 | 796,500 |
+| **Due** | **5,841,000** |
+
+**Credit note:** net 200,000, VAT 30,000, total **230,000**. Journal `AR_CREDIT`: Dr 4000 200,000 (project), Dr 2300 30,000 / Cr 1100 230,000.
+
+**Receipts**
+
+- A receipt of 5,841,000 is refused at confirmation because the credited part is no longer receivable. The draft is cancelled.
+- 5,611,000 settles the invoice.
+- A second credit note of 10,000 + 1,500 is refused at approval (nothing is open) and is cancelled.
+
+**After posting**
+
+| Account | Balance |
+|---|---|
+| AR (1100) | 0 |
+| Retention (1150) | 265,500 |
+| VAT output (2300) | −766,500 |
+| Revenue (4000) | −5,110,000 |
+
+- AR reconciliation: difference 0 everywhere. The refused 5,841,000 line stays as unapplied money in (1 line).
+- Contract position: invoiced 5,841,000; credited 230,000; received 5,611,000; open 0.
+- Project revenue posted: 5,110,000.
+
+**HTTP journey:** IPC 2's invoice is credited 100,000 + 15,000.
+
+| Measure | Value |
+|---|---|
+| Receivable open | 1,663,000 − 115,000 = **1,548,000** (AR reconciliation agrees) |
+| Credited | 115,000 |
+| Project revenue posted | 8,640,000 − 100,000 = **8,540,000** |

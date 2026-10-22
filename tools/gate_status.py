@@ -159,7 +159,7 @@ DONE = {
       "TestJourneyB_Controls (22 refusals with asserted reasons), TestJourneyB_CancelReceipt, TestR6_* (17), TestGovernedAI_DraftOnly",
       "Journey B at kernel, HTTP and browser level (11 people)", FULL,
       "IPC1 due 4,691,000, IPC2 due 3,663,000; AR 1,663,000 / retention 432,000 / advance 0 = GL; every AR check and bank check difference 0",
-      JB_EV, "No variations, retention release, credit notes (JB-CREDIT-NOTE OPEN), dunning or FX contracts; VAT rates are test data pending tax sign-off",
+      JB_EV, "No variations, retention release, invoice cancellation, dunning or FX contracts; credit notes built (0022) but quantity corrections by credit are procedural only (JB-CREDIT-QTY); VAT rates are test data pending tax sign-off",
       "independent AI review agent (review 6; not a human sign-off)", "Not on staging (GATEA-08 BLOCKED); no human finance/tax sign-off",
       "Credit notes; human finance review; stock valuation (GATEB-05)"),
  "GATEB-05": item("GATEB-05", "Inventory FIFO/WAC integrated with project/GL", "P1", "Gate B", "PARTIAL", "stock items, warehouses, put-away, issues, counts",

@@ -114,3 +114,30 @@ Journey B reuses it without weakening any part.
 - **Control accounts.** Bank accounts and P2P policies may not use contract-policy control accounts (R6-F5).
 - **IPC periods** follow the contract and the work (R6-F6).
 
+
+## Addendum: customer credit notes (2026-10-22), migration 0022
+
+Closes JB-CREDIT-NOTE. An approved customer invoice and its `AR_INVOICE` journal stay as they are; a reduction of what was billed is a **credit note**, a separate document against one approved invoice.
+
+- **Who.** The AR clerk issues it (`ar.credit.create`), giving only the amount before VAT, the date and a reason. A commercial manager approves it (`ar.credit.approve`): a different person, a human, with fresh MFA. The issuer or an approver may cancel a draft, with a reason.
+- **Figures come from the database.** Entity, project, contract, customer, policy and currency are copied from the invoice by the insert trigger. VAT is the net amount times the invoice policy's VAT rate, rounded to the currency.
+- **Limits.**
+  - All live credits of an invoice never exceed its gross (checked at issue and approval).
+  - An approved credit never exceeds what is still open on the invoice: total less confirmed receipts less earlier approved credits. This is checked under a row lock on the invoice that receipt confirmation also takes, so a credit and a full receipt cannot both succeed (`TestJourneyB_CreditNoteRacesReceipt`).
+  - Receipt confirmation now counts approved credits, so cash cannot be allocated to the credited part of an invoice.
+  - The credit date is in an open fiscal period and not before the invoice date.
+- **Accounting.** Approval generates `AR_CREDIT`: Dr revenue (on the project), Dr VAT output; Cr accounts receivable, on the invoice policy's accounts. Like every subledger journal it is bound to its document, frozen at birth, re-checked at approval and posting, and never cancelled or reversed.
+- **Reports.** The AR reconciliation nets posted credits and counts unposted ones. The contract position has a `credited_total` column, and the open receivable is invoiced less credited less received. Project profitability, which reads the ledger, shows revenue net of credits.
+
+**What a credit note is not.**
+
+- It does not change the certificate. Retention and advance recovery are not adjusted, and the IPC stays INVOICED.
+- It must not be used to correct measured quantities. IPCs are cumulative: a quantity corrected downward in the next measurement already reduces the next certificate, so crediting the same quantity as well would deduct it twice. Credit notes are for commercial settlements and concessions. This rule is procedural and is **not** enforced by the system (residual risk, recorded as JB-CREDIT-QTY).
+- Cancelling an invoice outright and reopening its IPC is not built.
+
+**Tests.**
+
+- Kernel: `TestJourneyB_CreditNote`, with figures in docs/testing/E2E_JOURNEY_B.md. It covers 15 refusals, each asserting its reason, and the GL, reconciliation, position and profitability after posting.
+- Kernel: `TestJourneyB_CreditNoteRacesReceipt`.
+- HTTP: `TestAPIJourneyB_ContractToCash`, which issues and approves a credit note on IPC 2's invoice, with MFA, permission and visibility probes.
+- Browser: `TestConsoleBrowserJourneyB` issues a credit note from the invoice page. The commercial manager opens it from the approval queue, the database refuses the approval because the invoice is settled, and the clerk withdraws it.

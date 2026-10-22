@@ -8,6 +8,8 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/serk-group/serk-construction/internal/kernel"
 	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/auth"
@@ -71,6 +73,15 @@ func (s *Server) registerAR() {
 	m.Handle("POST /v1/customer-invoices/{id}/approve", decide(func(ctx context.Context, p auth.Principal, id string, _ decisionBody) (any, error) {
 		jid, err := k().ApproveCustomerInvoice(ctx, p, id)
 		return map[string]any{"id": id, "journal_id": jid}, err
+	}))
+	// Credit notes (0022): the only correction of an approved invoice.
+	m.Handle("POST /v1/customer-invoices/{id}/credit-notes", s.authed(s.issueCreditNote))
+	m.Handle("POST /v1/credit-notes/{id}/approve", decide(func(ctx context.Context, p auth.Principal, id string, _ decisionBody) (any, error) {
+		jid, err := k().ApproveCreditNote(ctx, p, id)
+		return map[string]any{"id": id, "journal_id": jid}, err
+	}))
+	m.Handle("POST /v1/credit-notes/{id}/cancel", decide(func(ctx context.Context, p auth.Principal, id string, b decisionBody) (any, error) {
+		return nil, k().CancelCreditNote(ctx, p, id, b.Reason)
 	}))
 	m.Handle("POST /v1/receipts", s.authed(s.recordReceipt))
 	m.Handle("POST /v1/receipts/{id}/cancel", decide(func(ctx context.Context, p auth.Principal, id string, b decisionBody) (any, error) {
@@ -189,6 +200,23 @@ func (s *Server) issueCustomerInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 	inv, err := s.cfg.Kernel.IssueCustomerInvoice(r.Context(), principalFrom(r.Context()), id, b.InvoiceDate.Time, b.DueDate.Time)
 	s.created(w, inv, err)
+}
+
+func (s *Server) issueCreditNote(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var b struct {
+		NetAmount  decimal.Decimal `json:"net_amount"`
+		CreditDate day             `json:"credit_date"`
+		Reason     string          `json:"reason"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	cn, err := s.cfg.Kernel.IssueCreditNote(r.Context(), principalFrom(r.Context()), id, b.NetAmount, b.CreditDate.Time, b.Reason)
+	s.created(w, cn, err)
 }
 
 func (s *Server) recordReceipt(w http.ResponseWriter, r *http.Request) {

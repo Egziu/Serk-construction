@@ -188,6 +188,9 @@ const DOCS = {
     statuses: ['DRAFT', 'APPROVED'], actions: { DRAFT: [['approve', 'ar.invoice.approve']] } },
   customer_receipt: { title: 'Receipts', one: 'Receipt', base: '/v1/receipts', create: 'ar.receipt.create', form: 'receipt',
     statuses: ['DRAFT', 'CONFIRMED', 'CANCELLED'], actions: { DRAFT: [['confirm', 'ar.receipt.confirm'], ['cancel', 'ar.receipt.create', 'req'], ['cancel', 'ar.receipt.confirm', 'req']] } },
+  customer_credit_note: { title: 'Credit notes', one: 'Credit note', base: '/v1/credit-notes',
+    statuses: ['DRAFT', 'APPROVED', 'CANCELLED'],
+    actions: { DRAFT: [['approve', 'ar.credit.approve'], ['cancel', 'ar.credit.create', 'req'], ['cancel', 'ar.credit.approve', 'req']] } },
   // Stock (Journey C).
   stock_item: { title: 'Stock items', one: 'Stock item', base: '/v1/stock-items', create: 'stock.item.manage', form: 'stockitem',
     statuses: ['PENDING', 'ACTIVE'], actions: { PENDING: [['approve', 'stock.item.approve']] } },
@@ -215,7 +218,7 @@ const NAV = [
   ['Payables', [['#/list/supplier_invoice', 'Invoices', 'p2p.read'], ['#/list/payment_instruction', 'Payments', 'p2p.read']]],
   ['Treasury', [['#/bank', 'Bank statements', 'bank.import|bank.reconcile'], ['#/list/company_bank_account', 'Company banks', 'scope.tenant_wide'], ['#/list/supplier_bank_account', 'Supplier banks', 'p2p.read']]],
   ['Revenue', [['#/list/contract', 'Contracts', 'p2p.read'], ['#/list/measurement', 'Measurements', 'p2p.read'], ['#/list/ipc', 'Payment certificates', 'p2p.read'],
-    ['#/list/customer_invoice', 'Customer invoices', 'p2p.read'], ['#/list/money_in', 'Money received', 'ar.receipt.create|ar.receipt.confirm'],
+    ['#/list/customer_invoice', 'Customer invoices', 'p2p.read'], ['#/list/customer_credit_note', 'Credit notes', 'p2p.read'], ['#/list/money_in', 'Money received', 'ar.receipt.create|ar.receipt.confirm'],
     ['#/list/customer_receipt', 'Receipts', 'scope.tenant_wide'], ['#/list/customer', 'Customers', 'p2p.read']]],
   ['Finance', [['#/journals', 'Journals', 'journal.read'], ['#/recon', 'Reconciliation', 'journal.read'], ['#/list/p2p_policy', 'P2P policies', 'scope.tenant_wide'],
     ['#/list/contract_policy', 'Contract policies', 'scope.tenant_wide']]],
@@ -254,6 +257,7 @@ const QUEUES = [
   ['ipc.certify', 'ipc', 'SUBMITTED', 'Certificates to certify'],
   ['ar.invoice.create', 'ipc', 'CERTIFIED', 'Certified IPCs to invoice'],
   ['ar.invoice.approve', 'customer_invoice', 'DRAFT', 'Customer invoices to approve'],
+  ['ar.credit.approve', 'customer_credit_note', 'DRAFT', 'Credit notes to approve'],
   ['ar.receipt.create', 'money_in', 'UNAPPLIED', 'Money received to apply'],
   ['ar.receipt.confirm', 'customer_receipt', 'DRAFT', 'Receipts to confirm'],
   ['stock.item.approve', 'stock_item', 'PENDING', 'Stock items to approve'],
@@ -415,7 +419,8 @@ const REF = { pr_id: 'purchase_requisition', rfq_id: 'rfq', po_id: 'purchase_ord
   supplier_id: 'supplier', supplier_bank_id: 'supplier_bank_account', company_bank_id: 'company_bank_account', policy_id: 'p2p_policy',
   customer_id: 'customer', contract_id: 'contract', ipc_id: 'ipc' };
 // Fields whose target depends on the document carrying them.
-const REF_BY_TYPE = { policy_id: { contract: 'contract_policy', ipc: 'contract_policy', customer_invoice: 'contract_policy' } };
+const REF_BY_TYPE = { policy_id: { contract: 'contract_policy', ipc: 'contract_policy', customer_invoice: 'contract_policy', customer_credit_note: 'contract_policy' },
+  invoice_id: { customer_credit_note: 'customer_invoice' } };
 const refOf = (k, type) => (REF_BY_TYPE[k] && REF_BY_TYPE[k][type]) || REF[k];
 // Reading order: what the document is, its state, money, dates, people.
 const ORDER = ['number', 'invoice_number', 'statement_no', 'code', 'name', 'description', 'justification', 'status', 'technical_status', 'match_status',
@@ -513,6 +518,7 @@ function nextSteps(type, d) {
   if (type === 'rfq' && d.status === 'AWARDED') add('po.manage', `#/new/po/${d.id}`, 'Create purchase order');
   if (type === 'purchase_order' && d.status === 'APPROVED') { add('grn.create', `#/new/grn/${d.id}`, 'Record goods receipt'); add('ap.enter', `#/new/invoice/${d.id}`, 'Enter supplier invoice'); }
   if (type === 'supplier_invoice' && d.status === 'APPROVED') add('payment.prepare', `#/new/payment/${d.id}`, 'Prepare payment');
+  if (type === 'customer_invoice' && d.status === 'APPROVED') add('ar.credit.create', `#/new/creditnote/${d.id}`, 'Issue credit note');
   if (type === 'supplier' && d.status === 'ACTIVE') add('supplier.manage', `#/new/supplierbank/${d.id}`, 'Add bank account');
   if (type === 'grn' && d.status === 'CONFIRMED') add('stock.receive', `#/new/putaway/${d.id}`, 'Put away into a warehouse');
   if (type === 'contract' && d.status === 'ACTIVE') { add('measure.create', `#/new/measurement/${d.id}`, 'Record measurement'); add('ipc.prepare', `#/new/ipc/${d.id}`, 'Prepare payment certificate'); }
@@ -1058,6 +1064,20 @@ const FORMS = {
         ? { invoice_id: r.target.slice(4), amount: r.amount } : { contract_id: r.target.slice(4), amount: r.amount }));
       const res = await api('POST', '/v1/receipts', { statement_line_id: line.value, allocations });
       created('customer_receipt', res, 'Receipt');
+    });
+  },
+
+  async creditnote(invoiceID) {
+    const inv = select('invoice_id', await docOpts('customer_invoice', 'APPROVED'), { required: true });
+    if (invoiceID) inv.value = invoiceID;
+    const amount = input('net_amount', { inputmode: 'decimal', autocomplete: 'off', required: true });
+    const date = input('credit_date', { type: 'date', value: today(), required: true });
+    const reason = input('reason', { type: 'text', maxlength: '500', required: true });
+    formPage('Issue credit note', 'Reduces what an approved invoice bills. Enter the amount before VAT; the VAT is computed at the invoice\'s rate. A commercial manager approves it with a fresh multi-factor sign-in.', [
+      h('div', { class: 'grid' }, field('Customer invoice', inv), field('Amount credited (before VAT)', amount), field('Credit date', date)),
+      field('Reason', reason)], 'Issue credit note', async () => {
+      const res = await api('POST', `/v1/customer-invoices/${inv.value}/credit-notes`, { net_amount: amount.value.trim(), credit_date: date.value, reason: reason.value.trim() });
+      created('customer_credit_note', res, 'Credit note');
     });
   },
 
