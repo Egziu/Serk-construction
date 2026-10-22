@@ -57,3 +57,16 @@ Projects were budgeted (BOQ) and costed (ledger) but not scheduled. Nothing said
 - Kernel: `TestScheduleBaselineProgressEVM` (figures in docs/testing/E2E_PLANNING.md).
 - HTTP: `TestAPISchedule_BaselineProgressEVM`.
 - Browser: `TestConsoleBrowserPlanning`, in which the planner builds the network in the form, the project manager approves, progress is reported and approved, and the EVM page is checked. It also runs at 390 px in the dark theme.
+
+## Addendum: independent review 9 (2026-10-22), migration 0030
+
+- **Earned value (R9-F1).** Each activity's EV uses its own latest approved percent complete at or before the status date. A progress report need not list every activity.
+- **Planned value (R9-F4).** The elapsed working-day count includes the start day once the status date has reached it, so a non-working status date gives the same PV as the last working day before it.
+- **Bounds (R9-F3).**
+  - The status date must lie within ten years before the start and ten years after the finish; outside that range the request returns 422.
+  - A version may hold at most 400 holidays.
+  - The report runs under a 5 s statement timeout.
+- **Verification (R9-F7).** The database also re-checks free float, the critical flag (least total float, and ≤ 0) and the late dates against the pkg/schedule rules. A forged computed column can no longer reach a baseline.
+- **Progress order (R9-I1).**
+  - Reports are approved in status-date order.
+  - An actual start may not precede the schedule start.

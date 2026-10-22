@@ -151,3 +151,15 @@ func (l *windowLimiter) sweepLocked(now time.Time) {
 		}
 	}
 }
+
+// limitKey is the key a client address is counted under (R9-F6). An IPv6
+// client usually controls a whole /64, so rotating addresses inside it must
+// not reset its budget or lockout; IPv4 addresses count individually.
+func limitKey(a netip.Addr) string {
+	if a.Is6() && !a.Is4In6() {
+		if p, err := a.Prefix(64); err == nil {
+			return p.String()
+		}
+	}
+	return a.String()
+}

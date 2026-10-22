@@ -28,3 +28,8 @@ The pre-authentication controls (SC-13) are: requests per client address, invali
 - `TestSharedAbuse_LockoutAndBudgetsSpanReplicas`. Two or three API servers share one store, and the lockout, the pre-authentication budget and the principal budget are each enforced once across them. A control case with per-process replicas shows the original defect.
 - `TestSharedAbuse_StoresDigestsOnly`, `TestSharedAbuse_RolePrivileges`, and `TestSharedAbuse_StoreFailureFallsBackToLocalLimits`.
 - `TestPrivileges_CatalogInvariants`, which covers serk_abuse, and `TestProductionRequiresSharedAbuseLimits`.
+
+## Addendum: independent review 9 (2026-10-22)
+
+- **IPv6 (R9-F6).** An IPv6 client is counted per /64. A host usually controls a whole /64, so rotating addresses inside it no longer resets its budget or its lockout. IPv4 addresses still count individually.
+- **Load (R9-I4, open).** Under thousands of concurrent calls, most shared-store calls exceeded the 250 ms timeout, and replicas fell back to their local limits. Pool sizing and the timeout need a load test on staging infrastructure.

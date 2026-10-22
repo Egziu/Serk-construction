@@ -68,6 +68,9 @@ func TestAPISchedule_BaselineProgressEVM(t *testing.T) {
 	if st, _ := a.do("GET", "/v1/projects/"+a.project+"/evm?status_date=14-10-2026", pm, nil); st != 422 {
 		t.Errorf("malformed status date: %d, want 422", st)
 	}
+	if st, _ := a.do("GET", "/v1/projects/"+a.project+"/evm?status_date=9999-12-31", pm, nil); st != 422 {
+		t.Errorf("status date beyond the schedule horizon (R9-F3): %d, want 422", st)
+	}
 	if st, _ := a.do("GET", "/v1/projects/"+a.project+"/evm", otherPlanner, nil); st != 403 {
 		t.Errorf("another project's planner reads the EVM: %d", st)
 	}

@@ -131,3 +131,19 @@ Closes JC-TRANSFER.
 - **Item designation (R8-F8).** Nothing is put away from a purchase-order line on a stock inventory account until the line names its stock item. Procurement (`po.manage`, human-only) may designate an undesignated line of an approved order once, by an attested decision (`po.line.designate`), while nothing has been put away from it. The storekeeper cannot.
 - **Surplus cost basis (R8-I1).** A count surplus is valued at the item's most recent receipt cost in any warehouse (transfer layers are not receipts).
 - **Transfer scope (R8-F6).** Approving a transfer requires visibility of both warehouses.
+
+## Addendum: independent review 9 (2026-10-22), migration 0030
+
+**Budget rule (R9-F2 and R9-F5). This replaces the R8-F3 rule above.** The 0028 rule released the commitment at put-away. That let a cost code buy without limit: each put-away freed budget for the next purchase. The new rule in `p2p_cost_position` is:
+
+- An inventory purchase stays committed on the ordering cost code.
+- Stock issued to that code (`STK_ISSUE`) moves cost from commitment to actual. The move is capped at the value that code's own orders put away.
+- The code therefore bears `commitment + max(0, issued − put away)`.
+
+Consequences:
+- The PR/PO gate limits stock purchases again.
+- Stock lost in a count stays charged to the code that bought it (R9-F5).
+- A count surplus that is issued is charged to the code it is issued to.
+- **Residual JC-BUDGET-ORIGIN.** Stock bought on one code and issued to another is charged to both. The rule cannot attribute stock to its origin because WAC stock is pooled. The error is in the conservative direction: purchases are refused, and an overspend is never allowed. Until origin tracking is built, a CFO budget override with a recorded reason clears a blocked purchase.
+
+**Designation (R9-I2).** Only an APPROVED order may have a line designated, and only by a procurement approver (`po.approve`) who did not raise the order. The attestation context names the line and the item (`DESIGNATE:<line>:<item>`).

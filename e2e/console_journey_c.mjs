@@ -22,21 +22,25 @@ try {
   await nav(fin, `#/doc/stock_item/${itemID}`, /^Stock item/);
   await act(fin, 'Approve', 'Approve: done');
 
-  // ---- 1b. Procurement names the stock item of the PO line (R8-F8) ---------------------
+  // ---- 1b. A procurement approver names the stock item of the PO line (R8-F8, R9-I2) --
+  const pmgr = await as('procMgr');
   await nav(buyer, `#/doc/grn/${FX.grn}`, /^Goods receipt/);
   await buyer.getByRole('link', { name: 'Open purchase order' }).click();
   await buyer.getByRole('heading', { level: 1, name: /^Purchase order/ }).waitFor();
-  await buyer.getByRole('link', { name: 'Designate stock items' }).click();
-  await buyer.getByRole('heading', { level: 1, name: 'Designate stock items' }).waitFor();
-  await selectByText(buyer.getByLabel('Purchase order line'), 'Reinforcement steel');
-  await selectByText(buyer.getByLabel('Stock item'), 'STEEL-G60');
-  await audit(buyer, 'designate stock item form');
-  await buyer.getByRole('button', { name: 'Designate' }).click();
-  await buyer.getByRole('heading', { level: 1, name: /^Purchase order/ }).waitFor();
-  log('PO line 1 designated as STEEL-G60 by procurement');
+  if (await buyer.getByRole('link', { name: 'Designate stock items' }).count()) fail('the buyer who raised the PO is offered "Designate stock items"');
+  await nav(pmgr, `#/doc/grn/${FX.grn}`, /^Goods receipt/);
+  await pmgr.getByRole('link', { name: 'Open purchase order' }).click();
+  await pmgr.getByRole('heading', { level: 1, name: /^Purchase order/ }).waitFor();
+  await pmgr.getByRole('link', { name: 'Designate stock items' }).click();
+  await pmgr.getByRole('heading', { level: 1, name: 'Designate stock items' }).waitFor();
+  await selectByText(pmgr.getByLabel('Purchase order line'), 'Reinforcement steel');
+  await selectByText(pmgr.getByLabel('Stock item'), 'STEEL-G60');
+  await audit(pmgr, 'designate stock item form');
+  await pmgr.getByRole('button', { name: 'Designate' }).click();
+  await pmgr.getByRole('heading', { level: 1, name: /^Purchase order/ }).waitFor();
+  log('PO line 1 designated as STEEL-G60 by the procurement manager');
 
   // ---- 2. Warehouse: procurement manager creates the project store -----------------
-  const pmgr = await as('procMgr');
   await nav(pmgr, '#/new/warehouse', 'New warehouse');
   await selectByText(pmgr.getByLabel('Project'), 'P-API');
   await pmgr.getByLabel('Code').fill('P-STORE');

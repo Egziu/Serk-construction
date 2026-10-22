@@ -382,10 +382,11 @@ func TestR7_IssueDateOutsidePeriods(t *testing.T) {
 // Budget: the issue's cost is counted again on top of the inventory PO commitment.
 // ---------------------------------------------------------------------------
 func TestR7_BudgetDoubleCount(t *testing.T) {
-	// Since R8-F3 (0028): an inventory PO line commits budget until its stock
-	// is put away (stock is an asset), and an issue is actual cost of the code
-	// it is charged to. Across receipt, put-away and issue, the stock consumed
-	// is counted exactly once, and what is still on the shelf is not counted.
+	// Since R9-F2 (0030): an inventory purchase stays committed on the
+	// ordering code until its stock is issued to that code (put-away releases
+	// nothing, so the PR/PO gate keeps limiting stock purchases); an issue to
+	// the code moves cost from commitment to actual, capped at what the
+	// code's orders put away. Order to issue: available never moves.
 	w := newStockWorld(t)
 	f, c := w.f, w.cast
 	pos := func() postgres.CostPosition {
@@ -410,17 +411,16 @@ func TestR7_BudgetDoubleCount(t *testing.T) {
 	t.Logf("ordered: committed %s actual %s available %s", ordered.Committed, ordered.ActualOther, ordered.Available)
 	t.Logf("put away 12 t: committed %s actual %s available %s", stocked.Committed, stocked.ActualOther, stocked.Available)
 	t.Logf("issued 10 t (%s): committed %s actual %s available %s", amt, after.Committed, after.ActualOther, after.Available)
-	if !ordered.Committed.Sub(stocked.Committed).Equal(dec("1014000")) {
-		t.Errorf("OPEN: putting 12 t (1,014,000) into stock released %s of commitment", ordered.Committed.Sub(stocked.Committed))
+	if !stocked.Committed.Equal(ordered.Committed) {
+		t.Errorf("OPEN: putting 12 t into stock released %s of commitment (R9-F2: it must release nothing)", ordered.Committed.Sub(stocked.Committed))
 	}
-	if !stocked.Available.Sub(after.Available).Equal(amt) || !after.ActualOther.Equal(amt) {
-		t.Errorf("OPEN: the issue of %s changed available by %s (actual %s)", amt, stocked.Available.Sub(after.Available), after.ActualOther)
+	if !stocked.Committed.Sub(after.Committed).Equal(amt) || !after.ActualOther.Equal(amt) {
+		t.Errorf("OPEN: the issue of %s moved %s out of commitment (actual %s)", amt, stocked.Committed.Sub(after.Committed), after.ActualOther)
 	}
-	// Net effect from order to issue: only the 2 t still in stock (169,000) is not counted.
-	if !after.Available.Sub(ordered.Available).Equal(dec("169000")) {
-		t.Errorf("OPEN: from order to issue available moved by %s, want +169,000 (the 2 t still on the shelf)", after.Available.Sub(ordered.Available))
+	if !after.Available.Equal(ordered.Available) {
+		t.Errorf("OPEN: from order to issue available moved by %s, want 0 (counted once, never released early)", after.Available.Sub(ordered.Available))
 	} else {
-		t.Logf("held: 10 t consumed counted once; 2 t on the shelf is an asset, not cost")
+		t.Logf("held: 10 t consumed counted once; the 2 t on the shelf stays committed to the ordering code")
 	}
 }
 
@@ -451,8 +451,9 @@ func TestR7_PutAwayItemIdentityAndAI(t *testing.T) {
 	_, err = f.svc.PutAway(f.ctx, c.store, grn2, 1, w.itemSteel, w.store, dec("6"))
 	arDenied(t, "a put-away from an undesignated line", err, "designates it before put-away")
 	arDenied(t, "the storekeeper designating the item", f.svc.DesignatePOLineItem(f.ctx, c.store, poLess, 1, other), "forbidden")
-	must(t, "designate steel", f.svc.DesignatePOLineItem(f.ctx, c.buyer, poLess, 1, w.itemSteel))
-	arDenied(t, "a second designation", f.svc.DesignatePOLineItem(f.ctx, c.buyer, poLess, 1, other), "set once")
+	arDenied(t, "the buyer designating the item (R9-I2)", f.svc.DesignatePOLineItem(f.ctx, c.buyer, poLess, 1, w.itemSteel), "forbidden")
+	must(t, "designate steel", f.svc.DesignatePOLineItem(f.ctx, c.procMgr, poLess, 1, w.itemSteel))
+	arDenied(t, "a second designation", f.svc.DesignatePOLineItem(f.ctx, c.procMgr, poLess, 1, other), "set once")
 	_, err = f.svc.PutAway(f.ctx, c.store, grn2, 1, other, w.store, dec("6"))
 	arDenied(t, "a put-away as another item than designated", err, "ordered as another stock item")
 	w.putAway(t, grn2, 1, w.itemSteel, "6")

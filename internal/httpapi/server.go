@@ -228,7 +228,7 @@ func principalFrom(ctx context.Context) auth.Principal {
 // token, applies the per-principal budget and injects the principal.
 func (s *Server) authed(next func(http.ResponseWriter, *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIP(r, s.cfg.Abuse.TrustedProxies).String()
+		ip := limitKey(clientIP(r, s.cfg.Abuse.TrustedProxies))
 		// SC-13: everything below happens before any token parsing.
 		if s.authFail.blocked(ip) {
 			w.Header().Set("Retry-After", "300")

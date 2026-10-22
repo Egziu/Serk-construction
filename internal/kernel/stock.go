@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 
@@ -420,20 +421,40 @@ func stockDate(d time.Time) error {
 // (po.manage, human), made once and before anything is put away; the
 // storekeeper never chooses the item.
 func (s *Service) DesignatePOLineItem(ctx context.Context, p auth.Principal, poID string, lineNo int, itemID string) error {
-	return s.p2pTx(ctx, p, auth.PermPOManage, func(ctx context.Context, tx pgx.Tx) error {
-		if _, err := s.loadDoc(ctx, tx, p, auth.PermPOManage, "purchase_order", poID); err != nil {
+	// R9-I2: an amendment of an approved order, decided by a procurement
+	// approver who did not raise it; the attestation names the line and item.
+	item, err := uuid.Parse(itemID)
+	if err != nil {
+		return fmt.Errorf("%w: stock item id", ErrInvalidInput)
+	}
+	return s.p2pTx(ctx, p, auth.PermPOApprove, func(ctx context.Context, tx pgx.Tx) error {
+		d, err := s.loadDoc(ctx, tx, p, auth.PermPOApprove, "purchase_order", poID)
+		if err != nil {
 			return err
 		}
-		if _, err := s.visibleDoc(ctx, tx, p, "stock_item", itemID, false); err != nil {
+		if err := requireStatus(d, "APPROVED"); err != nil {
 			return err
 		}
-		if err := s.authorize(ctx, tx, p, "po.line.designate", "purchase_order", poID, "DESIGNATE"); err != nil {
+		if err := auth.CheckMakerChecker(p, d.CreatedBy, "purchase order"); err != nil {
 			return err
 		}
-		if err := postgres.Exec1(ctx, tx, `UPDATE po_lines SET stock_item_id = $3::uuid WHERE po_id = $1::uuid AND line_no = $2`, poID, lineNo, itemID); err != nil {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM po_lines WHERE po_id = $1::uuid AND line_no = $2)`, poID, lineNo).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("purchase order line %d: %w", lineNo, ErrNotFound)
+		}
+		if _, err := s.visibleDoc(ctx, tx, p, "stock_item", item.String(), false); err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, tx, p, "po.line.designate", "purchase_order", poID, fmt.Sprintf("DESIGNATE:%d:%s", lineNo, item)); err != nil {
+			return err
+		}
+		if err := postgres.Exec1(ctx, tx, `UPDATE po_lines SET stock_item_id = $3::uuid WHERE po_id = $1::uuid AND line_no = $2`, poID, lineNo, item.String()); err != nil {
 			return mapNoRows(err)
 		}
 		return s.record(ctx, tx, p, "po.line.designate", "purchase_order", poID, "po.line_designated",
-			map[string]any{"po_id": poID, "line_no": lineNo, "stock_item_id": itemID})
+			map[string]any{"po_id": poID, "line_no": lineNo, "stock_item_id": item.String()})
 	})
 }

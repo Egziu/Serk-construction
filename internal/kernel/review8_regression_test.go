@@ -597,11 +597,13 @@ func TestR8_TransferAcrossProjects(t *testing.T) {
 	c1b, a1b, av1b := position(w.costCode)
 	_, a2b, av2b := position(cc2)
 	t.Logf("after P-002 consumed the 12 t (%s): P-001 committed %s actual %s available %s; P-002 actual %s available %s", amt, c1b, a1b, av1b, a2b, av2b)
-	// R8-F3: put-away released P-001's commitment by the put-away value (the
-	// steel became stock, an asset); P-002's issue bears it as actual. Counted
-	// once: only on P-002.
-	if !av1.Sub(av0).Equal(amt) {
-		t.Errorf("put-away released %s of P-001's commitment, want the put-away value %s", av1.Sub(av0), amt)
+	// R9-F2 (0030, supersedes the R8-F3 rule): put-away releases nothing, so
+	// P-001 stays charged for the 12 t it bought; P-002's issue is actual on
+	// P-002. Stock bought on one project and consumed on another is counted on
+	// both: conservative (it refuses purchases, never permits an overspend)
+	// and registered as JC-BUDGET-ORIGIN.
+	if !av1.Equal(av0) {
+		t.Errorf("put-away released %s of P-001's commitment, want 0 (R9-F2)", av1.Sub(av0))
 	}
 	if !av1b.Equal(av1) {
 		t.Errorf("P-001 available moved from %s to %s when P-002 issued the stock", av1, av1b)
@@ -609,6 +611,7 @@ func TestR8_TransferAcrossProjects(t *testing.T) {
 	if !av2.Sub(av2b).Equal(amt) {
 		t.Errorf("P-002 available fell by %s, want the issue value %s", av2.Sub(av2b), amt)
 	}
+	t.Logf("residual (JC-BUDGET-ORIGIN): %s counted on P-001 (commitment) and on P-002 (actual)", amt)
 }
 
 // ---------------------------------------------------------------------------
@@ -782,8 +785,8 @@ func TestR8_PutAwayUndesignatedLine(t *testing.T) {
 	r8refused(t, "raw designation of the line by the tenant role without attestation",
 		w.rawExec(`UPDATE po_lines SET stock_item_id = $2::uuid WHERE po_id = $1::uuid AND line_no = 1`, po, w.itemSteel))
 	for _, k := range []string{auth.KindAI, auth.KindService} {
-		p := c.buyer
-		p.Kind, p.UserID = k, "u-buyer-"+k
+		p := c.procMgr
+		p.Kind, p.UserID = k, "u-proc-manager-"+k
 		r8refused(t, "designation by a "+k+" principal", f.svc.DesignatePOLineItem(f.ctx, p, po, 1, w.itemSteel))
 	}
 	if auth.IsDraftAction("po.line.designate") {
@@ -797,11 +800,11 @@ func TestR8_PutAwayUndesignatedLine(t *testing.T) {
 		r8open(t, "po.line.designate is a draft action in SQL")
 	}
 	r8refused(t, "designating the cement item (bags, other account rules) on the steel line",
-		f.svc.DesignatePOLineItem(f.ctx, c.buyer, po, 1, w.itemCement))
-	must(t, "designate steel", f.svc.DesignatePOLineItem(f.ctx, c.buyer, po, 1, w.itemSteel))
+		f.svc.DesignatePOLineItem(f.ctx, c.procMgr, po, 1, w.itemCement))
+	must(t, "designate steel", f.svc.DesignatePOLineItem(f.ctx, c.procMgr, po, 1, w.itemSteel))
 	_, err = f.svc.PutAway(f.ctx, c.store, grn, 1, w.itemSteel, w.store, dec("12"))
 	must(t, "put-away after designation", err)
-	r8refused(t, "re-designation after put-away", f.svc.DesignatePOLineItem(f.ctx, c.buyer, po, 1, other))
+	r8refused(t, "re-designation after put-away", f.svc.DesignatePOLineItem(f.ctx, c.procMgr, po, 1, other))
 }
 
 // ---------------------------------------------------------------------------
@@ -893,11 +896,13 @@ func TestR8_BudgetNettingByCount(t *testing.T) {
 	c1, a1, av1 := position()
 	t.Logf("before: committed %s actual %s available %s; surplus 5 t found and all 17 t issued to 01-MAT (%s): committed %s actual %s available %s",
 		c0, a0, av0, amt, c1, a1, av1)
-	if av1.Equal(av0) {
-		r8open(t, "01-MAT consumed %s of stock (12 t received + 5 t surplus) while 8 t of its PO are still open, yet its available budget is unchanged at %s: committed fell %s -> %s",
-			amt, av1, c0, c1)
+	// Since 0030: the 12 t from the code's own order move from commitment to
+	// actual; the 5 t surplus (422,500) is new cost to the code.
+	surplus := amt.Sub(dec("1014000"))
+	if !av0.Sub(av1).Equal(surplus) {
+		r8open(t, "01-MAT consumed %s of stock (12 t received + 5 t surplus %s); available moved %s -> %s, want a fall of exactly the surplus", amt, surplus, av0, av1)
 	} else {
-		r8held(t, "available %s -> %s", av0, av1)
+		r8held(t, "available %s -> %s (the surplus %s is charged; the 12 t were already committed)", av0, av1, surplus)
 	}
 }
 

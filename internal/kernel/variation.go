@@ -159,13 +159,21 @@ func (s *Service) CancelVariation(ctx context.Context, p auth.Principal, id, rea
 	if err := requireReason(reason); err != nil {
 		return err
 	}
-	return s.p2pTx(ctx, p, auth.PermContractManage, func(ctx context.Context, tx pgx.Tx) error {
-		d, err := s.loadDoc(ctx, tx, p, auth.PermContractManage, "contract_variation", id)
+	perm := auth.PermContractManage
+	if !s.authz.Has(p, perm) {
+		perm = auth.PermContractApprove
+	}
+	return s.p2pTx(ctx, p, perm, func(ctx context.Context, tx pgx.Tx) error {
+		d, err := s.loadDoc(ctx, tx, p, perm, "contract_variation", id)
 		if err != nil {
 			return err
 		}
 		if err := requireStatus(d, "DRAFT", "SUBMITTED"); err != nil {
 			return err
+		}
+		// R9-I3: the preparer, or someone who could decide it.
+		if d.CreatedBy != p.UserID && !s.authz.Has(p, auth.PermContractApprove) {
+			return fmt.Errorf("%w: only the preparer or an approver cancels a variation", auth.ErrForbidden)
 		}
 		if err := s.authorize(ctx, tx, p, "contract.variation.cancel", "contract_variation", id, "CANCELLED"); err != nil {
 			return err

@@ -550,7 +550,7 @@ function nextSteps(type, d) {
   if (type === 'purchase_order' && d.status === 'APPROVED') {
     add('grn.create', `#/new/grn/${d.id}`, 'Record goods receipt'); add('ap.enter', `#/new/invoice/${d.id}`, 'Enter supplier invoice');
     const assets = new Set(S.ref.accounts.filter((x) => x.kind === 'ASSET').map((x) => x.id));
-    if (((d.detail || {}).lines || []).some((l) => !l.stock_item_id && assets.has(l.account_id))) add('po.manage', `#/new/designate/${d.id}`, 'Designate stock items');
+    if (((d.detail || {}).lines || []).some((l) => !l.stock_item_id && assets.has(l.account_id))) add('po.approve', `#/new/designate/${d.id}`, 'Designate stock items');
   }
   if (type === 'supplier_invoice' && d.status === 'APPROVED') add('payment.prepare', `#/new/payment/${d.id}`, 'Prepare payment');
   if (type === 'customer_invoice' && d.status === 'APPROVED') add('ar.credit.create', `#/new/creditnote/${d.id}`, 'Issue credit note');

@@ -298,6 +298,15 @@ func (s *Service) ScheduleEVM(ctx context.Context, p auth.Principal, projectID s
 	}
 	var out postgres.EVMReport
 	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
+		// R9-F3: a report is bounded in database time and in its horizon.
+		if _, err := tx.Exec(ctx, `SET LOCAL statement_timeout = '5s'`); err != nil {
+			return err
+		}
+		var outside bool
+		if err := tx.QueryRow(ctx, `SELECT $2::date < start_date - 3660 OR $2::date > COALESCE(finish_date, start_date) + 3660
+			FROM schedule_versions WHERE project_id = $1::uuid AND status = 'BASELINE'`, projectID, statusDate).Scan(&outside); err == nil && outside {
+			return fmt.Errorf("%w: the status date is outside the schedule horizon (ten years around the plan)", ErrInvalidInput)
+		}
 		var err error
 		out, err = postgres.ScheduleEVM(ctx, tx, projectID, statusDate)
 		return err

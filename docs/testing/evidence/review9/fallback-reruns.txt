@@ -1,0 +1,23 @@
+=== RUN   TestR9_AbuseFallbackUnderLoad
+    zz_review9_test.go:163: pool 32 conns, 4 replicas, 40 concurrent auth failures from one client (limit 5 + lockout): allowed 2; shared-store errors/timeouts 0; latency p50 29ms p99 63ms max 63ms
+    zz_review9_test.go:163: pool 4 conns, 4 replicas, 400 concurrent auth failures from one client (limit 5 + lockout): allowed 5; shared-store errors/timeouts 0; latency p50 22ms p99 31ms max 31ms
+    zz_review9_test.go:163: pool 4 conns, 10 replicas, 1000 concurrent auth failures from one client (limit 5 + lockout): allowed 5; shared-store errors/timeouts 0; latency p50 58ms p99 96ms max 115ms
+    zz_review9_test.go:163: pool 4 conns, 20 replicas, 6000 concurrent auth failures from one client (limit 5 + lockout): allowed 5; shared-store errors/timeouts 3690; latency p50 250ms p99 306ms max 322ms
+    zz_review9_test.go:193: info: 64 connections x 20 abuse_hit on one key: p50 1ms p99 142ms max 200ms
+--- PASS: TestR9_AbuseFallbackUnderLoad (1.02s)
+=== RUN   TestR9_AbuseFallbackUnderLoad
+    zz_review9_test.go:163: pool 32 conns, 4 replicas, 40 concurrent auth failures from one client (limit 5 + lockout): allowed 1; shared-store errors/timeouts 0; latency p50 33ms p99 62ms max 62ms
+    zz_review9_test.go:163: pool 4 conns, 4 replicas, 400 concurrent auth failures from one client (limit 5 + lockout): allowed 5; shared-store errors/timeouts 0; latency p50 29ms p99 42ms max 43ms
+    zz_review9_test.go:163: pool 4 conns, 10 replicas, 1000 concurrent auth failures from one client (limit 5 + lockout): allowed 5; shared-store errors/timeouts 0; latency p50 59ms p99 89ms max 94ms
+    zz_review9_test.go:163: pool 4 conns, 20 replicas, 6000 concurrent auth failures from one client (limit 5 + lockout): allowed 5; shared-store errors/timeouts 3474; latency p50 250ms p99 284ms max 297ms
+    zz_review9_test.go:193: info: 64 connections x 20 abuse_hit on one key: p50 2ms p99 164ms max 187ms
+--- PASS: TestR9_AbuseFallbackUnderLoad (0.98s)
+=== RUN   TestR9_AbuseFallbackUnderLoad
+    zz_review9_test.go:163: pool 32 conns, 4 replicas, 40 concurrent auth failures from one client (limit 5 + lockout): allowed 4; shared-store errors/timeouts 0; latency p50 28ms p99 62ms max 62ms
+    zz_review9_test.go:163: pool 4 conns, 4 replicas, 400 concurrent auth failures from one client (limit 5 + lockout): allowed 5; shared-store errors/timeouts 0; latency p50 23ms p99 32ms max 33ms
+    zz_review9_test.go:163: pool 4 conns, 10 replicas, 1000 concurrent auth failures from one client (limit 5 + lockout): allowed 5; shared-store errors/timeouts 0; latency p50 60ms p99 96ms max 97ms
+    zz_review9_test.go:163: pool 4 conns, 20 replicas, 6000 concurrent auth failures from one client (limit 5 + lockout): allowed 5; shared-store errors/timeouts 3714; latency p50 251ms p99 271ms max 274ms
+    zz_review9_test.go:193: info: 64 connections x 20 abuse_hit on one key: p50 1ms p99 140ms max 241ms
+--- PASS: TestR9_AbuseFallbackUnderLoad (1.01s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/httpapi	4.051s
