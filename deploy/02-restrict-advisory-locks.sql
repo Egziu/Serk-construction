@@ -11,4 +11,6 @@ BEGIN
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO serk_publisher, serk_owner', f);
   END LOOP;
 END$$;
-REVOKE TEMPORARY ON DATABASE serk FROM PUBLIC;
+-- Tenant logins must not hold TEMP (R7-F9): the API refuses to start in
+-- production while serk_database_posture() reports it.
+DO $$ BEGIN EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database()); END $$;

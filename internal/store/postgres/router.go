@@ -255,6 +255,21 @@ func (r *Router) Ping(ctx context.Context) error {
 	return r.health.Ping(ctx)
 }
 
+// Posture lists database privilege problems that weaken in-database
+// controls (migration 0024, R7-F9): a tenant login holding TEMP could raise
+// the trigger depth the stock guards rely on; advisory locks ignore RLS. It
+// runs through the health role.
+func (r *Router) Posture(ctx context.Context) ([]string, error) {
+	if r.health == nil {
+		return nil, errors.New("postgres: no health DSN configured")
+	}
+	rows, err := r.health.Query(ctx, `SELECT issue FROM serk_database_posture()`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
 // Close closes every pool.
 func (r *Router) Close() {
 	r.mu.Lock()

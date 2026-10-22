@@ -53,6 +53,15 @@ func main() {
 		os.Exit(1)
 	}
 	defer router.Close()
+	// In-database controls assume tenant logins hold no TEMP and no advisory
+	// locks (R7-F9, deploy/02). Production refuses to start otherwise.
+	if issues, err := router.Posture(ctx); err != nil || len(issues) > 0 {
+		if cfg.Env == config.Production {
+			log.Error("database posture", "issues", issues, "err", err)
+			os.Exit(1)
+		}
+		log.Warn("database posture (refused in production)", "issues", issues, "err", err)
+	}
 
 	var verifier httpapi.TokenVerifier
 	if cfg.OIDCIssuer != "" {

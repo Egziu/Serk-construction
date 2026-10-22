@@ -150,6 +150,9 @@ func (s *Service) CreateStockIssue(ctx context.Context, p auth.Principal, in Sto
 	if err := s.authz.RequireProject(p, auth.PermStockIssue, p.TenantID, in.ProjectID); err != nil {
 		return "", err
 	}
+	if err := stockDate(in.IssueDate); err != nil {
+		return "", err
+	}
 	var id string
 	err := s.p2pTx(ctx, p, auth.PermStockIssue, func(ctx context.Context, tx pgx.Tx) error {
 		if _, err := s.visibleDoc(ctx, tx, p, "warehouse", in.WarehouseID, false); err != nil {
@@ -257,6 +260,9 @@ type StockCountInput struct {
 // CreateStockCount records a DRAFT count; the book quantity and the
 // difference are taken by the database.
 func (s *Service) CreateStockCount(ctx context.Context, p auth.Principal, in StockCountInput) (string, error) {
+	if err := stockDate(in.CountDate); err != nil {
+		return "", err
+	}
 	var id string
 	err := s.p2pTx(ctx, p, auth.PermStockCount, func(ctx context.Context, tx pgx.Tx) error {
 		if _, err := s.visibleDoc(ctx, tx, p, "warehouse", in.WarehouseID, false); err != nil {
@@ -398,4 +404,13 @@ func (s *Service) StockReconciliation(ctx context.Context, p auth.Principal, ent
 		return err
 	})
 	return out, err
+}
+
+// stockDate refuses a missing or future document date (R7-F3); the database
+// also requires an open fiscal period, at recording and at approval.
+func stockDate(d time.Time) error {
+	if d.IsZero() || d.After(time.Now().UTC()) {
+		return fmt.Errorf("%w: a stock document is dated today or earlier, in an open period", ErrInvalidInput)
+	}
+	return nil
 }

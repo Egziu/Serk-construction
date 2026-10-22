@@ -127,6 +127,11 @@ func (s *Service) CreateJournal(ctx context.Context, p auth.Principal, j ledger.
 	if err := j.Validate(); err != nil {
 		return CreateJournalResult{}, err
 	}
+	// R7-F8: "p2p:" keys belong to subledger journals, which only the
+	// document commands generate.
+	if strings.HasPrefix(strings.ToLower(j.IdempotencyKey), "p2p:") {
+		return CreateJournalResult{}, fmt.Errorf("%w: idempotency keys beginning \"p2p:\" are reserved to subledger journals", ErrInvalidInput)
+	}
 	var res CreateJournalResult
 	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
 		id, replayed, err := postgres.CreateJournal(ctx, tx, j)

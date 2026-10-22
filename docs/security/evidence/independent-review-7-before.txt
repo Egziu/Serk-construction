@@ -1,0 +1,126 @@
+=== RUN   TestR7_FIFOManyLayersSmallIssues
+    zz_review7_test.go:90: after 23 issues of 0.4321 t: on hand 0.0616 at 5243.59; issued 846829.78
+    zz_review7_test.go:96: closing qty 0 value 0; receipts 852073.37 issued 852073.37; bal 0 layers 0 docs 0; GL inventory 0
+    zz_review7_test.go:100: held: FIFO over 3 layers x 2 put-aways and 24 issues leaves no residue (GL 0, stock 0, issued = received 852073.37)
+    zz_review7_test.go:102:   recon Inventory: 1200 Inventory                        sub              0 gl              0 diff 0 open 0
+    zz_review7_test.go:102:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    zz_review7_test.go:102:   recon Stock balances vs documents: 1200                sub              0 gl              0 diff 0 open 0
+    zz_review7_test.go:102:   recon Cost layers vs stock balances: 1200              sub              0 gl              0 diff 0 open 0
+--- PASS: TestR7_FIFOManyLayersSmallIssues (1.70s)
+=== RUN   TestR7_WACFractionalToZero
+    zz_review7_test.go:138: WAC closing qty 0 value 0 GL 0 bal 0 layers 0 docs 0
+    zz_review7_test.go:142: held: WAC with fractional averages, 4-dp issues and a shortage ends at stock 0 / GL 0
+    zz_review7_test.go:144:   recon Inventory: 1200 Inventory                        sub              0 gl              0 diff 0 open 0
+    zz_review7_test.go:144:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    zz_review7_test.go:144:   recon Stock balances vs documents: 1200                sub              0 gl              0 diff 0 open 0
+    zz_review7_test.go:144:   recon Cost layers vs stock balances: 1200              sub              0 gl              0 diff 0 open 0
+--- PASS: TestR7_WACFractionalToZero (1.33s)
+=== RUN   TestR7_SurplusValuedFromRoundingRemainder
+=== RUN   TestR7_SurplusValuedFromRoundingRemainder/deflate_to_zero
+    zz_review7_test.go:164: after issuing 299.9999 of 300 at 10.40: book 0.0001 bags valued 0
+    zz_review7_test.go:173: surplus of 1000 bags valued 0 (journal ""); at the receipt price it is 10400; book now 1000.0001 bags at 0
+    zz_review7_test.go:175: OPEN: surplus of 1000 bags at receipt price 10.40 valued 0 (0% of cost) because the average is taken from a 0.0001-bag remainder worth rounding
+    zz_review7_test.go:180: OPEN: 500 of those bags then issued to the project at cost 0 (no STK_ISSUE journal)
+=== RUN   TestR7_SurplusValuedFromRoundingRemainder/inflate
+    zz_review7_test.go:164: after issuing 299.9999 of 300 at 60.00: book 0.0001 bags valued 0.01
+    zz_review7_test.go:173: surplus of 1000 bags valued 100000 (journal "10177982-2da1-41cf-832e-f0f976483ea0"); at the receipt price it is 60000; book now 1000.0001 bags at 100000.01
+    zz_review7_test.go:175: OPEN: surplus of 1000 bags at receipt price 60.00 valued 100000 (167% of cost) because the average is taken from a 0.0001-bag remainder worth rounding
+--- FAIL: TestR7_SurplusValuedFromRoundingRemainder (0.87s)
+    --- FAIL: TestR7_SurplusValuedFromRoundingRemainder/deflate_to_zero (0.44s)
+    --- FAIL: TestR7_SurplusValuedFromRoundingRemainder/inflate (0.43s)
+=== RUN   TestR7_PartialPutAwayOvershoot
+    zz_review7_test.go:203: GRN line debited inventory 0.02; three put-aways of 0.0035 carry 0.03; completing put-away: store: database invariant violated: put-away value would be negative (integrity)
+    zz_review7_test.go:204:   recon Inventory: 1200 Inventory                        sub           0.02 gl           0.02 diff 0 open 0
+    zz_review7_test.go:204:   recon Received, not yet put away: 1200                 sub          -0.01 gl          -0.01 diff 0 open 1
+    zz_review7_test.go:204:   recon Stock balances vs documents: 1200                sub           0.03 gl           0.03 diff 0 open 0
+    zz_review7_test.go:204:   recon Cost layers vs stock balances: 1200              sub           0.03 gl           0.03 diff 0 open 0
+    zz_review7_test.go:212: OPEN: put-away value 0.03 exceeds what the GRN line debited (0.02); completing put-away refused (store: database invariant violated: put-away value would be negative (integrity)); recon all-zero differences = true
+--- FAIL: TestR7_PartialPutAwayOvershoot (0.36s)
+=== RUN   TestR7_RawSQLBypass
+    zz_review7_test.go:241: held: INSERT stock_consumptions: store: database invariant violated: privilege: stock valuation state (stock_consumptions) is written only by stock documents
+    zz_review7_test.go:242: held: DELETE stock_layers: store: database invariant violated: privilege: permission denied for table stock_layers
+    zz_review7_test.go:243: held: UPDATE stock_layers value: store: database invariant violated: privilege: stock valuation state (stock_layers) is written only by stock documents
+    zz_review7_test.go:244: held: INSERT stock_balances ON CONFLICT: store: database invariant violated: privilege: stock valuation state (stock_balances) is written only by stock documents
+    zz_review7_test.go:246: held: stk_consume in a CTE: store: database invariant violated: privilege: stock is consumed only by a stock document
+    zz_review7_test.go:247: held: stk_receive in INSERT ... SELECT: store: database invariant violated: privilege: stock is received only by a stock document
+    zz_review7_test.go:250: held: session_replication_role=replica: store: database invariant violated: privilege: permission denied to set parameter "session_replication_role"
+    zz_review7_test.go:251: held: put-away without attestation (raw insert): store: database invariant violated: privilege: stock.receipt.create of stock_receipt 5a4a11c8-5cec-45af-846b-aa813f6de8c6 requires a verified approval attestation for u-storekeeper
+    zz_review7_test.go:253: held: stock_balances via a forged deferred-constraint (SET CONSTRAINTS): store: database invariant violated: privilege: stock valuation state (stock_balances) is written only by stock documents
+    zz_review7_test.go:260: held: swap journal_id after approval: store: database invariant violated: privilege: the journal of a stock issue is attached once, by the approving transaction
+    zz_review7_test.go:261: held: re-approve an APPROVED issue (amount change): store: database invariant violated: privilege: permission denied for table stock_issues
+    zz_review7_test.go:262: held: edit STK journal lines in a later txn: store: database invariant violated: privilege: permission denied for table journal_lines
+    zz_review7_test.go:263: held: cancel STK journal: store: database invariant violated: privilege: journal.cancel of journal 61b05144-46c1-4799-925f-566cede502e9 requires a verified approval attestation for an authorised person
+    zz_review7_test.go:264: held: orphan STK_ISSUE journal: store: database invariant violated: privilege: permission denied for table journals
+    zz_review7_test.go:269: held: count DRAFT->APPROVED raw without attestation: store: database invariant violated: privilege: stock.count.approve of stock_count 3b5fdee4-2b81-4bf1-b8ed-641ca5831643 requires a verified approval attestation for u-x
+    zz_review7_test.go:272: held: approve issue raw without attestation: store: database invariant violated: privilege: stock.issue.approve of stock_issue 05553ccf-e7c9-4c17-ac85-fd01f5dc8b6f requires a verified approval attestation for u-site-engineer
+    zz_review7_test.go:277:   recon Inventory: 1200 Inventory                        sub        1296000 gl        1396000 diff 100000 open 1
+    zz_review7_test.go:277:   recon Received, not yet put away: 1200                 sub         789000 gl         789000 diff 0 open 2
+    zz_review7_test.go:277:   recon Stock balances vs documents: 1200                sub         422500 gl         422500 diff 0 open 0
+    zz_review7_test.go:277:   recon Cost layers vs stock balances: 1200              sub         422500 gl         422500 diff 0 open 0
+    zz_review7_test.go:283: held: a manual 100,000 journal to inventory shows as a reconciliation difference
+--- PASS: TestR7_RawSQLBypass (0.53s)
+=== RUN   TestR7_IdempotencyKeyPreclaim
+    zz_review7_test.go:300: accountant creates manual journal with key p2p:STK_ISSUE:27e9baa8: <nil>
+    zz_review7_test.go:303: OPEN: a manual journal pre-claiming the idempotency key blocks the stock issue approval: store: idempotency key reused with a different command
+--- FAIL: TestR7_IdempotencyKeyPreclaim (0.34s)
+=== RUN   TestR7_IssueDateOutsidePeriods
+    zz_review7_test.go:328: held: issue dated 2025-06-30 refused at approval: ledger: line rejected: line 1: cost code 01-MAT is not valid on 2025-06-30
+    zz_review7_test.go:334: OPEN: issue dated 2031-01-01 APPROVED (stock now 11 t), journal 22ee8a19: approve ok=true  / post ok=false no fiscal period covers 2031-01-01 03:00:00+03 for entity <id>
+    zz_review7_test.go:328: held: issue dated 0001-01-01 refused at approval: ledger: business event time required
+    zz_review7_test.go:354: OPEN: count dated 2025-06-30 APPROVED (stock 11 -> 10.5 t), journal 623efbf4: approve ok=true  / post ok=false no fiscal period covers 2025-06-30 03:00:00+03 for entity <id>
+    zz_review7_test.go:354: OPEN: count dated 2031-01-01 APPROVED (stock 10.5 -> 10 t), journal 90022ff6: approve ok=true  / post ok=false no fiscal period covers 2031-01-01 03:00:00+03 for entity <id>
+    zz_review7_test.go:358:   recon Inventory: 1200 Inventory                        sub        1014000 gl        1014000 diff 0 open 3
+    zz_review7_test.go:358:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    zz_review7_test.go:358:   recon Stock balances vs documents: 1200                sub         845000 gl         845000 diff 0 open 0
+    zz_review7_test.go:358:   recon Cost layers vs stock balances: 1200              sub         845000 gl         845000 diff 0 open 0
+--- FAIL: TestR7_IssueDateOutsidePeriods (0.44s)
+=== RUN   TestR7_BudgetDoubleCount
+    zz_review7_test.go:385: before issue: budget 12100000 committed 2160000 actual_other 0 available 9940000
+    zz_review7_test.go:386: after issue of 845000: budget 12100000 committed 2160000 actual_other 845000 available 9095000
+    zz_review7_test.go:388: OPEN: issuing stock bought on PO commitment 2160000 consumes the cost code's budget again: available fell by 845000 (committed unchanged 2160000)
+--- FAIL: TestR7_BudgetDoubleCount (0.36s)
+=== RUN   TestR7_PutAwayItemIdentityAndAI
+    zz_review7_test.go:410: OPEN: PO line 1 (Reinforcement steel Grade 60) put away as CU-WIRE-16: 12 t valued 1014000
+    zz_review7_test.go:417: OPEN (design): an AI principal put away 300 bags (receipt 9228e4b5) - a final, unchecked valuation movement under a draft action name
+    zz_review7_test.go:423: note: AI principal created a warehouse (no checker step exists for warehouses)
+    zz_review7_test.go:432: refused: count approved by a ai principal                               auth: forbidden: stock.count.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review7_test.go:432: refused: count approved by a service principal                          auth: forbidden: stock.count.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review7_test.go:446: held: Go IsDraftAction and SQL approval_is_draft_action agree on all 11 stock actions
+--- FAIL: TestR7_PutAwayItemIdentityAndAI (0.35s)
+=== RUN   TestR7_Visibility
+    zz_review7_test.go:479: project storekeeper: receipt into central -> can't scan into dest[2] (col: coalesce): cannot scan NULL into *string ; central warehouse -> store: not found
+    zz_review7_test.go:488: OPEN: u-storekeeper cannot read stock receipt 9b8cdf87 detail: can't scan into dest[2] (col: coalesce): cannot scan NULL into *string
+    zz_review7_test.go:488: OPEN: u-controller cannot read stock receipt 9b8cdf87 detail: can't scan into dest[2] (col: coalesce): cannot scan NULL into *string
+    zz_review7_test.go:492: list stock_receipt for project storekeeper: 2 rows (incl. central put-away)
+    zz_review7_test.go:501: held: tenant 2 stock on hand of tenant 1 entity: 0 lines, <nil>
+    zz_review7_test.go:509: project storekeeper issue from central warehouse: store: not found
+--- FAIL: TestR7_Visibility (0.35s)
+=== RUN   TestR7_ConcurrentPutAwayAndCount
+    zz_review7_test.go:541: held: concurrent put-aways: 1 of 4 succeeded, stock 8; e.g. store: database invariant violated: put-away 8.0000 exceeds what the goods receipt line still holds (8.0000 of 12.0000 already put away)
+    zz_review7_test.go:559: round 0: count err=<nil> issue err=<nil>; book 300 -> 292; bal 950480 docs 950480 layers 950480
+    zz_review7_test.go:559: round 1: count err=<nil> issue err=<nil>; book 292 -> 284; bal 942960 docs 942960 layers 942960
+    zz_review7_test.go:559: round 2: count err=<nil> issue err=<nil>; book 284 -> 276; bal 935440 docs 935440 layers 935440
+    zz_review7_test.go:559: round 3: count err=<nil> issue err=<nil>; book 276 -> 268; bal 927920 docs 927920 layers 927920
+    zz_review7_test.go:559: round 4: count err=<nil> issue err=<nil>; book 268 -> 260; bal 920400 docs 920400 layers 920400
+--- PASS: TestR7_ConcurrentPutAwayAndCount (0.54s)
+=== RUN   TestR7_ReconSharedAccountUnposted
+    zz_review7_test.go:591:   recon Inventory: 1200 Inventory                        sub         685500 gl         685500 diff 0 open 0
+    zz_review7_test.go:591:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    zz_review7_test.go:591:   recon Stock balances vs documents: 1200                sub        1108000 gl        1108000 diff 0 open 0
+    zz_review7_test.go:591:   recon Cost layers vs stock balances: 1200              sub        1108000 gl        1108000 diff 0 open 0
+    zz_review7_test.go:594: GL inventory 685500; stock balances 1108000 (includes 5 t put away from the unposted GRN)
+    zz_review7_test.go:597: OPEN: 'Inventory' row is GL vs posted documents (zero) while stock balances (1108000) differ from GL (685500) by the unposted GRN 422500; every row shows difference 0 and open 0 (Inventory row subledger 685500), so the 5 t put away from the unposted GRN is reported nowhere
+--- FAIL: TestR7_ReconSharedAccountUnposted (0.41s)
+=== RUN   TestR7_TriggerDepthGuardNeedsTempRevoked
+    zz_review7_test.go:642: OPEN (conditional on TEMP not revoked): tenant login wrote stock_balances through a pg_temp trigger: steel now 1012 t at 1014001
+--- FAIL: TestR7_TriggerDepthGuardNeedsTempRevoked (0.31s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	7.909s
+=== RUN   TestR7_API_StockReceiptDetailAndIssueDate
+    zz_review7_test.go:42: OPEN: GET /v1/p2p/stock_receipt/aeb6e8c8 by storekeeper -> 500 map[error:map[code:internal message:internal error]]
+    zz_review7_test.go:42: OPEN: GET /v1/p2p/stock_receipt/aeb6e8c8 by controller -> 500 map[error:map[code:internal message:internal error]]
+    zz_review7_test.go:55: OPEN: issue dated 2031-01-01 accepted and approved over HTTP (journal 9065afef-65ae-4b58-b303-6a0de3131077); approve map[results:[map[journal_id:9065afef-65ae-4b58-b303-6a0de3131077 ok:true]]]; post 200 map[results:[map[error:no fiscal period covers 2031-01-01 03:00:00+03 for entity <id> journal_id:9065afef-65ae-4b58-b303-6a0de3131077 ok:false]]]
+--- FAIL: TestR7_API_StockReceiptDetailAndIssueDate (0.35s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/httpapi	0.363s
+FAIL

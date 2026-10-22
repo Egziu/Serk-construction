@@ -202,6 +202,10 @@ func IsDraftAction(action string) bool {
 	switch action {
 	case "rfq.quote.record", "bank.import", "workflow.start":
 		return true
+	case "stock.receipt.create":
+		// A put-away is immediately effective valuation with no checker
+		// step (R7-F5): a human decision despite its name.
+		return false
 	}
 	return strings.HasSuffix(action, ".create") || strings.HasSuffix(action, ".submit")
 }

@@ -76,7 +76,9 @@ func docProject(ctx context.Context, tx pgx.Tx, docType, id string) (string, err
 	case "warehouse":
 		q = `SELECT COALESCE(project_id::text, '') FROM warehouses WHERE id = $1::uuid`
 	case "stock_receipt":
-		q = `SELECT o.project_id::text FROM stock_receipts r JOIN grns g ON g.id = r.grn_id JOIN purchase_orders o ON o.id = g.po_id WHERE r.id = $1::uuid`
+		// Scoped by the warehouse it went into (R7-I1): a put-away into a
+		// central warehouse needs tenant-wide scope, like the warehouse.
+		q = `SELECT COALESCE(w.project_id::text, '') FROM stock_receipts r JOIN warehouses w ON w.id = r.warehouse_id WHERE r.id = $1::uuid`
 	case "stock_issue":
 		q = `SELECT project_id::text FROM stock_issues WHERE id = $1::uuid`
 	case "stock_count":
@@ -791,6 +793,14 @@ func (s *Service) AwardRFQ(ctx context.Context, p auth.Principal, rfqID, quoteID
 // requisition line number to the GL account it is costed to (expense or
 // inventory); price, quantity and cost code come from the award.
 func (s *Service) CreatePOFromAward(ctx context.Context, p auth.Principal, rfqID string, accounts map[int]string) (string, error) {
+	return s.CreatePOFromAwardItems(ctx, p, rfqID, accounts, nil)
+}
+
+// CreatePOFromAwardItems is CreatePOFromAward with stock items designated for
+// inventory lines (requisition line number -> stock item id). A designated
+// line is put away only as that item (0024, R7-F5); the database checks the
+// item's entity, unit and inventory account against the line.
+func (s *Service) CreatePOFromAwardItems(ctx context.Context, p auth.Principal, rfqID string, accounts map[int]string, items map[int]string) (string, error) {
 	var id string
 	err := s.p2pTx(ctx, p, auth.PermPOManage, func(ctx context.Context, tx pgx.Tx) error {
 		if _, err := s.loadDoc(ctx, tx, p, auth.PermPOManage, "rfq", rfqID); err != nil {
@@ -826,11 +836,15 @@ func (s *Service) CreatePOFromAward(ctx context.Context, p auth.Principal, rfqID
 			if !ok {
 				return fmt.Errorf("%w: no GL account given for requisition line %d", ErrInvalidInput, n)
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO po_lines(po_id, line_no, legal_entity_id, cost_code_id, account_id, description, unit, quantity, unit_price)
-				SELECT $1::uuid, pl.line_no, o.legal_entity_id, pl.cost_code_id, $3::uuid, pl.description, pl.unit, pl.quantity, ql.unit_price
+			var item *string
+			if v, ok := items[n]; ok && v != "" {
+				item = &v
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO po_lines(po_id, line_no, legal_entity_id, cost_code_id, account_id, description, unit, quantity, unit_price, stock_item_id)
+				SELECT $1::uuid, pl.line_no, o.legal_entity_id, pl.cost_code_id, $3::uuid, pl.description, pl.unit, pl.quantity, ql.unit_price, $4::uuid
 				  FROM purchase_orders o JOIN rfqs q ON q.id = o.rfq_id JOIN pr_lines pl ON pl.pr_id = q.pr_id AND pl.line_no = $2
 				  JOIN rfq_quote_lines ql ON ql.quote_id = o.quote_id AND ql.pr_line_no = pl.line_no
-				 WHERE o.id = $1::uuid`, id, n, acct); err != nil {
+				 WHERE o.id = $1::uuid`, id, n, acct, item); err != nil {
 				return err
 			}
 		}

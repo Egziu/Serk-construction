@@ -76,7 +76,7 @@ func (w *stockWorld) inventoryPO(t *testing.T, steelQty, cementQty, steelPrice, 
 		must(t, "eval", f.svc.EvaluateQuote(f.ctx, c.siteEng, q[i], true, "Mill certificates provided"))
 	}
 	must(t, "award", f.svc.AwardRFQ(f.ctx, c.procMgr, rfq, q[0], ""))
-	po, err := f.svc.CreatePOFromAward(f.ctx, c.buyer, rfq, map[int]string{1: w.acct["1200"], 2: w.acct["1200"]})
+	po, err := f.svc.CreatePOFromAwardItems(f.ctx, c.buyer, rfq, map[int]string{1: w.acct["1200"], 2: w.acct["1200"]}, map[int]string{1: w.itemSteel, 2: w.itemCement})
 	must(t, "po", err)
 	must(t, "po approve", f.svc.ApprovePO(f.ctx, c.procMgr, po, ""))
 	return po
@@ -154,7 +154,7 @@ func TestJourneyC_StockValuationToGL(t *testing.T) {
 	}
 
 	// Counts: steel 6.5 t on the shelf (book 7): shortage 0.5 t at FIFO 86,000;
-	// cement 335 bags (book 330): surplus 5 at the average 311,300/330.
+	// cement 335 bags (book 330): surplus 5 at the last receipt cost 950 (0024, R7-F1).
 	ct1, err := f.svc.CreateStockCount(f.ctx, c.store, StockCountInput{WarehouseID: w.store, StockItemID: w.itemSteel, CountedQty: dec("6.5"),
 		VarianceAccountID: w.acct["5200"], CountDate: today()})
 	must(t, "count steel", err)
@@ -166,12 +166,12 @@ func TestJourneyC_StockValuationToGL(t *testing.T) {
 	jc2, err := f.svc.ApproveStockCount(f.ctx, w.invCtl, ct2)
 	must(t, "approve cement count", err)
 	journals = append(journals, jc1, jc2)
-	for id, want := range map[string]string{ct1: "43000", ct2: "4716.67"} {
+	for id, want := range map[string]string{ct1: "43000", ct2: "4750"} {
 		if got := w.stockValue(t, `SELECT amount FROM stock_counts WHERE id = $1::uuid`, id); !got.Equal(dec(want)) {
 			t.Errorf("count %s valued %s, want %s", id[:8], got, want)
 		}
 	}
-	for item, want := range map[string][2]string{w.itemSteel: {"6.5", "559000"}, w.itemCement: {"335", "316016.67"}} {
+	for item, want := range map[string][2]string{w.itemSteel: {"6.5", "559000"}, w.itemCement: {"335", "316050"}} {
 		q, v := w.balanceOf(t, item)
 		if !q.Equal(dec(want[0])) || !v.Equal(dec(want[1])) {
 			t.Errorf("closing balance %s: qty %s value %s, want %s / %s", item[:8], q, v, want[0], want[1])
@@ -183,12 +183,12 @@ func TestJourneyC_StockValuationToGL(t *testing.T) {
 	w.financePost(t, journals...)
 
 	// Inventory to GL.
-	if got := w.glBalance(t, "1200"); !got.Equal(dec("922516.67")) {
-		t.Errorf("GL inventory %s, want 922516.67", got)
+	if got := w.glBalance(t, "1200"); !got.Equal(dec("922550")) {
+		t.Errorf("GL inventory %s, want 922550", got)
 	}
 	recon, err := f.svc.StockReconciliation(f.ctx, c.controller, f.entity)
 	must(t, "stock reconciliation", err)
-	if len(recon) != 4 {
+	if len(recon) != 6 {
 		t.Fatalf("stock reconciliation returned %d checks", len(recon))
 	}
 	for _, r := range recon {
@@ -213,8 +213,8 @@ func TestJourneyC_StockValuationToGL(t *testing.T) {
 	// Project cost from the ledger: issues and count variances on the project.
 	pr, err := f.svc.ProjectProfitability(f.ctx, c.controller, f.project)
 	must(t, "profitability", err)
-	if !pr.CostPosted.Equal(dec("1423483.33")) {
-		t.Errorf("project cost posted %s, want 1423483.33", pr.CostPosted)
+	if !pr.CostPosted.Equal(dec("1423450")) {
+		t.Errorf("project cost posted %s, want 1423450", pr.CostPosted)
 	}
 	onHand, err := f.svc.StockOnHand(f.ctx, c.store, f.entity)
 	must(t, "on hand", err)
@@ -306,12 +306,10 @@ func TestJourneyC_Controls(t *testing.T) {
 		ValuationMethod: "WAC", InventoryAccountID: w.acct["1200"]})
 	must(t, "new item", err)
 	must(t, "approve new item", f.svc.ApproveStockItem(f.ctx, c.finMgr, newItem))
-	found, err := f.svc.CreateStockCount(f.ctx, c.store, StockCountInput{WarehouseID: w.store, StockItemID: newItem, CountedQty: dec("4"),
+	_, err = f.svc.CreateStockCount(f.ctx, c.store, StockCountInput{WarehouseID: w.store, StockItemID: newItem, CountedQty: dec("4"),
 		VarianceAccountID: w.acct["5200"], CountDate: today()})
-	must(t, "surplus count", err)
-	_, err = f.svc.ApproveStockCount(f.ctx, w.invCtl, found)
-	arDenied(t, "a surplus with no cost basis", err, "no cost basis")
-	_, err = f.svc.ApproveStockCount(f.ctx, c.store, found)
+	arDenied(t, "a surplus with no cost basis (refused when recorded)", err, "no cost basis")
+	_, err = f.svc.ApproveStockCount(f.ctx, c.store, ct)
 	arDenied(t, "count approved by the storekeeper", err, "forbidden")
 
 	// Visibility: another project's storekeeper sees neither the store nor its stock.

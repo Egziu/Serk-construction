@@ -88,3 +88,20 @@ The order (GATEB-05) asks for inventory valued FIFO or weighted average and inte
   - a concurrent over-issue.
 - **HTTP:** `TestAPIJourneyC_StockValuation`.
 - **Browser:** `TestConsoleBrowserJourneyC`, with 7 people doing every stock step in the UI.
+
+## Addendum: independent review 7 (2026-10-22), migration 0024
+
+The review findings and their fixes are in docs/security/INDEPENDENT_REVIEW_7_2026-10-22.md. Decision changes:
+
+- **Surplus valuation (amends point 5).** A surplus is valued at the item's last receipt cost, preferring this warehouse, and never at the average of what is left. A near-empty balance is mostly rounding, so its average says nothing about cost. The unit cost is recorded with the count, so the inventory controller sees the amount before approving. A surplus with no receipt history, or with a zero value, is refused when it is recorded.
+- **Put-away (amends point 3).** A put-away is immediately effective valuation with no checker step, so it is a decision reserved to human principals, not a draft. Its `.create` action name notwithstanding, the Go and SQL lists agree.
+  - A purchase-order line may name its stock item when the PO is raised (`stock_items` in `POST /v1/purchase-orders`), and the put-away must match it.
+  - A line raised without one is fixed to the first item put away from it.
+  - Put-away values are rounded cumulatively, so they never exceed the receipt line's debit.
+- **Dates.** Issues and counts are dated today or earlier, in an OPEN fiscal period. This is checked again at approval, because their journals can be neither cancelled nor reversed.
+- **Budget.** Stock issued to a cost code first consumes that code's open inventory purchase commitment, so a purchase and its issue are counted once.
+- **Reconciliation (amends point 8).** Two rows are added per inventory account:
+  - "Stock balances vs GL", which reconciles the running stock value to the GL through explicit reconciling items;
+  - "Put away from goods receipts not yet posted".
+- **Visibility.** A put-away is scoped by the warehouse it went into.
+- **Deployment posture.** The stock guards' trigger-depth check assumes tenant logins hold no TEMP. The API checks this at start-up through `serk_database_posture()` and refuses to start in production otherwise.

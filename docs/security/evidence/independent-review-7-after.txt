@@ -1,0 +1,136 @@
+=== RUN   TestR7_API_StockReceiptDetailAndIssueDate
+    review7_regression_test.go:46: held: receipt detail 200
+    review7_regression_test.go:46: held: receipt detail 200
+    review7_regression_test.go:54: held: future-dated issue refused: map[error:map[code:validation message:kernel: invalid input: a stock document is dated today or earlier, in an open period]]
+--- PASS: TestR7_API_StockReceiptDetailAndIssueDate (0.31s)
+=== RUN   TestR7_FIFOManyLayersSmallIssues
+    review7_regression_test.go:92: after 23 issues of 0.4321 t: on hand 0.0616 at 5243.59; issued 846829.78
+    review7_regression_test.go:98: closing qty 0 value 0; receipts 852073.37 issued 852073.37; bal 0 layers 0 docs 0; GL inventory 0
+    review7_regression_test.go:102: held: FIFO over 3 layers x 2 put-aways and 24 issues leaves no residue (GL 0, stock 0, issued = received 852073.37)
+    review7_regression_test.go:104:   recon Inventory: 1200 Inventory                        sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Stock balances vs GL: 1200                       sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Stock balances vs documents: 1200                sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Cost layers vs stock balances: 1200              sub              0 gl              0 diff 0 open 0
+--- PASS: TestR7_FIFOManyLayersSmallIssues (1.46s)
+=== RUN   TestR7_WACFractionalToZero
+    review7_regression_test.go:140: WAC closing qty 0 value 0 GL 0 bal 0 layers 0 docs 0
+    review7_regression_test.go:144: held: WAC with fractional averages, 4-dp issues and a shortage ends at stock 0 / GL 0
+    review7_regression_test.go:146:   recon Inventory: 1200 Inventory                        sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Stock balances vs GL: 1200                       sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Stock balances vs documents: 1200                sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Cost layers vs stock balances: 1200              sub              0 gl              0 diff 0 open 0
+--- PASS: TestR7_WACFractionalToZero (1.31s)
+=== RUN   TestR7_SurplusValuedFromRoundingRemainder
+=== RUN   TestR7_SurplusValuedFromRoundingRemainder/deflate_to_zero
+    review7_regression_test.go:166: after issuing 299.9999 of 300 at 10.40: book 0.0001 bags valued 0
+    review7_regression_test.go:179: surplus of 1000 bags valued 10400 (journal "db2ad6a5-da95-41de-86b1-81d45fe3d0aa"); at the receipt price it is 10400; book now 1000.0001 bags at 10400
+    review7_regression_test.go:189: held: surplus valued within 5% of the receipt price
+=== RUN   TestR7_SurplusValuedFromRoundingRemainder/inflate
+    review7_regression_test.go:166: after issuing 299.9999 of 300 at 60.00: book 0.0001 bags valued 0.01
+    review7_regression_test.go:179: surplus of 1000 bags valued 60000 (journal "41e23dff-68d9-4607-a067-65544f6971f4"); at the receipt price it is 60000; book now 1000.0001 bags at 60000.01
+    review7_regression_test.go:189: held: surplus valued within 5% of the receipt price
+--- PASS: TestR7_SurplusValuedFromRoundingRemainder (0.86s)
+    --- PASS: TestR7_SurplusValuedFromRoundingRemainder/deflate_to_zero (0.43s)
+    --- PASS: TestR7_SurplusValuedFromRoundingRemainder/inflate (0.44s)
+=== RUN   TestR7_PartialPutAwayOvershoot
+    review7_regression_test.go:209: GRN line debited inventory 0.02; three put-aways of 0.0035 carry 0.02; completing put-away: <nil>
+    review7_regression_test.go:216:   recon Inventory: 1200 Inventory                        sub           0.02 gl           0.02 diff 0 open 0
+    review7_regression_test.go:216:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:216:   recon Stock balances vs GL: 1200                       sub           0.02 gl           0.02 diff 0 open 0
+    review7_regression_test.go:216:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:216:   recon Stock balances vs documents: 1200                sub           0.02 gl           0.02 diff 0 open 0
+    review7_regression_test.go:216:   recon Cost layers vs stock balances: 1200              sub           0.02 gl           0.02 diff 0 open 0
+--- PASS: TestR7_PartialPutAwayOvershoot (0.38s)
+=== RUN   TestR7_RawSQLBypass
+    review7_regression_test.go:253: held: INSERT stock_consumptions: store: database invariant violated: privilege: stock valuation state (stock_consumptions) is written only by stock documents
+    review7_regression_test.go:254: held: DELETE stock_layers: store: database invariant violated: privilege: permission denied for table stock_layers
+    review7_regression_test.go:255: held: UPDATE stock_layers value: store: database invariant violated: privilege: stock valuation state (stock_layers) is written only by stock documents
+    review7_regression_test.go:256: held: INSERT stock_balances ON CONFLICT: store: database invariant violated: privilege: stock valuation state (stock_balances) is written only by stock documents
+    review7_regression_test.go:258: held: stk_consume in a CTE: store: database invariant violated: privilege: stock is consumed only by a stock document
+    review7_regression_test.go:259: held: stk_receive in INSERT ... SELECT: store: database invariant violated: privilege: stock is received only by a stock document
+    review7_regression_test.go:262: held: session_replication_role=replica: store: database invariant violated: privilege: permission denied to set parameter "session_replication_role"
+    review7_regression_test.go:263: held: put-away without attestation (raw insert): store: database invariant violated: privilege: stock.receipt.create of stock_receipt 45e13074-ac12-4092-b2ee-dd090115495a requires a verified approval attestation for u-storekeeper
+    review7_regression_test.go:265: held: stock_balances via a forged deferred-constraint (SET CONSTRAINTS): store: database invariant violated: privilege: stock valuation state (stock_balances) is written only by stock documents
+    review7_regression_test.go:272: held: swap journal_id after approval: store: database invariant violated: privilege: the journal of a stock issue is attached once, by the approving transaction
+    review7_regression_test.go:273: held: re-approve an APPROVED issue (amount change): store: database invariant violated: privilege: permission denied for table stock_issues
+    review7_regression_test.go:274: held: edit STK journal lines in a later txn: store: database invariant violated: privilege: permission denied for table journal_lines
+    review7_regression_test.go:275: held: cancel STK journal: store: database invariant violated: privilege: journal.cancel of journal 5cac578d-ff37-4866-b7cb-a5bcfc2d2014 requires a verified approval attestation for an authorised person
+    review7_regression_test.go:276: held: orphan STK_ISSUE journal: store: database invariant violated: privilege: permission denied for table journals
+    review7_regression_test.go:281: held: count DRAFT->APPROVED raw without attestation: store: database invariant violated: privilege: stock.count.approve of stock_count 850d9404-6140-47ec-9029-40e749aa7f8f requires a verified approval attestation for u-x
+    review7_regression_test.go:284: held: approve issue raw without attestation: store: database invariant violated: privilege: stock.issue.approve of stock_issue 1acfcb70-e07f-45ff-905c-6db77f5fbc33 requires a verified approval attestation for u-site-engineer
+    review7_regression_test.go:289:   recon Inventory: 1200 Inventory                        sub        1296000 gl        1396000 diff 100000 open 1
+    review7_regression_test.go:289:   recon Received, not yet put away: 1200                 sub         789000 gl         789000 diff 0 open 2
+    review7_regression_test.go:289:   recon Stock balances vs GL: 1200                       sub        1296000 gl        1396000 diff 100000 open 1
+    review7_regression_test.go:289:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:289:   recon Stock balances vs documents: 1200                sub         422500 gl         422500 diff 0 open 0
+    review7_regression_test.go:289:   recon Cost layers vs stock balances: 1200              sub         422500 gl         422500 diff 0 open 0
+    review7_regression_test.go:295: held: a manual 100,000 journal to inventory shows as a reconciliation difference
+--- PASS: TestR7_RawSQLBypass (0.43s)
+=== RUN   TestR7_IdempotencyKeyPreclaim
+    review7_regression_test.go:312: accountant creates manual journal with key p2p:STK_ISSUE:c5b17b3f: kernel: invalid input: idempotency keys beginning "p2p:" are reserved to subledger journals
+    review7_regression_test.go:313: refused: a manual journal in the reserved p2p: key namespace            kernel: invalid input: idempotency keys beginning "p2p:" are reserved to subledger journals
+    review7_regression_test.go:320: refused: a raw journal in the reserved namespace                        store: database invariant violated: idempotency keys beginning "p2p:" are reserved to the subledger journal of the named document
+    review7_regression_test.go:325: held: issue approved despite the pre-claimed key
+--- PASS: TestR7_IdempotencyKeyPreclaim (0.37s)
+=== RUN   TestR7_IssueDateOutsidePeriods
+    review7_regression_test.go:343: held: issue dated 2025-06-30 refused at creation: store: database invariant violated: stock document date 2025-06-30 is not in an open fiscal period of the entity
+    review7_regression_test.go:343: held: issue dated 2031-01-01 refused at creation: kernel: invalid input: a stock document is dated today or earlier, in an open period
+    review7_regression_test.go:343: held: issue dated 0001-01-01 refused at creation: kernel: invalid input: a stock document is dated today or earlier, in an open period
+    review7_regression_test.go:363: held: count dated 2025-06-30 refused: store: database invariant violated: stock document date 2025-06-30 is not in an open fiscal period of the entity
+    review7_regression_test.go:363: held: count dated 2031-01-01 refused: kernel: invalid input: a stock document is dated today or earlier, in an open period
+    review7_regression_test.go:378:   recon Inventory: 1200 Inventory                        sub        1014000 gl        1014000 diff 0 open 0
+    review7_regression_test.go:378:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:378:   recon Stock balances vs GL: 1200                       sub        1014000 gl        1014000 diff 0 open 0
+    review7_regression_test.go:378:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:378:   recon Stock balances vs documents: 1200                sub        1014000 gl        1014000 diff 0 open 0
+    review7_regression_test.go:378:   recon Cost layers vs stock balances: 1200              sub        1014000 gl        1014000 diff 0 open 0
+--- PASS: TestR7_IssueDateOutsidePeriods (0.38s)
+=== RUN   TestR7_BudgetDoubleCount
+    review7_regression_test.go:405: before issue: budget 12100000 committed 2160000 actual_other 0 available 9940000
+    review7_regression_test.go:406: after issue of 845000: budget 12100000 committed 1315000 actual_other 845000 available 9940000
+    review7_regression_test.go:414: held: available 9940000 -> 9940000
+--- PASS: TestR7_BudgetDoubleCount (0.39s)
+=== RUN   TestR7_PutAwayItemIdentityAndAI
+    review7_regression_test.go:435: held: store: database invariant violated: purchase order line 1 was ordered as another stock item
+    review7_regression_test.go:443: refused: the rest of a line put away as another item                    store: database invariant violated: purchase order line 1 is already put away as another stock item; one line is one item
+    review7_regression_test.go:449: held: AI put-away refused: auth: forbidden: stock.receipt.create is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review7_regression_test.go:453: note: AI principal created a warehouse (no checker step exists for warehouses)
+    review7_regression_test.go:476: held: Go IsDraftAction and SQL approval_is_draft_action agree on all 11 stock actions
+--- PASS: TestR7_PutAwayItemIdentityAndAI (0.52s)
+=== RUN   TestR7_Visibility
+    review7_regression_test.go:509: project storekeeper: receipt into central -> store: not found ; central warehouse -> store: not found
+    review7_regression_test.go:522: list stock_receipt for project storekeeper: 1 rows (incl. central put-away)
+    review7_regression_test.go:531: held: tenant 2 stock on hand of tenant 1 entity: 0 lines, <nil>
+    review7_regression_test.go:539: project storekeeper issue from central warehouse: store: not found
+--- PASS: TestR7_Visibility (0.38s)
+=== RUN   TestR7_ConcurrentPutAwayAndCount
+    review7_regression_test.go:571: held: concurrent put-aways: 1 of 4 succeeded, stock 8; e.g. store: database invariant violated: put-away 8.0000 exceeds what the goods receipt line still holds (8.0000 of 12.0000 already put away)
+    review7_regression_test.go:589: round 0: count err=<nil> issue err=<nil>; book 300 -> 292; bal 950480 docs 950480 layers 950480
+    review7_regression_test.go:589: round 1: count err=<nil> issue err=<nil>; book 292 -> 284; bal 942960 docs 942960 layers 942960
+    review7_regression_test.go:589: round 2: count err=<nil> issue err=<nil>; book 284 -> 276; bal 935440 docs 935440 layers 935440
+    review7_regression_test.go:589: round 3: count err=store: database invariant violated: count SCT-2026-000004 is stale: the book quantity changed from 276.0000 to 271.0000 since it was recorded; count again issue err=<nil>; book 276 -> 271; bal 930740 docs 930740 layers 930740
+    review7_regression_test.go:589: round 4: count err=<nil> issue err=<nil>; book 271 -> 263; bal 923220 docs 923220 layers 923220
+--- PASS: TestR7_ConcurrentPutAwayAndCount (0.60s)
+=== RUN   TestR7_ReconSharedAccountUnposted
+    review7_regression_test.go:621:   recon Inventory: 1200 Inventory                        sub         685500 gl         685500 diff 0 open 1
+    review7_regression_test.go:621:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:621:   recon Stock balances vs GL: 1200                       sub         685500 gl         685500 diff 0 open 1
+    review7_regression_test.go:621:   recon Put away from goods receipts not yet posted: 1200 sub         422500 gl         422500 diff 0 open 1
+    review7_regression_test.go:621:   recon Stock balances vs documents: 1200                sub        1108000 gl        1108000 diff 0 open 0
+    review7_regression_test.go:621:   recon Cost layers vs stock balances: 1200              sub        1108000 gl        1108000 diff 0 open 0
+    review7_regression_test.go:624: GL inventory 685500; stock balances 1108000 (includes 5 t put away from the unposted GRN)
+    review7_regression_test.go:649:   recon Inventory: 1200 Inventory                        sub         685500 gl         785500 diff 100000 open 1
+    review7_regression_test.go:649:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:649:   recon Stock balances vs GL: 1200                       sub         685500 gl         785500 diff 100000 open 1
+    review7_regression_test.go:649:   recon Put away from goods receipts not yet posted: 1200 sub         422500 gl         422500 diff 0 open 1
+    review7_regression_test.go:649:   recon Stock balances vs documents: 1200                sub        1108000 gl        1108000 diff 0 open 0
+    review7_regression_test.go:649:   recon Cost layers vs stock balances: 1200              sub        1108000 gl        1108000 diff 0 open 0
+--- PASS: TestR7_ReconSharedAccountUnposted (0.47s)
+=== RUN   TestR7_TriggerDepthGuardNeedsTempRevoked
+    review7_regression_test.go:697: conditional: with TEMP granted, the tenant login wrote stock_balances through a pg_temp trigger (steel 1012 t at 1014001)
+    review7_regression_test.go:715: held: posture check reports [TEMP is granted on the database to tenant login postgres TEMP is granted on the database to tenant login serk_t_037c936397d4424faae24b4c53cbf608]
+--- PASS: TestR7_TriggerDepthGuardNeedsTempRevoked (0.35s)

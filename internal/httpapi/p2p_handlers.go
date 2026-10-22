@@ -320,8 +320,9 @@ func (s *Server) recordQuote(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createPO(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		RFQID    string            `json:"rfq_id"`
-		Accounts map[string]string `json:"accounts"` // requisition line number -> GL account id
+		RFQID      string            `json:"rfq_id"`
+		Accounts   map[string]string `json:"accounts"`              // requisition line number -> GL account id
+		StockItems map[string]string `json:"stock_items,omitempty"` // requisition line number -> stock item id (inventory lines)
 	}
 	if !decode(w, r, &b) {
 		return
@@ -335,7 +336,16 @@ func (s *Server) createPO(w http.ResponseWriter, r *http.Request) {
 		}
 		acc[n] = v
 	}
-	id, err := s.cfg.Kernel.CreatePOFromAward(r.Context(), principalFrom(r.Context()), b.RFQID, acc)
+	items := map[int]string{}
+	for k, v := range b.StockItems {
+		n, err := strconv.Atoi(k)
+		if err != nil || !canonicalUUID(v) {
+			writeErr(w, http.StatusUnprocessableEntity, "validation", "stock_items maps requisition line numbers to stock item ids (canonical UUID)")
+			return
+		}
+		items[n] = v
+	}
+	id, err := s.cfg.Kernel.CreatePOFromAwardItems(r.Context(), principalFrom(r.Context()), b.RFQID, acc, items)
 	s.created(w, id, err)
 }
 

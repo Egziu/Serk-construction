@@ -49,19 +49,19 @@ Steel left: 7 t at 602,000.
 | Item | Counted | Book | Difference | Valuation | Amount | Journal |
 |---|---|---|---|---|---|---|
 | Steel | 6.5 t | 7 | shortage 0.5 t | FIFO, from L2: 0.5 × 86,000 | **43,000** | Dr 5200 / Cr 1200 |
-| Cement | 335 | 330 | surplus 5 | average 311,300 / 330 = 943.3333…, so 5 × 943.3333… | **4,716.67** | Dr 1200 / Cr 5200 |
+| Cement | 335 | 330 | surplus 5 | last receipt cost 950 (0024, R7-F1), so 5 × 950 | **4,750.00** | Dr 1200 / Cr 5200 |
 
 ## End state (all journals posted)
 
 | Measure | Value |
 |---|---|
 | Steel | 6.5 t, 559,000 |
-| Cement | 335 bags, 316,016.67 |
-| Stock value | 875,016.67 |
+| Cement | 335 bags, 316,050 |
+| Stock value | 875,050 |
 | Received, not yet put away | 47,500 |
-| **GL inventory (1200)** | 1,296,000 + 1,050,000 − 1,272,000 − 113,200 − 43,000 + 4,716.67 = **922,516.67** |
-| Stock plus not put away | 875,016.67 + 47,500 = 922,516.67 ✓ |
-| Project cost posted | 1,272,000 + 113,200 + 43,000 − 4,716.67 = **1,423,483.33** |
+| **GL inventory (1200)** | 1,296,000 + 1,050,000 − 1,272,000 − 113,200 − 43,000 + 4,750 = **922,550** |
+| Stock plus not put away | 875,050 + 47,500 = 922,550 ✓ |
+| Project cost posted | 1,272,000 + 113,200 + 43,000 − 4,750 = **1,423,450** |
 
 **Reconciliation checks** (`stock_gl_reconciliation`)
 
@@ -71,6 +71,8 @@ Steel left: 7 t at 602,000.
 | Received, not yet put away | 47,500 on 1 line |
 | Balances vs documents | difference 0 |
 | FIFO layers vs balances | difference 0 |
+| Stock balances vs GL (0024) | 922,550 = 922,550, difference 0 |
+| Put away from receipts not yet posted (0024) | 0 |
 
 The P2P reconciliation (GRNI) is unchanged at 0.
 
