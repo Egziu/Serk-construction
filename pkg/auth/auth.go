@@ -89,6 +89,9 @@ const (
 	PermPaymentRelease      Permission = "payment.release"
 	PermBankImport          Permission = "bank.import"
 	PermBankReconcile       Permission = "bank.reconcile"
+	// PermBankDetailsReveal shows a full bank account number (with fresh MFA,
+	// a stated purpose and an audit record). Everyone else sees it masked.
+	PermBankDetailsReveal Permission = "bank.details.reveal"
 )
 
 // Role is a named permission bundle. Roles are tenant-scoped data in
@@ -113,12 +116,12 @@ var DefaultRoles = map[string]Role{
 	"bank_statement_officer": {Name: "bank_statement_officer", Permissions: []Permission{PermBankImport, PermScopeTenantWide, PermP2PRead}},
 	"finance_manager": {Name: "finance_manager", Permissions: []Permission{PermJournalApprove, PermJournalRead, PermFXRead, PermFXApprove,
 		PermFXPolicyApprove, PermWBSApprove, PermScopeTenantWide, PermWorkflowRead, PermAPApproveException, PermPaymentApprove,
-		PermSupplierBankApprove, PermP2PRead}},
+		PermSupplierBankApprove, PermBankDetailsReveal, PermP2PRead}},
 	"controller": {Name: "controller", Permissions: []Permission{PermJournalPost, PermJournalReverse, PermJournalRead, PermPeriodClose,
 		PermAccountManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PPolicyManage, PermP2PRead}},
 	"cfo": {Name: "cfo", Permissions: []Permission{PermJournalRead, PermFXRead, PermFXApprove, PermFXApproveExcept, PermFXPolicyApprove,
 		PermPeriodReopen, PermAuditRead, PermScopeTenantWide, PermWorkflowRead, PermWorkflowPublish, PermApprovalHighValue,
-		PermPaymentApprove, PermP2PPolicyApprove, PermBudgetOverride, PermBankAcctApprove, PermP2PRead}},
+		PermPaymentApprove, PermP2PPolicyApprove, PermBudgetOverride, PermBankAcctApprove, PermBankDetailsReveal, PermP2PRead}},
 	"auditor":            {Name: "auditor", Permissions: []Permission{PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PRead}},
 	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermP2PRead}},
 	"project_accountant": {Name: "project_accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermWorkflowRead}},

@@ -148,6 +148,7 @@ func (s *Server) registerP2P() {
 	m.Handle("GET /v1/journals", s.authed(s.listJournals))
 	m.Handle("GET /v1/p2p/{type}", s.authed(s.listP2P))
 	m.Handle("GET /v1/p2p/{type}/{id}", s.authed(s.getP2P))
+	m.Handle("POST /v1/p2p/{type}/{id}/reveal-bank-details", s.authed(s.revealBank))
 	m.Handle("GET /v1/projects/{id}/cost-report", s.authed(s.costReport))
 	m.Handle("GET /v1/projects/{id}/cost-codes", s.authed(s.costCodes))
 	m.Handle("GET /v1/p2p-reference", s.authed(s.p2pReference))
@@ -500,4 +501,26 @@ func (s *Server) costCodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"cost_codes": out})
+}
+
+// revealBank returns a full bank account number to a privileged, MFA-fresh
+// caller who states a purpose (IA-040-01). The response is never cached.
+func (s *Server) revealBank(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := uuid.Parse(id); err != nil {
+		writeErr(w, http.StatusNotFound, "not_found", "not found")
+		return
+	}
+	var b struct {
+		Purpose string `json:"purpose"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	out, err := s.cfg.Kernel.RevealBankAccount(r.Context(), principalFrom(r.Context()), r.PathValue("type"), id, b.Purpose)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }

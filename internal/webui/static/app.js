@@ -405,8 +405,32 @@ async function renderDoc(type, id) {
   parts.push(rowsTable('Lines', det.lines), rowsTable('Items', det.items), rowsTable('Allocations', det.alloc));
   if (Array.isArray(det.quotes)) parts.push(rowsTable('Quotes received', det.quotes.map((x) => x.q)));
   if (det.payee) parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Payee (approved bank account)'), kv(det.payee)));
-  parts.push(actionsPanel(type, d, det), nextSteps(type, d));
+  parts.push(actionsPanel(type, d, det), nextSteps(type, d), revealPanel(type, d));
   page(`${meta.one} ${d.number || ''}`.trim(), null, ...parts);
+}
+
+// Full account numbers are masked everywhere; a holder of bank.details.reveal
+// may display one with a stated purpose and a fresh MFA sign-in. The reveal is
+// audited on the server; the number is shown once and never stored here.
+function revealPanel(type, d) {
+  if (!['supplier_bank_account', 'company_bank_account'].includes(type) || !S.can.has('bank.details.reveal')) return null;
+  const purpose = input('purpose', { type: 'text', maxlength: '300', required: true });
+  const out = h('output', { class: 'reveal', 'aria-live': 'polite' });
+  const btn = h('button', { type: 'button', class: 'ghost' }, 'Reveal full account number');
+  btn.addEventListener('click', async () => {
+    clearError();
+    out.textContent = '';
+    if (purpose.value.trim().length < 20) { showError(new Error('State the purpose of the reveal (at least 20 characters).')); purpose.focus(); return; }
+    btn.disabled = true;
+    try {
+      const r = await api('POST', `/v1/p2p/${type}/${d.id}/reveal-bank-details`, { purpose: purpose.value.trim() });
+      out.textContent = `${r.account_number} (${r.account_name || ''}${r.bank_name ? ', ' + r.bank_name : ''}). This reveal was recorded in the audit log.`;
+      purpose.value = '';
+    } catch (e) { showError(e); } finally { btn.disabled = false; }
+  });
+  return h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Bank details'),
+    h('p', { class: 'hint' }, 'Account numbers are masked. Revealing one requires a recent multi-factor sign-in and is audited.'),
+    h('div', { class: 'actions' }, field('Purpose of the reveal', purpose), btn), out);
 }
 
 function nextSteps(type, d) {

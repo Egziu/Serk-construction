@@ -1,24 +1,26 @@
 === RUN   TestConsoleBrowserJourneyA
-    console_browser_test.go:108: browser journey (14s):
-        22:23:23.103 a11y ok: sign-in page
-        22:23:23.380 a11y ok: home (site engineer)
-        22:23:23.563 a11y ok: requisition form
-        22:23:23.768 requisition Requisition PR-2026-000001 submitted
-        22:23:25.617 rfq issued, 3 quotes recorded
-        22:23:27.339 purchase order approved
-        22:23:28.268 two receipts confirmed
-        22:23:29.527 self-approval refused and explained in the UI
-        22:23:29.884 a11y ok: approved invoice with three-way match
-        22:23:30.838 a11y ok: home (finance manager)
-        22:23:31.337 4 subledger journals approved and posted
-        22:23:34.138 payments PAY-2026-000001 PAY-2026-000002 released and posted
-        22:23:34.399 a11y ok: bank statement import with preview
-        22:23:34.983 a11y ok: reconciliation result (dark theme)
-        22:23:35.538 statement imported and reconciled; settlement journals posted
-        22:23:35.579 a11y ok: reconciliation report
-        22:23:36.024 a11y ok: cost report at 390px
-        22:23:36.067 a11y ok: purchase order at 390px
-        22:23:36.190 sign-out revoked the session (401 afterwards)
+    console_browser_test.go:108: browser journey (10s):
+        05:35:38.533 a11y ok: sign-in page
+        05:35:38.729 a11y ok: home (site engineer)
+        05:35:38.833 a11y ok: requisition form
+        05:35:38.960 requisition Requisition PR-2026-000001 submitted
+        05:35:40.368 rfq issued, 3 quotes recorded
+        05:35:41.572 purchase order approved
+        05:35:42.494 two receipts confirmed
+        05:35:43.287 self-approval refused and explained in the UI
+        05:35:43.608 a11y ok: approved invoice with three-way match
+        05:35:44.409 a11y ok: home (finance manager)
+        05:35:44.794 4 subledger journals approved and posted
+        05:35:46.823 payments PAY-2026-000001 PAY-2026-000002 released and posted
+        05:35:47.004 a11y ok: supplier bank account with reveal
+        05:35:47.004 IA-040-01: payment hidden from site engineer; bank number masked; audited reveal works
+        05:35:47.180 a11y ok: bank statement import with preview
+        05:35:47.545 a11y ok: reconciliation result (dark theme)
+        05:35:47.925 statement imported and reconciled; settlement journals posted
+        05:35:47.960 a11y ok: reconciliation report
+        05:35:48.236 a11y ok: cost report at 390px
+        05:35:48.264 a11y ok: purchase order at 390px
+        05:35:48.370 sign-out revoked the session (401 afterwards)
         
         CONSOLE JOURNEY A: PASS
---- PASS: TestConsoleBrowserJourneyA (15.05s)
+--- PASS: TestConsoleBrowserJourneyA (10.85s)

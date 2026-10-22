@@ -1,0 +1,28 @@
+=== RUN   TestIA04001_EntityLevelDocumentsNeedTenantWideScope
+    ia04001_test.go:77: EXPOSED: project manager read payment_instruction b721ed70 by id (1523 bytes of detail)
+    ia04001_test.go:77: EXPOSED: project manager read p2p_policy 5c2325d5 by id (775 bytes of detail)
+    ia04001_test.go:77: EXPOSED: project manager read company_bank_account 8892b923 by id (530 bytes of detail)
+    ia04001_test.go:77: EXPOSED: site engineer read payment_instruction b721ed70 by id (1523 bytes of detail)
+    ia04001_test.go:77: EXPOSED: site engineer read p2p_policy 5c2325d5 by id (775 bytes of detail)
+    ia04001_test.go:77: EXPOSED: site engineer read company_bank_account 8892b923 by id (530 bytes of detail)
+    ia04001_test.go:77: EXPOSED: storekeeper read company_bank_account 8892b923 by id (530 bytes of detail)
+    ia04001_test.go:77: EXPOSED: storekeeper read payment_instruction b721ed70 by id (1523 bytes of detail)
+    ia04001_test.go:77: EXPOSED: storekeeper read p2p_policy 5c2325d5 by id (775 bytes of detail)
+    ia04001_test.go:77: EXPOSED: other-project manager read payment_instruction b721ed70 by id (1523 bytes of detail)
+    ia04001_test.go:77: EXPOSED: other-project manager read p2p_policy 5c2325d5 by id (775 bytes of detail)
+    ia04001_test.go:77: EXPOSED: other-project manager read company_bank_account 8892b923 by id (530 bytes of detail)
+    ia04001_test.go:77: EXPOSED: project-restricted analyst read payment_instruction b721ed70 by id (1523 bytes of detail)
+    ia04001_test.go:77: EXPOSED: project-restricted analyst read p2p_policy 5c2325d5 by id (775 bytes of detail)
+    ia04001_test.go:77: EXPOSED: project-restricted analyst read company_bank_account 8892b923 by id (530 bytes of detail)
+    ia04001_test.go:98: existence disclosure: unknown id -> store: not found, out-of-scope id -> <nil>
+    ia04001_test.go:104: project-restricted finance manager acting on a payment: ledger: illegal status transition: document is DRAFT, want not-found
+--- FAIL: TestIA04001_EntityLevelDocumentsNeedTenantWideScope (0.84s)
+=== RUN   TestIA04001_BankAccountNumbersMaskedEverywhere
+    ia04001_test.go:137: EXPOSED: site engineer's supplier_bank_account response contains the full account number 1000123456789
+    ia04001_test.go:139: EXPOSED: finance manager's supplier_bank_account response contains the full account number 1000123456789
+    ia04001_test.go:140: EXPOSED: finance manager's company_bank_account response contains the full account number 1000999888777
+    ia04001_test.go:141: EXPOSED: treasury's payment_instruction response contains the full account number 1000123456789
+--- FAIL: TestIA04001_BankAccountNumbersMaskedEverywhere (0.27s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	1.122s
+FAIL

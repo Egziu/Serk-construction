@@ -76,22 +76,8 @@ func docProject(ctx context.Context, tx pgx.Tx, docType, id string) (string, err
 
 // loadDoc locks a document and enforces the principal's project scope for perm.
 func (s *Service) loadDoc(ctx context.Context, tx pgx.Tx, p auth.Principal, perm auth.Permission, docType, id string) (postgres.Doc, error) {
-	d, err := postgres.GetDoc(ctx, tx, docType, id, true)
-	if err != nil {
-		return d, err
-	}
-	proj, err := docProject(ctx, tx, docType, id)
-	if err != nil {
-		return d, err
-	}
-	if proj != "" {
-		if err := s.authz.RequireProject(p, perm, p.TenantID, proj); err != nil {
-			return d, ErrNotFound // out of scope looks like absence (SC-05)
-		}
-	} else if !s.authz.Has(p, auth.PermScopeTenantWide) && docType != "supplier" && docType != "supplier_bank_account" {
-		return d, ErrNotFound
-	}
-	return d, nil
+	// perm was checked by p2pTx; visibility is the one policy in docscope.go.
+	return s.visibleDoc(ctx, tx, p, docType, id, true)
 }
 
 func requireStatus(d postgres.Doc, want ...string) error {
@@ -103,30 +89,19 @@ func requireStatus(d postgres.Doc, want ...string) error {
 	return fmt.Errorf("%w: document is %s", ledger.ErrBadTransition, d.Status)
 }
 
-// GetP2PDoc returns any P2P document visible to the principal.
+// GetP2PDoc returns a P2P document visible to the principal, as a
+// reader-safe projection (bank account numbers masked; IA-040-01).
 func (s *Service) GetP2PDoc(ctx context.Context, p auth.Principal, docType, id string) (postgres.Doc, error) {
 	var d postgres.Doc
 	err := s.p2pTx(ctx, p, auth.PermP2PRead, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
-		d, err = s.loadDocRead(ctx, tx, p, docType, id)
+		if d, err = s.visibleDoc(ctx, tx, p, docType, id, false); err != nil {
+			return err
+		}
+		d.Detail, err = projectDoc(docType, d.Detail)
 		return err
 	})
 	return d, err
-}
-
-func (s *Service) loadDocRead(ctx context.Context, tx pgx.Tx, p auth.Principal, docType, id string) (postgres.Doc, error) {
-	d, err := postgres.GetDoc(ctx, tx, docType, id, false)
-	if err != nil {
-		return d, err
-	}
-	proj, err := docProject(ctx, tx, docType, id)
-	if err != nil {
-		return d, err
-	}
-	if proj != "" && s.authz.RequireProject(p, auth.PermP2PRead, p.TenantID, proj) != nil {
-		return postgres.Doc{}, ErrNotFound
-	}
-	return d, nil
 }
 
 // subledgerJournal creates the DRAFT journal of a document from the
@@ -1685,16 +1660,7 @@ func (s *Service) batch(ids []string, fn func(string) error) []BatchResult {
 func (s *Service) ListP2PDocs(ctx context.Context, p auth.Principal, docType, status string, limit int) ([]postgres.DocSummary, error) {
 	var out []postgres.DocSummary
 	err := s.p2pTx(ctx, p, auth.PermP2PRead, func(ctx context.Context, tx pgx.Tx) error {
-		sc := s.authz.ScopeOf(p) // the same scope RequireProject applies per document
-		wide := sc.TenantWide
-		// Suppliers and their bank accounts are shared master data; other
-		// entity-level documents (payments, policies, statements) are
-		// tenant-wide only. Project documents follow SC-05 project scope.
-		scope := postgres.ListScope{TenantWide: wide, Projects: sc.Projects,
-			EntityLevel: wide || docType == "supplier" || docType == "supplier_bank_account"}
-		if scope.Projects == nil {
-			scope.Projects = []string{}
-		}
+		scope := s.listScope(p, docType) // the same policy as detail reads (docscope.go)
 		var err error
 		out, err = postgres.ListDocs(ctx, tx, docType, status, scope, limit)
 		return err

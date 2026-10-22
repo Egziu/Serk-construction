@@ -1,0 +1,23 @@
+=== RUN   TestAPI_IA04001_DocumentScopeAndBankMasking
+--- PASS: TestAPI_IA04001_DocumentScopeAndBankMasking (0.22s)
+=== RUN   TestIA04001_PrivilegedRevealIsPermissionedFreshAndAudited
+--- PASS: TestIA04001_PrivilegedRevealIsPermissionedFreshAndAudited (0.28s)
+=== RUN   TestIA04001_EntityLevelDocumentsNeedTenantWideScope
+    ia04001_test.go:84: refused project-restricted analyst  payment_instruction   not found
+    ia04001_test.go:84: refused project-restricted analyst  p2p_policy            not found
+    ia04001_test.go:84: refused project-restricted analyst  company_bank_account  not found
+    ia04001_test.go:84: refused project manager             p2p_policy            not found
+    ia04001_test.go:84: refused project manager             company_bank_account  not found
+    ia04001_test.go:84: refused project manager             payment_instruction   not found
+    ia04001_test.go:84: refused site engineer               company_bank_account  not found
+    ia04001_test.go:84: refused site engineer               payment_instruction   not found
+    ia04001_test.go:84: refused site engineer               p2p_policy            not found
+    ia04001_test.go:84: refused storekeeper                 payment_instruction   not found
+    ia04001_test.go:84: refused storekeeper                 p2p_policy            not found
+    ia04001_test.go:84: refused storekeeper                 company_bank_account  not found
+    ia04001_test.go:84: refused other-project manager       payment_instruction   not found
+    ia04001_test.go:84: refused other-project manager       p2p_policy            not found
+    ia04001_test.go:84: refused other-project manager       company_bank_account  not found
+--- PASS: TestIA04001_EntityLevelDocumentsNeedTenantWideScope (0.29s)
+=== RUN   TestIA04001_BankAccountNumbersMaskedEverywhere
+--- PASS: TestIA04001_BankAccountNumbersMaskedEverywhere (0.28s)

@@ -312,6 +312,7 @@ try {
   const tr = await as('treasury');
   const tr2 = await as('treasury2');
   const cfo = await as('cfo');
+  const payIDs = [];
   const pay = async (invID) => {
     await nav(tr, `#/doc/supplier_invoice/${invID}`, /^Supplier invoice/);
     await tr.getByRole('link', { name: 'Prepare payment' }).click();
@@ -332,6 +333,7 @@ try {
     await tr.locator('#alert').filter({ hasText: 'cannot release' }).waitFor();
     await nav(tr2, `#/doc/payment_instruction/${id}`, /^Payment instruction/);
     await act(tr2, 'Release payment', 'draft journal was created');
+    payIDs.push(id);
     return number;
   };
   const pay1 = await pay(inv1);
@@ -339,6 +341,22 @@ try {
   const pay2 = await pay(inv2);
   await batch(2);
   log('payments', pay1, pay2, 'released and posted');
+
+  // ---- IA-040-01: entity-level finance documents and bank details --------------
+  await nav(se, `#/doc/payment_instruction/${payIDs[0]}`);
+  await se.locator('#alert').filter({ hasText: 'Not found.' }).waitFor();
+  await nav(se, '#/list/payment_instruction', 'Payments');
+  await se.getByRole('table').filter({ hasText: 'Payments (0)' }).waitFor();
+  await nav(fin, '#/list/supplier_bank_account', 'Supplier bank accounts');
+  await fin.getByRole('link').filter({ hasText: /^[0-9a-f]{8}$/ }).first().click();
+  await fin.getByRole('heading', { level: 1, name: 'Supplier bank account' }).waitFor();
+  const shown = await fin.locator('#view').innerText();
+  if (shown.includes('1000123456789') || !shown.includes('****6789')) fail(`supplier bank page not masked: ${shown.slice(0, 200)}`);
+  await fin.getByLabel('Purpose of the reveal').fill('Call-back verification of payee details with the supplier');
+  await fin.getByRole('button', { name: 'Reveal full account number' }).click();
+  await fin.locator('output.reveal').filter({ hasText: '1000123456789' }).waitFor();
+  await audit(fin, 'supplier bank account with reveal');
+  log('IA-040-01: payment hidden from site engineer; bank number masked; audited reveal works');
 
   // ---- 10. Bank statement import (independent officer) and reconciliation -------
   const bo = await as('bankOfficer');
