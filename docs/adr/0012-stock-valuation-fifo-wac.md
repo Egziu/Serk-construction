@@ -147,3 +147,7 @@ Consequences:
 - **Residual JC-BUDGET-ORIGIN.** Stock bought on one code and issued to another is charged to both. The rule cannot attribute stock to its origin because WAC stock is pooled. The error is in the conservative direction: purchases are refused, and an overspend is never allowed. Until origin tracking is built, a CFO budget override with a recorded reason clears a blocked purchase.
 
 **Designation (R9-I2).** Only an APPROVED order may have a line designated, and only by a procurement approver (`po.approve`) who did not raise the order. The attestation context names the line and the item (`DESIGNATE:<line>:<item>`).
+
+## Addendum: invoice price variance policy (2026-10-22), JC-INVOICE-REVALUE
+
+**Proposed accounting policy, pinned by `TestStockPolicy_InvoiceVarianceIsNotRevaluedIntoStock`; it is in force as code but needs a named human finance owner to accept it as policy.** Stock is carried at the goods-receipt cost, which is the purchase-order price. A supplier invoice priced differently within tolerance posts its difference to the purchase price variance account on the cost code at approval. The stock on hand, its FIFO layers, its weighted average and all later issues are not revalued; the stock-to-GL reconciliation stays at zero because the variance is expense, not inventory. The alternative, revaluing the remaining layers (or the pool) on invoice, would move cost between periods and projects on supplier timing and is not built.

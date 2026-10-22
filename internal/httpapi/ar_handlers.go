@@ -234,8 +234,17 @@ func (s *Server) issueCreditNote(w http.ResponseWriter, r *http.Request) {
 		NetAmount  decimal.Decimal `json:"net_amount"`
 		CreditDate day             `json:"credit_date"`
 		Reason     string          `json:"reason"`
+		// A quantity correction (0033): names the contract line and the
+		// quantity; the net is then the line rate x quantity, not net_amount.
+		CorrectionLineNo int             `json:"correction_line_no"`
+		CorrectionQty    decimal.Decimal `json:"correction_qty"`
 	}
 	if !decode(w, r, &b) {
+		return
+	}
+	if b.CorrectionLineNo != 0 || !b.CorrectionQty.IsZero() {
+		cn, err := s.cfg.Kernel.IssueQuantityCorrection(r.Context(), principalFrom(r.Context()), id, b.CorrectionLineNo, b.CorrectionQty, b.CreditDate.Time, b.Reason)
+		s.created(w, cn, err)
 		return
 	}
 	cn, err := s.cfg.Kernel.IssueCreditNote(r.Context(), principalFrom(r.Context()), id, b.NetAmount, b.CreditDate.Time, b.Reason)

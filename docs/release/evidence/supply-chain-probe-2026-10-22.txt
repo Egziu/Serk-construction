@@ -1,0 +1,4 @@
+# Supply-chain reachability probe 2026-10-22T13:15:37Z from the build environment
+https://sum.golang.org/latest -> 000 (curl: CONNECT tunnel failed, response 403 from the egress proxy)
+https://proxy.golang.org/github.com/jackc/pgx/v5/@v/list -> 000 (curl: could not resolve host)
+https://vuln.go.dev/index/db.json -> 000 (curl: could not resolve host)

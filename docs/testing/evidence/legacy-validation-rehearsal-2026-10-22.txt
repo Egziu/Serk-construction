@@ -1,0 +1,53 @@
+## serk-import validate: clean fixture
+opening_balances.csv          6 rows
+open_payables.csv             2 rows
+open_receivables.csv          2 rows
+accounts.csv                  8 rows
+suppliers.csv                 2 rows
+customers.csv                 2 rows
+cost_codes.csv                2 rows
+opening balances: debit 6530000 credit 6530000 balanced=true; open payables 920000; open receivables 1500000
+bundle is clean: loadable as DRAFT documents for human approval
+exit=0
+
+## serk-import validate: dirty fixture (planted defects)
+cost_codes.csv                1 rows
+opening_balances.csv          7 rows
+open_payables.csv             2 rows
+accounts.csv                  7 rows
+suppliers.csv                 2 rows
+customers.csv                 1 rows
+opening balances: debit 2280000 credit 5930000 balanced=false; open payables 520000; open receivables 0
+EXCEPTION accounts.csv:5 DUPLICATE: account "2000" repeats line 4
+EXCEPTION accounts.csv:8 TYPE: account type COST
+EXCEPTION open_payables.csv:0 CONTROL: open items total 520000 does not equal the AP control opening balance 920000
+EXCEPTION open_payables.csv:3 FK: supplier SUP-009 is not in suppliers.csv
+EXCEPTION open_payables.csv:3 NUMBER: empty document number
+EXCEPTION open_payables.csv:3 CUTOVER: invoice_date 2026-11-30 is after the cut-over date 2026-09-30
+EXCEPTION open_payables.csv:3 SIGN: amount must be positive (credits are separate documents)
+EXCEPTION open_receivables.csv:1 HEADER: columns "customer_code,number,invoice_date,due_date", want "customer_code,number,invoice_date,due_date,amount"
+EXCEPTION opening_balances.csv:0 BALANCE: debits 2280000 do not equal credits 5930000 (difference -3650000)
+EXCEPTION opening_balances.csv:2 PRECISION: debit 4250000.005 has more than 2 decimals
+EXCEPTION opening_balances.csv:4 FK: account 1200 is not in accounts.csv
+EXCEPTION opening_balances.csv:7 COSTCODE: a revenue balance needs a cost code
+EXCEPTION opening_balances.csv:8 FK: cost code 09-XXX is not in cost_codes.csv
+EXCEPTION opening_balances.csv:8 ONESIDE: exactly one of debit and credit must be non-zero
+EXCEPTION suppliers.csv:3 CODE: supplier code sup 2
+EXCEPTION suppliers.csv:3 NAME: empty name
+EXCEPTION suppliers.csv:3 DUPLICATE: tax id "0012345678" repeats line 2
+17 exception(s): the bundle is not loadable; correct the source data and validate again
+exit=3
+
+## serk-migrate validate-constraints (report only) on a migrated database with the three NOT VALID constraints (serk_v33c)
+bank_statement_lines     bank_statement_lines_matched_by          CHECK       violators=0 NOT VALID
+journal_lines            journal_lines_cost_code_fk               FOREIGN KEY violators=0 NOT VALID
+journal_lines            journal_lines_fx_policy_binding          CHECK       violators=0 NOT VALID
+exit=0
+
+## serk-migrate validate-constraints --apply
+bank_statement_lines     bank_statement_lines_matched_by          CHECK       violators=0 VALIDATED
+journal_lines            journal_lines_cost_code_fk               FOREIGN KEY violators=0 VALIDATED
+journal_lines            journal_lines_fx_policy_binding          CHECK       violators=0 VALIDATED
+exit=0
+
+## With planted legacy dirt (TestLegacy_NotValidConstraintsAreValidatedOrReported): the dirty constraint is reported with its row in migration_exceptions and left NOT VALID until a human resolves the row; see docs/testing/evidence/full-suite-*.txt

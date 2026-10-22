@@ -77,6 +77,33 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "validate-constraints" {
+		// GATEA-13: report NOT VALID constraints and their violating rows
+		// (recorded in migration_exceptions for human resolution); with
+		// --apply, VALIDATE those with no violators. Exit 3 while any remain.
+		apply := len(os.Args) > 2 && os.Args[2] == "--apply"
+		reps, err := postgres.ValidateConstraints(ctx, conn, apply)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "validate-constraints:", err)
+			os.Exit(1)
+		}
+		open := 0
+		for _, r := range reps {
+			state := "NOT VALID"
+			if r.Validated {
+				state = "VALIDATED"
+			}
+			fmt.Printf("%-24s %-40s %-11s violators=%d %s\n", r.Table, r.Name, r.Kind, r.Violators, state)
+			if r.Violators > 0 {
+				open++
+			}
+		}
+		if open > 0 {
+			fmt.Printf("%d constraint(s) have violating rows recorded in migration_exceptions; resolve by reversal or re-entry, then re-run\n", open)
+			os.Exit(3)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "encrypt-bank-accounts" {
 		// 0032: convert pre-0032 plaintext account numbers to ciphertext.
 		// Runs as the schema owner with SERK_BANK_DATA_KEY; the posture check

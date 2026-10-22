@@ -1,0 +1,9 @@
+code,name,type
+1000,Cash at bank,ASSET
+1100,Accounts receivable,ASSET
+1200,Inventory,ASSET
+2000,Accounts payable,LIABILITY
+3000,Share capital,EQUITY
+3100,Retained earnings,EQUITY
+4000,Contract revenue,REVENUE
+5000,Site materials,EXPENSE

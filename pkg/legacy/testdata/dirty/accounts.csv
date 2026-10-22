@@ -1,0 +1,8 @@
+code,name,type
+1000,Cash at bank,ASSET
+1100,Accounts receivable,ASSET
+2000,Accounts payable,LIABILITY
+2000,Accounts payable (duplicate),LIABILITY
+3000,Share capital,EQUITY
+4000,Contract revenue,REVENUE
+5000,Site materials,COST

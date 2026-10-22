@@ -1159,13 +1159,19 @@ const FORMS = {
   async creditnote(invoiceID) {
     const inv = select('invoice_id', await docOpts('customer_invoice', 'APPROVED'), { required: true });
     if (invoiceID) inv.value = invoiceID;
-    const amount = input('net_amount', { inputmode: 'decimal', autocomplete: 'off', required: true });
+    const kind = select('kind', [{ value: 'COMMERCIAL', label: 'Commercial settlement (amount)' }, { value: 'QUANTITY_CORRECTION', label: 'Quantity correction (contract line and quantity)' }]);
+    const amount = input('net_amount', { inputmode: 'decimal', autocomplete: 'off' });
+    const line = input('correction_line_no', { inputmode: 'numeric', autocomplete: 'off' });
+    const qty = input('correction_qty', { inputmode: 'decimal', autocomplete: 'off' });
     const date = input('credit_date', { type: 'date', value: today(), required: true });
     const reason = input('reason', { type: 'text', maxlength: '500', required: true });
-    formPage('Issue credit note', 'Reduces what an approved invoice bills. Enter the amount before VAT; the VAT is computed at the invoice\'s rate. A commercial manager approves it with a fresh multi-factor sign-in.', [
-      h('div', { class: 'grid' }, field('Customer invoice', inv), field('Amount credited (before VAT)', amount), field('Credit date', date)),
+    formPage('Issue credit note', 'Reduces what an approved invoice bills. A commercial settlement is an amount before VAT; a quantity correction names the contract line and the over-measured quantity, and is valued at the line rate (it also reduces the verified quantity, so the work is never deducted twice). A commercial manager approves it with a fresh multi-factor sign-in.', [
+      h('div', { class: 'grid' }, field('Customer invoice', inv), field('Kind', kind), field('Credit date', date)),
+      h('div', { class: 'grid' }, field('Amount credited (before VAT)', amount), field('Contract line', line), field('Quantity over-measured', qty)),
       field('Reason', reason)], 'Issue credit note', async () => {
-      const res = await api('POST', `/v1/customer-invoices/${inv.value}/credit-notes`, { net_amount: amount.value.trim(), credit_date: date.value, reason: reason.value.trim() });
+      const body = { credit_date: date.value, reason: reason.value.trim() };
+      if (kind.value === 'QUANTITY_CORRECTION') { body.correction_line_no = Number(line.value); body.correction_qty = qty.value.trim(); } else { body.net_amount = amount.value.trim(); }
+      const res = await api('POST', `/v1/customer-invoices/${inv.value}/credit-notes`, body);
       created('customer_credit_note', res, 'Credit note');
     });
   },

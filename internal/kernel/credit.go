@@ -13,6 +13,7 @@ package kernel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -136,4 +137,56 @@ func (s *Service) CancelCreditNote(ctx context.Context, p auth.Principal, id, re
 		}
 		return s.record(ctx, tx, p, "ar.credit.cancel", "customer_credit_note", id, "ar.credit_cancelled", map[string]any{"credit_note_id": id, "reason": reason})
 	})
+}
+
+// IssueQuantityCorrection issues a DRAFT credit note that corrects an
+// over-measured quantity (0033, JB-CREDIT-QTY): it names a contract line and
+// a quantity; the net is exactly quantity x the line rate. Once approved it
+// reduces the line's verified quantity and the contract's previously
+// certified gross, so the next certificate neither deducts the work again
+// nor re-bills what was credited.
+func (s *Service) IssueQuantityCorrection(ctx context.Context, p auth.Principal, invoiceID string, lineNo int, qty decimal.Decimal, creditDate time.Time, reason string) (string, error) {
+	if err := requireReason(reason); err != nil {
+		return "", err
+	}
+	if !qty.IsPositive() || lineNo < 1 {
+		return "", fmt.Errorf("%w: a quantity correction names a contract line and a positive quantity", ErrInvalidInput)
+	}
+	if creditDate.IsZero() || creditDate.After(time.Now().UTC()) {
+		return "", fmt.Errorf("%w: a credit note is dated today or earlier", ErrInvalidInput)
+	}
+	var id string
+	err := s.p2pTx(ctx, p, auth.PermARCreditCreate, func(ctx context.Context, tx pgx.Tx) error {
+		d, err := s.loadDoc(ctx, tx, p, auth.PermARCreditCreate, "customer_invoice", invoiceID)
+		if err != nil {
+			return err
+		}
+		if err := requireStatus(d, "APPROVED"); err != nil {
+			return err
+		}
+		num, err := postgres.NextNumber(ctx, tx, "CRN")
+		if err != nil {
+			return err
+		}
+		// The net is the line's rate times the quantity, computed by the
+		// database; the trigger re-checks it.
+		id, err = postgres.InsertReturningID(ctx, tx, `INSERT INTO customer_credit_notes(legal_entity_id, project_id, contract_id, customer_id, invoice_id,
+			policy_id, number, credit_date, currency, net_amount, reason, created_by, kind, correction_line_no, correction_qty)
+			SELECT i.legal_entity_id, i.project_id, i.contract_id, i.customer_id, i.id, i.policy_id, $2, $3, i.currency,
+			       p2p_round($4::numeric * cl.rate, i.currency), $5, $6, 'QUANTITY_CORRECTION', $7, $4::numeric
+			  FROM customer_invoices i JOIN contract_lines cl ON cl.contract_id = i.contract_id AND cl.line_no = $7
+			 WHERE i.id = $1::uuid RETURNING id::text`, invoiceID, num, creditDate, qty, strings.TrimSpace(reason), p.UserID, lineNo)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("%w: contract line %d does not exist", ErrInvalidInput, lineNo)
+			}
+			return err
+		}
+		if err := s.authorize(ctx, tx, p, "ar.credit.create", "customer_credit_note", id, ""); err != nil {
+			return err
+		}
+		return s.record(ctx, tx, p, "ar.credit.create", "customer_credit_note", id, "ar.credit_issued",
+			map[string]any{"credit_note_id": id, "invoice_id": invoiceID, "number": num, "kind": "QUANTITY_CORRECTION", "line_no": lineNo, "quantity": qty.String(), "reason": reason})
+	})
+	return id, err
 }

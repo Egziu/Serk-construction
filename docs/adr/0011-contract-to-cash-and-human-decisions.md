@@ -202,3 +202,15 @@ A variation (change order) changes the scope of an ACTIVE contract on the client
 - **Dates (R8-F1, R8-F4).** A credit note or retention release is dated today or earlier, in an OPEN fiscal period of its entity, checked when it is recorded and again when it is approved. A document whose period closes while it is a draft can no longer be approved; it is cancelled and re-issued in an open period. This is the rule stock documents follow since R7-F3, and it exists because subledger journals are never cancelled or reversed.
 - **Who cancels a draft (R8-I2).** The preparer, or a holder of the approval permission.
 - **VAT on credit notes (R8-F5, proposed acceptance).** VAT is computed per credit note: `round(net × rate)` under the contract policy. Each credit note is a tax document and its VAT must be its own net times the rate; cumulative rounding would produce notes whose stated VAT is not that. Consequence: n credit notes may carry VAT that differs from the VAT on their summed net by at most n × 0.005 (asserted by `TestR8_CreditVATPerNoteRounding`); credited totals remain capped by the invoice total. **This acceptance is proposed by the delivering team and is not in force until a named human tax/finance risk owner accepts it** (register R8-F5).
+
+## Addendum: quantity-correction credit notes (2026-10-22), migration 0033
+
+**Problem (JB-CREDIT-QTY).** Measurement lines are strictly positive, so a verified cumulative quantity never decreases; an over-measurement certified on an IPC can only be corrected by a credit note. A plain credit note has no quantity effect, and the contract-quantity cap then absorbed the same over-measurement again on later measurements: the client was credited twice for the same work, and the contractor under-billed.
+
+**Decision.** A credit note has a kind:
+- `COMMERCIAL`: a settlement in money with no quantity effect (unchanged).
+- `QUANTITY_CORRECTION`: names a contract line and a quantity; its net is exactly quantity × the line rate (the database computes and re-checks it); the quantity may not exceed what is verified on the line net of earlier corrections (drafts included at recording, re-checked under the contract lock at approval).
+
+Once approved, a quantity correction reduces the line's verified quantity (`contract_verified_qty`: the measurement cap, variations and the IPC cumulative all use it) and the contract's "previously certified" gross in `ipc_compute` by its net. Consequences, proven by `TestCreditQuantityCorrection_NoDoubleDeduction`: the next certificate neither deducts the work again nor re-bills what was credited (cumulative = previous, nothing to certify); the remaining real work is measurable up to the contract quantity; over the job the client is billed exactly the work in place.
+
+Approval, maker-checker, MFA, dating and the AR journal are those of any credit note.

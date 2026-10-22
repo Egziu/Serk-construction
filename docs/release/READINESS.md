@@ -23,11 +23,11 @@ Nothing is assumed PASS. Production deployment, tax and financial treatment, cus
 | GATEA-06 | Least-privilege roles, functions, grants | **PASS** for the roles that exist |
 | GATEA-07 | Session revocation and role removal | **BLOCKED**: server-side revocation PASS across replicas; IdP integration unavailable |
 | GATEA-08 | Staging with TLS and vault | **BLOCKED**: no infrastructure |
-| GATEA-09 | Backup/PITR drill | **PASS**: local disposable cluster; RTO and RPO measured |
+| GATEA-09 | Backup/PITR drill | **PASS**: local disposable clusters; RTO and RPO measured; encrypted offsite restore on a second host PASS (2026-10-22) |
 | GATEA-10 | Distributed abuse controls | **PARTIAL**: shared limits across replicas PASS (0029, `TestSharedAbuse_*`); edge throttling and multi-host load test BLOCKED (no staging) |
 | GATEA-11 | OTel, SLOs, alerts | **BLOCKED**: rule-level alert drill PASS; no Prometheus or OTel collector |
 | GATEA-12 | Supply chain | **BLOCKED**: offline checks PASS; sumdb, govulncheck and CI unavailable |
-| GATEA-13 | Legacy data validation | **NOT TESTED**: no data set |
+| GATEA-13 | Legacy data validation | **PARTIAL**: validator and NOT VALID constraint tooling rehearsed on synthetic fixtures; no customer data set |
 
 **Gate A overall: NOT PASSED.** Gates B–F: NOT TESTED. Gate P: NOT TESTED; it requires independent human parties. **Decision: NO-GO.**
 
