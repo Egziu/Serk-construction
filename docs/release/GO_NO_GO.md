@@ -8,13 +8,13 @@ This record is assembled by the engineering agent from evidence in the repositor
 
 | Gate | Result | Why |
 |---|---|---|
-| A: trusted foundation | **NOT PASSED** | 6 PASS: approval forgery blocked, FX provenance, workflow publication, SC regressions, least privilege, PITR drill. 6 BLOCKED by infrastructure this environment lacks: real IdP step-up and back-channel logout, staging deployment, edge and multi-replica abuse tests, Prometheus/OTel, network supply-chain checks. 1 NOT TESTED: legacy data. |
-| B: core ERP | NOT PASSED | 3 PASS (BOQ baseline, PR→RFQ→PO, GRN→3-way match→AP), all from Journey A. 1 PARTIAL: accessible screens exist for Journey A only, with automated accessibility checks but no manual audit. The other items (inventory, contracts/IPC, canonical entities) are NOT TESTED. |
-| C: verified financial lifecycles | NOT PASSED | Journey A PASS at three levels: kernel, HTTP and a real browser with 15 people. Two independent AI reviews found 2 High, 5 Medium, 7 Low and several Info issues. Every fix is applied and regression-tested; two Info items and two residual risks (R-BANKFEED, R-SPLIT-SUPPLIER) remain open. Journey B is not built. Nothing has run on staging. |
-| D: field execution | NOT PASSED | not started |
-| E: advanced scope | NOT PASSED | not started |
-| F: governed AI | NOT PASSED | no AI component exists; no AI role or tool can reach the kernel (there is none to test) |
-| P: production authorization | NOT PASSED | needs an external pentest, load/soak, signed finance/tax/legal policies and a signed GO. None exist. |
+| A: trusted foundation | **NOT PASSED** | 6 PASS: approval forgery blocked, workflow publication, FX provenance, SC regressions, least privilege, PITR drill. 1 PARTIAL: abuse limits shared across replicas (0029); edge throttling and a multi-host load test are not done. 5 BLOCKED by missing infrastructure: real IdP step-up, IdP session revocation, staging with TLS and vault, OTel/Prometheus, network supply-chain checks. 1 NOT TESTED: legacy data. |
+| B: core ERP | NOT PASSED | 4 PASS: BOQ baseline, PR→RFQ→PO, GRN→3-way match→AP, inventory FIFO/WAC to project and GL. 2 PARTIAL: contracts/variations/retention/IPC (claims and daywork not built); accessible screens (automated checks only, no manual audit). 1 NOT TESTED: canonical entities. |
+| C: verified financial lifecycles | PASS (AI-verified only) | Journeys A and B were verified at kernel, HTTP and real-browser level, and independent AI reviews 3–9 were fixed and regression-tested. No human finance sign-off. Nothing has run on staging. |
+| D: field execution | NOT PASSED | Planning (CPM, baseline, EVM) is PARTIAL. Offline field capture, equipment, and QHSE are not built. |
+| E: advanced scope | NOT PASSED | Document control/BIM, payroll and multi-entity consolidation are not built. |
+| F: governed AI | NOT PASSED | Decisions are human-only in Go and SQL (PARTIAL). No AI component exists yet, so prompt-injection handling is NOT TESTED. |
+| P: production authorization | NOT PASSED | Needs an external pentest, load/soak, signed finance/tax/legal policies and a signed GO. None exist. |
 
 ## Open risks a human approver must weigh (High and above)
 
