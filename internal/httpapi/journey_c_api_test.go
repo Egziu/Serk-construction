@@ -145,6 +145,21 @@ func TestAPIJourneyC_StockValuation(t *testing.T) {
 		t.Errorf("count approved by the storekeeper: %d", st)
 	}
 	jCnt := a.call(200, "POST", "/v1/stock-counts/"+cnt+"/approve", invCtl, nil)["journal_id"].(string)
+	// Transfer 2.5 t to a second store (0025): no journal, value moves at FIFO cost.
+	store2 := a.id("POST", "/v1/warehouses", procMgr, map[string]any{"legal_entity_id": a.entity, "project_id": a.project, "code": "P-STORE-B", "name": "Second site store"})
+	tr := a.id("POST", "/v1/stock-transfers", store, map[string]any{"stock_item_id": steel, "from_warehouse_id": store1, "to_warehouse_id": store2,
+		"quantity": "2.5", "transfer_date": today})
+	if st, _ := a.do("POST", "/v1/stock-transfers/"+tr+"/approve", store, nil); st != 403 {
+		t.Errorf("transfer approved by the storekeeper: %d", st)
+	}
+	if st, _ := a.do("POST", "/v1/stock-transfers", store, map[string]any{"stock_item_id": steel, "from_warehouse_id": store1, "to_warehouse_id": store1,
+		"quantity": "1", "transfer_date": today}); st != 422 {
+		t.Errorf("transfer to the same store: %d, want 422", st)
+	}
+	a.call(200, "POST", "/v1/stock-transfers/"+tr+"/approve", invCtl, nil)
+	if d := a.call(200, "GET", "/v1/p2p/stock_transfer/"+tr, store, nil)["detail"].(map[string]any); !decOf(t, d["amount"]).Equal(decimal.RequireFromString("211250")) {
+		t.Errorf("transfer valued %v, want 211,250", d["amount"])
+	}
 	ids := []string{jGRN, jIss, jCnt}
 	for _, path := range []string{"/v1/journals/approve-batch", "/v1/journals/post-batch"} {
 		tok := map[string]string{"/v1/journals/approve-batch": finMgr, "/v1/journals/post-batch": controller}[path]
@@ -156,8 +171,13 @@ func TestAPIJourneyC_StockValuation(t *testing.T) {
 	}
 	// Steel 12 x 84,500 = 1,014,000; issued 5 (422,500); counted 6.5 of 7 (shortage 42,250).
 	lines := a.call(200, "GET", "/v1/entities/"+a.entity+"/stock-on-hand", store, nil)["lines"].([]any)
-	if len(lines) != 1 || decOf(t, lines[0].(map[string]any)["qty"]).String() != "6.5" || decOf(t, lines[0].(map[string]any)["value"]).String() != "549250" {
-		t.Errorf("stock on hand: %v", lines)
+	byStore := map[string]string{}
+	for _, l := range lines {
+		m := l.(map[string]any)
+		byStore[m["warehouse_code"].(string)] = decOf(t, m["qty"]).String() + "@" + decOf(t, m["value"]).String()
+	}
+	if len(lines) != 2 || byStore["P-STORE"] != "4@338000" || byStore["P-STORE-B"] != "2.5@211250" {
+		t.Errorf("stock on hand after the transfer: %v", byStore)
 	}
 	if got := a.call(200, "GET", "/v1/entities/"+a.entity+"/stock-on-hand", otherStore, nil)["lines"].([]any); len(got) != 0 {
 		t.Errorf("another project's storekeeper sees %d stock lines", len(got))

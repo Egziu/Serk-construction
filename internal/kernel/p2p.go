@@ -83,6 +83,9 @@ func docProject(ctx context.Context, tx pgx.Tx, docType, id string) (string, err
 		q = `SELECT project_id::text FROM stock_issues WHERE id = $1::uuid`
 	case "stock_count":
 		q = `SELECT COALESCE(project_id::text, '') FROM stock_counts WHERE id = $1::uuid`
+	case "stock_transfer":
+		// Scoped by the source warehouse; requesting one needs both warehouses.
+		q = `SELECT COALESCE(w.project_id::text, '') FROM stock_transfers t JOIN warehouses w ON w.id = t.from_warehouse_id WHERE t.id = $1::uuid`
 	case "supplier_invoice":
 		q = `SELECT o.project_id::text FROM supplier_invoices i JOIN purchase_orders o ON o.id = i.po_id WHERE i.id = $1::uuid`
 	default:

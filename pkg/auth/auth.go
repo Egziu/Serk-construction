@@ -116,14 +116,16 @@ const (
 
 	// Stock valuation (Journey C). Maker/checker pairs are held by different
 	// seed roles (TestDefaultRolesSeparateDuties).
-	PermStockItemManage    Permission = "stock.item.manage"
-	PermStockItemApprove   Permission = "stock.item.approve"
-	PermWarehouseManage    Permission = "warehouse.manage"
-	PermStockReceive       Permission = "stock.receive"
-	PermStockIssue         Permission = "stock.issue"
-	PermStockIssueApprove  Permission = "stock.issue.approve"
-	PermStockCount         Permission = "stock.count"
-	PermStockAdjustApprove Permission = "stock.adjust.approve"
+	PermStockItemManage      Permission = "stock.item.manage"
+	PermStockItemApprove     Permission = "stock.item.approve"
+	PermWarehouseManage      Permission = "warehouse.manage"
+	PermStockReceive         Permission = "stock.receive"
+	PermStockIssue           Permission = "stock.issue"
+	PermStockIssueApprove    Permission = "stock.issue.approve"
+	PermStockCount           Permission = "stock.count"
+	PermStockAdjustApprove   Permission = "stock.adjust.approve"
+	PermStockTransfer        Permission = "stock.transfer"
+	PermStockTransferApprove Permission = "stock.transfer.approve"
 )
 
 // Role is a named permission bundle. Roles are tenant-scoped data in
@@ -165,7 +167,7 @@ var DefaultRoles = map[string]Role{
 	"estimator":           {Name: "estimator", Permissions: []Permission{PermBOQManage, PermP2PRead}},
 	"commercial_manager":  {Name: "commercial_manager", Permissions: []Permission{PermBOQApprove, PermContractManage, PermIPCCertify, PermARCreditApprove, PermARRetentionApprove, PermP2PRead}},
 	"site_engineer":       {Name: "site_engineer", Permissions: []Permission{PermPRCreate, PermGRNConfirm, PermRFQEvaluate, PermMeasureVerify, PermStockIssueApprove, PermP2PRead}},
-	"storekeeper":         {Name: "storekeeper", Permissions: []Permission{PermGRNCreate, PermStockReceive, PermStockIssue, PermStockCount, PermP2PRead}},
+	"storekeeper":         {Name: "storekeeper", Permissions: []Permission{PermGRNCreate, PermStockReceive, PermStockIssue, PermStockCount, PermStockTransfer, PermP2PRead}},
 	"procurement_officer": {Name: "procurement_officer", Permissions: []Permission{PermSupplierManage, PermRFQManage, PermPOManage, PermStockItemManage, PermP2PRead}},
 	"procurement_manager": {Name: "procurement_manager", Permissions: []Permission{PermSupplierApprove, PermRFQAward, PermPOApprove, PermWarehouseManage, PermP2PRead}},
 	"ap_clerk":            {Name: "ap_clerk", Permissions: []Permission{PermAPEnter, PermP2PRead}},
@@ -177,7 +179,7 @@ var DefaultRoles = map[string]Role{
 	// Approves stock count adjustments. Separate from the journal chain: the
 	// adjustment journal it generates is approved by finance and posted by a
 	// controller, and its preparer may do neither.
-	"inventory_controller": {Name: "inventory_controller", Permissions: []Permission{PermStockAdjustApprove, PermScopeTenantWide, PermP2PRead}},
+	"inventory_controller": {Name: "inventory_controller", Permissions: []Permission{PermStockAdjustApprove, PermStockTransferApprove, PermScopeTenantWide, PermP2PRead}},
 	"ar_supervisor":        {Name: "ar_supervisor", Permissions: []Permission{PermARInvoiceApprove, PermARReceiptConfirm, PermScopeTenantWide, PermP2PRead}},
 }
 

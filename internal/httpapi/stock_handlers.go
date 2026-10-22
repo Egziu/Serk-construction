@@ -45,6 +45,17 @@ func (s *Server) registerStock() {
 	m.Handle("POST /v1/stock-counts/{id}/reject", decide(func(ctx context.Context, p auth.Principal, id string, b decisionBody) (any, error) {
 		return nil, k().RejectStockCount(ctx, p, id, b.Reason)
 	}))
+	// Transfers (0025).
+	m.Handle("POST /v1/stock-transfers", s.authed(s.createStockTransfer))
+	m.Handle("POST /v1/stock-transfers/{id}/approve", decide(func(ctx context.Context, p auth.Principal, id string, _ decisionBody) (any, error) {
+		return nil, k().ApproveStockTransfer(ctx, p, id)
+	}))
+	m.Handle("POST /v1/stock-transfers/{id}/reject", decide(func(ctx context.Context, p auth.Principal, id string, b decisionBody) (any, error) {
+		return nil, k().RejectStockTransfer(ctx, p, id, b.Reason)
+	}))
+	m.Handle("POST /v1/stock-transfers/{id}/cancel", decide(func(ctx context.Context, p auth.Principal, id string, b decisionBody) (any, error) {
+		return nil, k().CancelStockTransfer(ctx, p, id, b.Reason)
+	}))
 	m.Handle("GET /v1/entities/{id}/stock-on-hand", s.authed(s.stockOnHand))
 	m.Handle("GET /v1/entities/{id}/stock-reconciliation", s.authed(s.stockRecon))
 }
@@ -123,6 +134,19 @@ func (s *Server) createStockCount(w http.ResponseWriter, r *http.Request) {
 	}
 	b.StockCountInput.CountDate = b.CountDate.Time
 	id, err := s.cfg.Kernel.CreateStockCount(r.Context(), principalFrom(r.Context()), b.StockCountInput)
+	s.created(w, id, err)
+}
+
+func (s *Server) createStockTransfer(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		kernel.StockTransferInput
+		TransferDate day `json:"transfer_date"`
+	}
+	if !decode(w, r, &b) || !validIDs(w, b.StockItemID, b.FromWarehouseID, b.ToWarehouseID) {
+		return
+	}
+	b.StockTransferInput.TransferDate = b.TransferDate.Time
+	id, err := s.cfg.Kernel.CreateStockTransfer(r.Context(), principalFrom(r.Context()), b.StockTransferInput)
 	s.created(w, id, err)
 }
 

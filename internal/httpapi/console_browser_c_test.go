@@ -99,8 +99,14 @@ func TestConsoleBrowserJourneyC(t *testing.T) {
 	// Independent verification through the API.
 	ctl := a.tok("u-controller-check", nil, false, "controller")
 	lines := a.call(200, "GET", "/v1/entities/"+a.entity+"/stock-on-hand", ctl, nil)["lines"].([]any)
-	if len(lines) != 1 || lines[0].(map[string]any)["qty"] != "6.5" || lines[0].(map[string]any)["value"] != "549250" {
-		t.Errorf("stock on hand after the UI journey: %v", lines)
+	// 6.5 t at 549,250 in total: 5.5 t in P-STORE and 1 t (84,500) transferred to P-STORE-B.
+	got := map[string]string{}
+	for _, l := range lines {
+		m := l.(map[string]any)
+		got[m["warehouse_code"].(string)] = m["qty"].(string) + "@" + m["value"].(string)
+	}
+	if len(lines) != 2 || got["P-STORE"] != "5.5@464750" || got["P-STORE-B"] != "1@84500" {
+		t.Errorf("stock on hand after the UI journey: %v", got)
 	}
 	for _, c := range a.call(200, "GET", "/v1/entities/"+a.entity+"/stock-reconciliation", ctl, nil)["checks"].([]any) {
 		m := c.(map[string]any)

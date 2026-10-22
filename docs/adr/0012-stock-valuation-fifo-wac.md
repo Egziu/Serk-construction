@@ -105,3 +105,22 @@ The review findings and their fixes are in docs/security/INDEPENDENT_REVIEW_7_20
   - "Put away from goods receipts not yet posted".
 - **Visibility.** A put-away is scoped by the warehouse it went into.
 - **Deployment posture.** The stock guards' trigger-depth check assumes tenant logins hold no TEMP. The API checks this at start-up through `serk_database_posture()` and refuses to start in production otherwise.
+
+## Addendum: stock transfers (2026-10-22), migration 0025
+
+Closes JC-TRANSFER.
+
+- **Who.** The storekeeper requests a DRAFT transfer of one item between two warehouses of the same entity, and must be able to see both. An inventory controller approves it: a different person, a human. The approver may reject it and the preparer may cancel it, each with a reason.
+- **Valuation.** At approval the database consumes the quantity from the source at cost, through the same engine as issues: FIFO layers, or the moving average. It then receives exactly that cost at the destination.
+  - FIFO items keep their cost history: each consumed layer becomes a destination layer with the same unit cost, in the same order.
+  - WAC items arrive at the source's average.
+- **No journal.** The item, and therefore its inventory account, is the same on both sides. GL inventory, project cost and the reconciliation are unchanged; only the location changes. Transfers net to zero in "balances vs documents".
+- **Dates and visibility.** Dates follow R7-F3: today or earlier, in an OPEN fiscal period, re-checked at approval. A transfer is listed under its source warehouse's project.
+
+**Not built:** in-transit stock (goods dispatched but not yet arrived); transfers between entities, which would need an intercompany journal.
+
+**Tests.**
+
+- Kernel: `TestJourneyC_StockTransfer`, with figures in docs/testing/E2E_JOURNEY_C.md. It covers 9 refusals and proves that FIFO layer order survives a transfer.
+- HTTP: `TestAPIJourneyC_StockValuation`.
+- Browser: `TestConsoleBrowserJourneyC`, with transfer request and approval in the UI.

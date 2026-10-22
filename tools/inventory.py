@@ -39,7 +39,7 @@ tests = {}  # name -> file
 for f in sorted(glob.glob(os.path.join(ROOT, "**/*_test.go"), recursive=True)):
     for t in re.findall(r"^func (Test\w+)\(t \*testing\.T\)", open(f).read(), re.M):
         tests[t] = os.path.relpath(f, ROOT)
-LOGS = ["docs/testing/evidence/full-suite-journey-c.txt", "docs/testing/evidence/full-suite-credit-notes.txt", "docs/testing/evidence/full-suite-retention-release.txt", "docs/testing/evidence/full-suite-review7-fixes.txt"]
+LOGS = ["docs/testing/evidence/full-suite-journey-c.txt", "docs/testing/evidence/full-suite-credit-notes.txt", "docs/testing/evidence/full-suite-retention-release.txt", "docs/testing/evidence/full-suite-review7-fixes.txt", "docs/testing/evidence/full-suite-stock-transfers.txt"]
 results = {}
 for lg in LOGS:  # later logs override earlier ones
     if os.path.exists(os.path.join(ROOT, lg)):
@@ -88,8 +88,8 @@ DOMAINS = [
  dict(name="Project cost and profitability reporting", status="partial", tables=r"^$", routes=r"cost-report|profitability", screens=r"#/cost", perms=r"^$",
       postings="Reads posted journals", tests=r"^Test(JourneyA|JourneyB)", gaps="No EVM wiring (pkg/evm is a library only), no forecasts or cost-to-complete"),
  dict(name="Inventory and stock valuation (FIFO/WAC)", status="implemented", tables=r"^(stock_|warehouses)", routes=r"^/v1/(stock|warehouses)|put-away|stock-",
-      screens=r"#/(stock|list/stock|list/warehouse)", perms=r"^(stock|warehouse)\.", postings="STK_ISSUE: Dr project cost, Cr inventory. STK_ADJUST: inventory vs variance",
-      tests=r"^Test(JourneyC|APIJourneyC|ConsoleBrowserJourneyC)", gaps="No transfers (JC-TRANSFER), returns, landed cost, reservations, lots; independent review 7 pending at generation time"),
+      screens=r"#/(stock|list/stock|list/warehouse)", perms=r"^(stock|warehouse)\.", postings="STK_ISSUE: Dr project cost, Cr inventory. STK_ADJUST: inventory vs variance. Transfers: no journal (same account)",
+      tests=r"^Test(JourneyC|APIJourneyC|ConsoleBrowserJourneyC|R7_)", gaps="No supplier returns, landed costs, in-transit stock, serial/lot tracking; invoice variance not revalued into stock (JC-INVOICE-REVALUE)"),
  dict(name="Planning, CPM and EVM", status="absent", tables=r"^(schedule|activities|baseline)", routes=r"^/v1/(schedule|plans)", screens=r"^#/(plan|schedule)", perms=r"^plan\.",
       postings="-", tests=r"^TestEVM|^TestEvm", gaps="pkg/evm computes EVM figures but nothing stores or schedules work"),
  dict(name="Variations and claims", status="absent", tables=r"^(variation|claim)", routes=r"^/v1/(variations|claims)", screens=r"^#/variation", perms=r"^variation\.", postings="-",

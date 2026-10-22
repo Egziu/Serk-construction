@@ -85,3 +85,38 @@ The P2P reconciliation (GRNI) is unchanged at 0.
 | Inventory = GL | 831,250 |
 | Steel on hand | 6.5 t = 549,250 |
 | Cement received, not yet put away | 282,000 |
+
+## Transfers (`TestJourneyC_StockTransfer`, migration 0025)
+
+Stores A (P001-STORE) and B (P001-STORE-B).
+
+**Receipts into A**
+
+| Item | Received | Value |
+|---|---|---|
+| Steel (FIFO) | 12 t @ 84,500, then 10 t @ 86,000 | |
+| Cement (WAC) | 300 @ 940 + 200 @ 950 = 500 bags | 472,000 (average 944) |
+
+**Transfers A → B**
+
+- Steel 15 t: 12 @ 84,500 + 3 @ 86,000 = **1,272,000**. B's layers are `12.00@84500 3.00@86000`.
+- Cement 100 bags at the average: **94,400**.
+
+**Issue 13 t of steel from B:** 12 @ 84,500 + 1 @ 86,000 = **1,100,000**. This proves the transferred layers kept their order and cost.
+
+**After posting**
+
+| Location | Item | Quantity | Value |
+|---|---|---|---|
+| A | Steel | 7 t | 602,000 |
+| B | Steel | 2 t | 172,000 |
+| A | Cement | 400 | 377,600 |
+| B | Cement | 100 | 94,400 |
+
+- GL inventory: 2,346,000 − 1,100,000 = **1,246,000** = stock.
+- No transfer journal.
+- Every reconciliation row: difference 0.
+
+**HTTP journey:** 2.5 t moved from P-STORE to P-STORE-B at 211,250. Stock on hand is 4 t / 338,000 and 2.5 t / 211,250.
+
+**Browser journey:** 1 t moved at 84,500. Stock on hand is 5.5 t / 464,750 and 1 t / 84,500.

@@ -204,6 +204,9 @@ const DOCS = {
     actions: { DRAFT: [['approve', 'stock.issue.approve'], ['reject', 'stock.issue.approve', 'req'], ['cancel', 'stock.issue', 'req']] } },
   stock_count: { title: 'Stock counts', one: 'Stock count', base: '/v1/stock-counts', create: 'stock.count', form: 'stockcount',
     statuses: ['DRAFT', 'APPROVED', 'REJECTED'], actions: { DRAFT: [['approve', 'stock.adjust.approve'], ['reject', 'stock.adjust.approve', 'req']] } },
+  stock_transfer: { title: 'Stock transfers', one: 'Stock transfer', base: '/v1/stock-transfers', create: 'stock.transfer', form: 'stocktransfer',
+    statuses: ['DRAFT', 'APPROVED', 'REJECTED', 'CANCELLED'],
+    actions: { DRAFT: [['approve', 'stock.transfer.approve'], ['reject', 'stock.transfer.approve', 'req'], ['cancel', 'stock.transfer', 'req']] } },
   money_in: { title: 'Money received', one: 'Money received', statuses: ['UNAPPLIED', 'RECORDED'], actions: {},
     link: (d) => (d.status === 'UNAPPLIED' && S.can.has('ar.receipt.create') ? `#/new/receipt/${d.id}` : null) },
 };
@@ -217,6 +220,7 @@ const NAV = [
   ['Procurement', [['#/list/rfq', 'RFQs', 'p2p.read'], ['#/list/rfq_quote', 'Quotes', 'p2p.read'], ['#/list/purchase_order', 'Purchase orders', 'p2p.read'], ['#/list/supplier', 'Suppliers', 'p2p.read']]],
   ['Site', [['#/list/grn', 'Goods receipts', 'p2p.read']]],
   ['Stores', [['#/stock', 'Stock on hand', 'p2p.read'], ['#/list/stock_issue', 'Stock issues', 'p2p.read'], ['#/list/stock_count', 'Stock counts', 'p2p.read'],
+    ['#/list/stock_transfer', 'Transfers', 'p2p.read'],
     ['#/list/stock_receipt', 'Put-aways', 'p2p.read'], ['#/list/stock_item', 'Stock items', 'p2p.read'], ['#/list/warehouse', 'Warehouses', 'p2p.read']]],
   ['Payables', [['#/list/supplier_invoice', 'Invoices', 'p2p.read'], ['#/list/payment_instruction', 'Payments', 'p2p.read']]],
   ['Treasury', [['#/bank', 'Bank statements', 'bank.import|bank.reconcile'], ['#/list/company_bank_account', 'Company banks', 'scope.tenant_wide'], ['#/list/supplier_bank_account', 'Supplier banks', 'p2p.read']]],
@@ -269,6 +273,7 @@ const QUEUES = [
   ['stock.receive', 'grn', 'CONFIRMED', 'Goods receipts to put away'],
   ['stock.issue.approve', 'stock_issue', 'DRAFT', 'Stock issues to approve'],
   ['stock.adjust.approve', 'stock_count', 'DRAFT', 'Stock counts to approve'],
+  ['stock.transfer.approve', 'stock_transfer', 'DRAFT', 'Stock transfers to approve'],
 ];
 
 // ---------- shell ----------
@@ -422,7 +427,8 @@ const HIDE = new Set(['tenant_id', 'id', 'normalized_number', 'bank_snapshot', '
 // References to other documents: shown as links, not raw ids.
 const REF = { pr_id: 'purchase_requisition', rfq_id: 'rfq', po_id: 'purchase_order', quote_id: 'rfq_quote', awarded_quote_id: 'rfq_quote',
   supplier_id: 'supplier', supplier_bank_id: 'supplier_bank_account', company_bank_id: 'company_bank_account', policy_id: 'p2p_policy',
-  customer_id: 'customer', contract_id: 'contract', ipc_id: 'ipc' };
+  customer_id: 'customer', contract_id: 'contract', ipc_id: 'ipc', stock_item_id: 'stock_item', warehouse_id: 'warehouse',
+  from_warehouse_id: 'warehouse', to_warehouse_id: 'warehouse' };
 // Fields whose target depends on the document carrying them.
 const REF_BY_TYPE = { policy_id: { contract: 'contract_policy', ipc: 'contract_policy', customer_invoice: 'contract_policy', customer_credit_note: 'contract_policy', retention_release: 'contract_policy' },
   invoice_id: { customer_credit_note: 'customer_invoice' } };
@@ -1160,6 +1166,24 @@ const FORMS = {
       await api('POST', `/v1/goods-receipts/${grn.value}/put-away`, { po_line_no: Number(line.value), stock_item_id: items.value, warehouse_id: wh.value, quantity: qty.value.trim() });
       say('Put away.');
       location.hash = '#/stock';
+    });
+  },
+
+  async stocktransfer() {
+    const whs = await docOpts('warehouse', 'ACTIVE');
+    const from = select('from_warehouse_id', whs, { required: true });
+    const to = select('to_warehouse_id', whs, { required: true });
+    const item = select('stock_item_id', await docOpts('stock_item', 'ACTIVE'), { required: true });
+    const qty = input('quantity', { inputmode: 'decimal', required: true });
+    const date = input('transfer_date', { type: 'date', value: today(), required: true });
+    const note = input('note', { type: 'text', maxlength: '500' });
+    formPage('Transfer stock', 'Moves stock between two warehouses at cost; nothing is expensed and no journal is needed. An inventory controller approves it.', [
+      h('div', { class: 'grid' }, field('From warehouse', from), field('To warehouse', to), field('Stock item', item), field('Quantity', qty), field('Transfer date', date)),
+      field('Note', note)], 'Request transfer', async () => {
+      if (from.value === to.value) throw new Error('Choose two different warehouses.');
+      const res = await api('POST', '/v1/stock-transfers', { stock_item_id: item.value, from_warehouse_id: from.value, to_warehouse_id: to.value,
+        quantity: qty.value.trim(), transfer_date: date.value, note: note.value.trim() || undefined });
+      created('stock_transfer', res, 'Stock transfer');
     });
   },
 

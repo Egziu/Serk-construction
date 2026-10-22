@@ -85,6 +85,31 @@ try {
   await act(ic, 'Approve', 'A draft journal was created');
   log('issue (422,500) and shortage (42,250) approved');
 
+  // ---- 5b. Transfer 1 t to a second store: storekeeper requests, inventory controller approves
+  await nav(pmgr, '#/new/warehouse', 'New warehouse');
+  await selectByText(pmgr.getByLabel('Project'), 'P-API');
+  await pmgr.getByLabel('Code').fill('P-STORE-B');
+  await pmgr.getByLabel('Name').fill('Second site store');
+  await pmgr.getByRole('button', { name: 'Create warehouse' }).click();
+  await pmgr.getByRole('heading', { level: 1, name: /^Warehouse P-STORE-B/ }).waitFor();
+  await nav(store, '#/new/stocktransfer', 'Transfer stock');
+  await selectByText(store.getByLabel('From warehouse'), 'P-STORE ');
+  await selectByText(store.getByLabel('To warehouse'), 'P-STORE-B');
+  await selectByText(store.getByLabel('Stock item'), 'STEEL-G60');
+  await store.getByLabel('Quantity').fill('1');
+  await audit(store, 'stock transfer form');
+  await store.getByRole('button', { name: 'Request transfer' }).click();
+  await store.getByRole('heading', { level: 1, name: /^Stock transfer STR-/ }).waitFor();
+  if (await store.getByRole('button', { name: 'Approve', exact: true }).count()) fail('the storekeeper who requested a transfer is offered "Approve"');
+  const trID = await idFromHash(store);
+  await nav(ic, `#/doc/stock_transfer/${trID}`, /^Stock transfer/);
+  await act(ic, 'Approve', 'Approve: done');
+  const trView = await ic.locator('main').textContent();
+  if (!trView.includes('84,500.00')) fail('the approved transfer does not show its FIFO cost 84,500.00');
+  await audit(ic, 'approved stock transfer');
+  await snap(ic, 'stock-transfer-approved');
+  log('1 t transferred to the second store at 84,500 (no journal)');
+
   // ---- 6. Finance approves and posts; reconciliation -------------------------------------
   const ctl = await as('controller');
   await nav(fin, '#/journals', 'Journals');
@@ -106,7 +131,7 @@ try {
   // ---- 7. Phone width and dark theme ------------------------------------------------------
   const phone = await as('storePhone', { viewport: { width: 390, height: 844 }, colorScheme: 'dark' });
   await nav(phone, '#/stock', 'Stock on hand');
-  await phone.getByRole('row').filter({ hasText: 'STEEL-G60' }).waitFor();
+  await phone.getByRole('row').filter({ hasText: 'STEEL-G60' }).first().waitFor();
   await audit(phone, 'stock on hand at 390px (dark)');
   await snap(phone, 'mobile-stock-dark');
 } catch (e) {
