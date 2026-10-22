@@ -1,0 +1,124 @@
+=== RUN   TestConsoleBrowserJourneyB
+    console_browser_b_test.go:112: browser journey B (5s):
+        06:19:10.761 a11y ok: contract form
+        06:19:10.890 contract Contract CTR-2026-000001 submitted
+        06:19:11.297 a11y ok: active contract with position
+        06:19:11.552 other-project QS: contract not found
+        06:19:12.014 a11y ok: receipt form (CBE-B-001/1)
+        06:19:12.225 advance received and confirmed
+        06:19:12.519 a11y ok: measurement form
+        06:19:12.922 measurement verified
+        06:19:12.967 a11y ok: IPC form
+        06:19:13.138 a11y ok: IPC certification
+        06:19:13.269 IPC certified (SHA-256 of the signed file computed in the browser)
+        06:19:13.474 a11y ok: approved customer invoice
+        06:19:13.615 a11y ok: receipt form (CBE-B-001/2)
+        06:19:13.749 invoice approved and paid in full
+        06:19:14.418 3 AR journals approved and posted
+        06:19:14.459 a11y ok: reconciliation with receivables
+        06:19:14.708 a11y ok: reconciliation with receivables (dark theme)
+        06:19:14.992 a11y ok: IPC at 390px
+        06:19:15.029 a11y ok: contract at 390px
+        
+        CONSOLE JOURNEY B: PASS (92a0a67f-6a0e-40c9-b6be-418f80ac0d83)
+--- PASS: TestConsoleBrowserJourneyB (5.56s)
+=== RUN   TestConsoleBrowserJourneyA
+    console_browser_test.go:108: browser journey (11s):
+        06:19:15.733 a11y ok: sign-in page
+        06:19:15.901 a11y ok: home (site engineer)
+        06:19:16.010 a11y ok: requisition form
+        06:19:16.138 requisition Requisition PR-2026-000001 submitted
+        06:19:17.532 rfq issued, 3 quotes recorded
+        06:19:18.856 purchase order approved
+        06:19:19.784 two receipts confirmed
+        06:19:20.603 self-approval refused and explained in the UI
+        06:19:20.917 a11y ok: approved invoice with three-way match
+        06:19:21.765 a11y ok: home (finance manager)
+        06:19:22.194 4 subledger journals approved and posted
+        06:19:24.383 payments PAY-2026-000001 PAY-2026-000002 released and posted
+        06:19:24.588 a11y ok: supplier bank account with reveal
+        06:19:24.588 IA-040-01: payment hidden from site engineer; bank number masked; audited reveal works
+        06:19:24.782 a11y ok: bank statement import with preview
+        06:19:25.159 a11y ok: reconciliation result (dark theme)
+        06:19:25.551 statement imported and reconciled; settlement journals posted
+        06:19:25.597 a11y ok: reconciliation report
+        06:19:25.960 a11y ok: cost report at 390px
+        06:19:25.995 a11y ok: purchase order at 390px
+        06:19:26.115 sign-out revoked the session (401 afterwards)
+        
+        CONSOLE JOURNEY A: PASS
+--- PASS: TestConsoleBrowserJourneyA (11.07s)
+=== RUN   TestAPI_IA04001_DocumentScopeAndBankMasking
+    ia04001_api_test.go:91: duplicate supplier account rejected: 409 map[error:map[code:invariant_violation message:the database refused the change: new row for relation "supplier_bank_accounts" violates check constraint "supplier_bank_accounts_account_name_check"]]
+--- PASS: TestAPI_IA04001_DocumentScopeAndBankMasking (0.24s)
+=== RUN   TestAPIJourneyA_EndToEnd
+    journey_a_api_test.go:304: recon GRNI (goods received not invoiced)            subledger            0 gl            0 diff 0
+    journey_a_api_test.go:304: recon Accounts payable                              subledger            0 gl            0 diff 0
+    journey_a_api_test.go:304: recon Payments in transit: CBE Operating            subledger            0 gl            0 diff 0
+    journey_a_api_test.go:304: recon Bank (reconciled movements): CBE Operating    subledger     -2486875 gl     -2486875 diff 0
+    journey_a_api_test.go:319: cost report: map[actual_other:2500 actual_posted:2162500 available:9937500 budget:12100000 committed:2160000 cost_code:01-MAT cost_code_id:588ec1b2-20a0-4442-8024-bd034f6d18d8 invoiced:2162500 received:2160000 reserved:0]
+--- PASS: TestAPIJourneyA_EndToEnd (0.82s)
+=== RUN   TestAPIJourneyB_ContractToCash
+    journey_b_api_test.go:177: AR recon Accounts receivable: subledger 1663000 gl 1663000 difference 0
+    journey_b_api_test.go:177: AR recon Retention receivable: subledger 432000 gl 432000 difference 0
+    journey_b_api_test.go:177: AR recon Advances received: subledger 0 gl 0 difference 0
+    journey_b_api_test.go:177: AR recon Unapplied money in (statement lines without a confirmed receipt): subledger 0 gl 0 difference 0
+--- PASS: TestAPIJourneyB_ContractToCash (0.44s)
+=== RUN   TestAlertDrill_InducedFailuresFireTheRightAlerts
+    metrics_drill_test.go:243: metrics after inducing failures: ledger_violations=1 audit_mismatches=1 outbox_lag_s=3600 dead_letters=1 authority_refusals=1 auth_failures=25 revoked_uses=1
+    metrics_drill_test.go:246: alerts firing: [SerkApprovalRefusedAtDatabase SerkAuditChainMismatch SerkAuthFailureSpike SerkLedgerIntegrityViolation SerkOutboxDeadLetters SerkOutboxLagCritical SerkOutboxLagHigh SerkRevokedSessionUsed]
+    metrics_drill_test.go:258: monitor pool closed: serk_db_health_up=0 -> SerkDBHealthScrapeFailing fires
+--- PASS: TestAlertDrill_InducedFailuresFireTheRightAlerts (0.81s)
+=== RUN   TestRequestTelemetryAndTraceContext
+--- PASS: TestRequestTelemetryAndTraceContext (0.04s)
+=== RUN   TestJWKSVerifier
+--- PASS: TestJWKSVerifier (0.51s)
+=== RUN   TestR5_H1_ExistenceVariantsAndTenantWideRoutes
+    review5_regression_test.go:66: held: GET policy (pm)                              out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:67: held: GET company bank (scoped cfo)                out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:68: held: GET supplier bank (pm)                       out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:69: held: reveal company bank (scoped fm)              out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:71: held: reveal supplier bank (scoped fm)             out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:73: held: approve pending company bank (scoped cfo)    out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:74: held: approve policy (scoped cfo)                  out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: uppercase id         tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"not found"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: braced id            tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"not found"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: no-hyphen id         tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"not found"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: urn id               tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"not found"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    review5_regression_test.go:90: type upper           tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}}
+    review5_regression_test.go:90: type bank_statement  tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}}
+    review5_regression_test.go:112: held: reveal 200 with Cache-Control: no-store
+    review5_regression_test.go:118: info: reveal with a 70 kB purpose -> 422 map[error:map[code:validation message:kernel: invalid input: state the purpose of the reveal (20 to 500 characters)]]
+    review5_regression_test.go:125: scoped accountant GET /v1/journals -> 403 (0 journals)
+    review5_regression_test.go:133: held: scoped controller reconciliation -> 403
+    review5_regression_test.go:141: scoped statement import -> 403 map[error:map[code:forbidden message:insufficient permission]]
+    review5_regression_test.go:144:       same officer reading that account -> 404
+    review5_regression_test.go:146: info: /v1/identity/me for scoped accountant: tenant_wide=false project_ids=[3895c5cf-a077-42fa-9a77-88a2824f63ca]
+    review5_regression_test.go:155: server log: 11176 bytes, 43 lines; no full account numbers found unless reported above
+--- PASS: TestR5_H1_ExistenceVariantsAndTenantWideRoutes (0.22s)
+=== RUN   TestAPIFullLifecycle
+--- PASS: TestAPIFullLifecycle (0.09s)
+=== RUN   TestAPIRejections
+--- PASS: TestAPIRejections (0.65s)
+=== RUN   TestAPIRateLimit
+--- PASS: TestAPIRateLimit (0.11s)
+=== RUN   TestAPIFXMakerCheckerFlow
+--- PASS: TestAPIFXMakerCheckerFlow (0.09s)
+=== RUN   TestAPIPreAuthFloodProtection
+--- PASS: TestAPIPreAuthFloodProtection (0.04s)
+=== RUN   TestAPISessionRevocationAcrossReplicas
+--- PASS: TestAPISessionRevocationAcrossReplicas (0.06s)
+=== RUN   TestTokenRoundTrip
+--- PASS: TestTokenRoundTrip (0.00s)
+=== RUN   TestTokenRejections
+--- PASS: TestTokenRejections (0.00s)
+=== RUN   TestIsMFA
+--- PASS: TestIsMFA (0.00s)
+=== RUN   TestTokenTimeClaims
+--- PASS: TestTokenTimeClaims (0.00s)
+=== RUN   TestClientIPAndLimiter
+--- PASS: TestClientIPAndLimiter (0.00s)
+=== RUN   TestAPIWorkflowConsole
+--- PASS: TestAPIWorkflowConsole (0.16s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/httpapi	21.934s

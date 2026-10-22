@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/serk-group/serk-construction/internal/kernel"
+	"github.com/serk-group/serk-construction/internal/store/postgres"
 	"github.com/serk-group/serk-construction/pkg/auth"
 )
 
@@ -221,6 +222,9 @@ func (s *Server) arRecon(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.fail(w, err)
 		return
+	}
+	if out == nil {
+		out = []postgres.ReconCheck{} // no contract policy yet: [] not null
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"checks": out})
 }

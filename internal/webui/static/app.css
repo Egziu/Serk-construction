@@ -45,10 +45,10 @@ nav a[aria-current="page"] { background: var(--accent); color: var(--accent-ink)
 main { padding: 20px clamp(16px, 3vw, 32px) 48px; min-width: 0; }
 main:focus { outline: none; }
 @media (max-width: 760px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: minmax(0, 1fr); }
   nav { border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
   nav h2 { display: none; }
-  nav ul { display: flex; gap: 4px; overflow-x: auto; }
+  nav ul { display: flex; flex-wrap: wrap; gap: 4px; }
   nav li { flex: none; }
 }
 

@@ -166,9 +166,34 @@ const DOCS = {
   p2p_policy: { title: 'P2P policies', one: 'P2P policy', base: '/v1/p2p/policies', create: 'p2p.policy.manage', form: 'policy',
     statuses: ['DRAFT', 'APPROVED', 'REJECTED', 'RETIRED'],
     actions: { DRAFT: [['approve', 'p2p.policy.approve'], ['reject', 'p2p.policy.approve']] } },
+  // Contract to cash (Journey B).
+  customer: { title: 'Customers', one: 'Customer', base: '/v1/customers', create: 'customer.manage', form: 'customer',
+    statuses: ['PENDING', 'ACTIVE', 'BLOCKED'], actions: { PENDING: [['approve', 'customer.approve']] } },
+  contract_policy: { title: 'Contract policies', one: 'Contract policy', base: '/v1/contract-policies', create: 'contract.policy.manage', form: 'contractpolicy',
+    statuses: ['DRAFT', 'APPROVED', 'REJECTED', 'RETIRED'],
+    actions: { DRAFT: [['approve', 'contract.policy.approve'], ['reject', 'contract.policy.approve']] } },
+  contract: { title: 'Contracts', one: 'Contract', base: '/v1/contracts', create: 'contract.manage', form: 'contract',
+    statuses: ['DRAFT', 'SUBMITTED', 'ACTIVE', 'REJECTED', 'CLOSED'],
+    actions: { DRAFT: [['submit', 'contract.manage']], SUBMITTED: [['approve', 'contract.approve', 'opt'], ['reject', 'contract.approve', 'req']] } },
+  measurement: { title: 'Measurements', one: 'Measurement', base: '/v1/measurements', create: 'measure.create', form: 'measurement',
+    statuses: ['DRAFT', 'SUBMITTED', 'VERIFIED', 'REJECTED'],
+    actions: { DRAFT: [['submit', 'measure.create']], SUBMITTED: [['verify', 'measure.verify'], ['reject', 'measure.verify', 'req']] } },
+  ipc: { title: 'Payment certificates', one: 'Payment certificate', base: '/v1/ipcs', create: 'ipc.prepare', form: 'ipc',
+    statuses: ['DRAFT', 'SUBMITTED', 'CERTIFIED', 'INVOICED', 'REJECTED', 'CANCELLED'],
+    actions: {
+      DRAFT: [['submit', 'ipc.prepare'], ['cancel', 'ipc.prepare', 'req']],
+      SUBMITTED: [['certify', 'ipc.certify', 'certify'], ['reject', 'ipc.certify', 'req'], ['cancel', 'ipc.prepare', 'req']],
+      CERTIFIED: [['invoice', 'ar.invoice.create', 'invoice']] } },
+  customer_invoice: { title: 'Customer invoices', one: 'Customer invoice', base: '/v1/customer-invoices',
+    statuses: ['DRAFT', 'APPROVED'], actions: { DRAFT: [['approve', 'ar.invoice.approve']] } },
+  customer_receipt: { title: 'Receipts', one: 'Receipt', base: '/v1/receipts', create: 'ar.receipt.create', form: 'receipt',
+    statuses: ['DRAFT', 'CONFIRMED', 'CANCELLED'], actions: { DRAFT: [['confirm', 'ar.receipt.confirm']] } },
+  money_in: { title: 'Money received', one: 'Money received', statuses: ['UNAPPLIED', 'RECORDED'], actions: {},
+    link: (d) => (d.status === 'UNAPPLIED' && S.can.has('ar.receipt.create') ? `#/new/receipt/${d.id}` : null) },
 };
 const ACTION_LABEL = { submit: 'Submit for approval', approve: 'Approve', reject: 'Reject', issue: 'Issue to suppliers', award: 'Award',
-  evaluate: 'Record evaluation', confirm: 'Confirm receipt', release: 'Release payment', cancel: 'Cancel', block: 'Block supplier' };
+  evaluate: 'Record evaluation', confirm: 'Confirm receipt', release: 'Release payment', cancel: 'Cancel', block: 'Block supplier',
+  verify: 'Verify measurement', certify: 'Certify', invoice: 'Issue customer invoice' };
 
 const NAV = [
   ['Overview', [['#/home', 'My work', null]]],
@@ -177,7 +202,11 @@ const NAV = [
   ['Site', [['#/list/grn', 'Goods receipts', 'p2p.read']]],
   ['Payables', [['#/list/supplier_invoice', 'Invoices', 'p2p.read'], ['#/list/payment_instruction', 'Payments', 'p2p.read']]],
   ['Treasury', [['#/bank', 'Bank statements', 'bank.import|bank.reconcile'], ['#/list/company_bank_account', 'Company banks', 'scope.tenant_wide'], ['#/list/supplier_bank_account', 'Supplier banks', 'p2p.read']]],
-  ['Finance', [['#/journals', 'Journals', 'journal.read'], ['#/recon', 'Reconciliation', 'journal.read'], ['#/list/p2p_policy', 'P2P policies', 'scope.tenant_wide']]],
+  ['Revenue', [['#/list/contract', 'Contracts', 'p2p.read'], ['#/list/measurement', 'Measurements', 'p2p.read'], ['#/list/ipc', 'Payment certificates', 'p2p.read'],
+    ['#/list/customer_invoice', 'Customer invoices', 'p2p.read'], ['#/list/money_in', 'Money received', 'ar.receipt.create|ar.receipt.confirm'],
+    ['#/list/customer_receipt', 'Receipts', 'scope.tenant_wide'], ['#/list/customer', 'Customers', 'p2p.read']]],
+  ['Finance', [['#/journals', 'Journals', 'journal.read'], ['#/recon', 'Reconciliation', 'journal.read'], ['#/list/p2p_policy', 'P2P policies', 'scope.tenant_wide'],
+    ['#/list/contract_policy', 'Contract policies', 'scope.tenant_wide']]],
 ];
 const allowed = (perm) => !perm || perm.split('|').some((p) => S.can.has(p));
 
@@ -204,6 +233,17 @@ const QUEUES = [
   ['bankacct.approve', 'company_bank_account', 'PENDING', 'Company bank accounts to approve'],
   ['p2p.policy.approve', 'p2p_policy', 'DRAFT', 'Policies to approve'],
   ['bank.reconcile', 'bank_statement', 'OPEN', 'Statements to reconcile'],
+  ['customer.approve', 'customer', 'PENDING', 'Customers to approve'],
+  ['contract.policy.approve', 'contract_policy', 'DRAFT', 'Contract policies to approve'],
+  ['contract.approve', 'contract', 'SUBMITTED', 'Contracts to approve'],
+  ['measure.create', 'measurement', 'DRAFT', 'Measurements to submit'],
+  ['measure.verify', 'measurement', 'SUBMITTED', 'Measurements to verify'],
+  ['ipc.prepare', 'ipc', 'DRAFT', 'Certificates to submit'],
+  ['ipc.certify', 'ipc', 'SUBMITTED', 'Certificates to certify'],
+  ['ar.invoice.create', 'ipc', 'CERTIFIED', 'Certified IPCs to invoice'],
+  ['ar.invoice.approve', 'customer_invoice', 'DRAFT', 'Customer invoices to approve'],
+  ['ar.receipt.create', 'money_in', 'UNAPPLIED', 'Money received to apply'],
+  ['ar.receipt.confirm', 'customer_receipt', 'DRAFT', 'Receipts to confirm'],
 ];
 
 // ---------- shell ----------
@@ -304,7 +344,8 @@ async function renderHome() {
   page('My work', `Items waiting for you as ${S.me.roles.join(', ')}. Counts include only the projects you can see.`, cards);
   const qs = QUEUES.filter(([p]) => S.can.has(p));
   const jobs = qs.map(([, type, status]) => api('GET', `/v1/p2p/${type}?status=${status}`).then((r) => r.items.length).catch(() => null));
-  if (S.can.has('journal.approve')) jobs.push(api('GET', '/v1/journals?status=DRAFT&source_prefix=P2P_').then((r) => r.journals.length).catch(() => null));
+  if (S.can.has('journal.approve')) jobs.push(Promise.all(['P2P_', 'AR_'].map((p) => api('GET', `/v1/journals?status=DRAFT&source_prefix=${p}`)))
+    .then((rs) => rs.reduce((n, r) => n + r.journals.length, 0)).catch(() => null));
   if (S.can.has('journal.post')) jobs.push(api('GET', '/v1/journals?status=APPROVED').then((r) => r.journals.length).catch(() => null));
   const counts = await Promise.all(jobs);
   const all = qs.map(([, type, status, label], i) => [label, `#/list/${type}/${status}`, counts[i]]);
@@ -337,7 +378,10 @@ async function renderList(type, status) {
   const tools = h('div', { class: 'toolbar' }, field('Status', filter),
     meta.form && S.can.has(meta.create) ? h('a', { class: 'btn', href: `#/new/${meta.form}` }, `New ${meta.one.toLowerCase()}`) : null);
   page(meta.title, null, tools, table(`${meta.title}${status ? ' — ' + words(status.toLowerCase()) : ''} (${r.items.length})`, [
-    { label: 'Reference', cell: (d) => h('a', { href: `#/doc/${type}/${d.id}` }, d.number || d.id.slice(0, 8)) },
+    { label: 'Reference', cell: (d) => {
+      const href = meta.link ? meta.link(d) : `#/doc/${type}/${d.id}`;
+      return href ? h('a', { href }, d.number || d.id.slice(0, 8)) : (d.number || d.id.slice(0, 8));
+    } },
     { label: 'Description', cell: (d) => d.label },
     { label: 'Status', cell: (d) => chip(d.status) },
     { label: 'Amount', num: true, cell: (d) => (d.amount && d.amount !== '0' ? money(d.amount) : '') },
@@ -351,11 +395,15 @@ async function renderList(type, status) {
 const HIDE = new Set(['tenant_id', 'id', 'normalized_number', 'bank_snapshot', 'command_hash', 'source_sha256', 'legal_entity_id', 'match_detail']);
 // References to other documents: shown as links, not raw ids.
 const REF = { pr_id: 'purchase_requisition', rfq_id: 'rfq', po_id: 'purchase_order', quote_id: 'rfq_quote', awarded_quote_id: 'rfq_quote',
-  supplier_id: 'supplier', supplier_bank_id: 'supplier_bank_account', company_bank_id: 'company_bank_account', policy_id: 'p2p_policy' };
+  supplier_id: 'supplier', supplier_bank_id: 'supplier_bank_account', company_bank_id: 'company_bank_account', policy_id: 'p2p_policy',
+  customer_id: 'customer', contract_id: 'contract', ipc_id: 'ipc' };
+// Fields whose target depends on the document carrying them.
+const REF_BY_TYPE = { policy_id: { contract: 'contract_policy', ipc: 'contract_policy', customer_invoice: 'contract_policy' } };
+const refOf = (k, type) => (REF_BY_TYPE[k] && REF_BY_TYPE[k][type]) || REF[k];
 // Reading order: what the document is, its state, money, dates, people.
 const ORDER = ['number', 'invoice_number', 'statement_no', 'code', 'name', 'description', 'justification', 'status', 'technical_status', 'match_status',
   'currency', 'subtotal', 'tax_amount', 'total', 'amount', 'invoice_date', 'due_date', 'received_on', 'value_date', 'needed_by', 'valid_until', 'due_at'];
-const MONEY = /amount|total|price|balance|subtotal|threshold|rate$/;
+const MONEY = /amount|total|price|balance|subtotal|threshold|rate$|gross$|_value$|recovery$|_held$|received$|recovered$|_open$/;
 const STAMP = /_at$/;
 const rank = (k) => { const i = ORDER.indexOf(k); return i < 0 ? ORDER.length + (/_by$|_at$/.test(k) ? 1 : 0) : i; };
 const ordered = (keys) => [...keys].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
@@ -365,13 +413,14 @@ function fmtValue(k, v) {
   if (MONEY.test(k) && !/_pct$/.test(k)) return money(v);
   return String(v);
 }
-function kv(obj) {
+function kv(obj, type) {
   const dl = h('dl', { class: 'kv' });
   for (const k of ordered(Object.keys(obj || {}))) {
     const v = obj[k];
     if (HIDE.has(k) || v == null || typeof v === 'object') continue;
-    if (REF[k]) {
-      if (DOCS[REF[k]]) dl.append(h('dt', {}, words(k.replace(/_id$/, ''))), h('dd', {}, h('a', { href: `#/doc/${REF[k]}/${v}` }, `Open ${DOCS[REF[k]].one.toLowerCase()}`)));
+    const ref = refOf(k, type);
+    if (ref) {
+      if (DOCS[ref]) dl.append(h('dt', {}, words(k.replace(/_id$/, ''))), h('dd', {}, h('a', { href: `#/doc/${ref}/${v}` }, `Open ${DOCS[ref].one.toLowerCase()}`)));
       continue;
     }
     if (/_id$/.test(k)) continue;
@@ -395,7 +444,7 @@ async function renderDoc(type, id) {
   const d = await api('GET', `/v1/p2p/${type}/${id}`);
   const det = d.detail || {};
   const head = det.h || det.q || det;
-  const parts = [h('div', { class: 'panel' }, h('p', {}, chip(d.status), ' ', `created by ${d.created_by}`), kv(head))];
+  const parts = [h('div', { class: 'panel' }, h('p', {}, chip(d.status), ' ', `created by ${d.created_by}`), kv(head, type))];
   const md = head.match_detail;
   if (md && Array.isArray(md.lines)) {
     parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Three-way match'),
@@ -405,6 +454,7 @@ async function renderDoc(type, id) {
   parts.push(rowsTable('Lines', det.lines), rowsTable('Items', det.items), rowsTable('Allocations', det.alloc));
   if (Array.isArray(det.quotes)) parts.push(rowsTable('Quotes received', det.quotes.map((x) => x.q)));
   if (det.payee) parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Payee (approved bank account)'), kv(det.payee)));
+  if (type === 'contract' && d.status === 'ACTIVE') parts.push(await positionPanel(d.id));
   parts.push(actionsPanel(type, d, det), nextSteps(type, d), revealPanel(type, d));
   page(`${meta.one} ${d.number || ''}`.trim(), null, ...parts);
 }
@@ -433,6 +483,11 @@ function revealPanel(type, d) {
     h('div', { class: 'actions' }, field('Purpose of the reveal', purpose), btn), out);
 }
 
+async function positionPanel(id) {
+  const p = await api('GET', `/v1/contracts/${id}/position`);
+  return h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Commercial position'), kv(p));
+}
+
 function nextSteps(type, d) {
   const links = [];
   const add = (perm, href, label) => { if (S.can.has(perm)) links.push(h('a', { class: 'btn', href }, label)); };
@@ -442,6 +497,7 @@ function nextSteps(type, d) {
   if (type === 'purchase_order' && d.status === 'APPROVED') { add('grn.create', `#/new/grn/${d.id}`, 'Record goods receipt'); add('ap.enter', `#/new/invoice/${d.id}`, 'Enter supplier invoice'); }
   if (type === 'supplier_invoice' && d.status === 'APPROVED') add('payment.prepare', `#/new/payment/${d.id}`, 'Prepare payment');
   if (type === 'supplier' && d.status === 'ACTIVE') add('supplier.manage', `#/new/supplierbank/${d.id}`, 'Add bank account');
+  if (type === 'contract' && d.status === 'ACTIVE') { add('measure.create', `#/new/measurement/${d.id}`, 'Record measurement'); add('ipc.prepare', `#/new/ipc/${d.id}`, 'Prepare payment certificate'); }
   return links.length ? h('div', { class: 'actions' }, links) : null;
 }
 
@@ -471,6 +527,26 @@ function actionsPanel(type, d, det) {
         h('div', { class: 'check' }, yes, h('label', { for: yes.id }, 'Compliant')), h('div', { class: 'check' }, no, h('label', { for: no.id }, 'Not compliant'))),
       field('Evaluation note', note));
       collect = () => (yes.checked || no.checked ? { compliant: yes.checked, note: note.value.trim() } : null);
+    } else if (mode === 'certify') {
+      const ref = input('certificate_ref', { type: 'text', maxlength: '100', required: true });
+      const file = h('input', { type: 'file', name: 'certificate_file', accept: '.pdf,image/*' });
+      const sum = h('output', { class: 'hint', 'aria-live': 'polite' });
+      let sha = '';
+      file.addEventListener('change', async () => {
+        sha = '';
+        sum.textContent = '';
+        if (!file.files.length) return;
+        const buf = await crypto.subtle.digest('SHA-256', await file.files[0].arrayBuffer());
+        sha = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+        sum.textContent = `SHA-256 ${sha}`;
+      });
+      extra.push(field('Client certificate reference', ref), field('Signed certificate file', file, 'Its SHA-256 is recorded with the certification; the file stays with you.'), sum);
+      collect = () => (ref.value.trim() && sha ? { certificate_ref: ref.value.trim(), certificate_sha256: sha } : null);
+    } else if (mode === 'invoice') {
+      const idate = input('invoice_date', { type: 'date', value: today(), required: true });
+      const due = input('due_date', { type: 'date', value: plusDays(30), required: true });
+      extra.push(field('Invoice date', idate), field('Due date', due));
+      collect = () => (idate.value && due.value ? { invoice_date: idate.value, due_date: due.value } : null);
     }
     const btn = h('button', { type: 'button', class: action === 'reject' || action === 'cancel' || action === 'block' ? 'danger' : null }, ACTION_LABEL[action] || action);
     btn.addEventListener('click', async () => {
@@ -480,6 +556,7 @@ function actionsPanel(type, d, det) {
       btn.disabled = true;
       try {
         const res = await api('POST', `${meta.base}/${d.id}/${action}`, Object.keys(body).length ? body : undefined);
+        if (action === 'invoice' && res && res.id) return created('customer_invoice', res, 'Customer invoice');
         let msg = `${ACTION_LABEL[action] || action}: done.`;
         if (res && res.journal_id) msg += ' A draft journal was created for finance to approve and post.';
         if (res && res.match_status) msg += ` Three-way match: ${res.match_status}.`;
@@ -852,6 +929,119 @@ const FORMS = {
     });
   },
 
+  async customer() {
+    const ent = select('legal_entity_id', entityOpts(), { required: true });
+    const code = input('code', { type: 'text', required: true });
+    const name = input('name', { type: 'text', required: true });
+    const tin = input('tax_id', { type: 'text' });
+    formPage('New customer', 'A finance manager approves the customer before contracts can be made with it.', [
+      h('div', { class: 'grid' }, field('Legal entity', ent), field('Customer code', code), field('Legal name', name), field('Tax ID (TIN)', tin))], 'Create customer', async () => {
+      const res = await api('POST', '/v1/customers', { legal_entity_id: ent.value, code: code.value.trim(), name: name.value.trim(), tax_id: tin.value.trim() });
+      created('customer', res, 'Customer');
+    });
+  },
+
+  async contractpolicy() {
+    const ent = select('legal_entity_id', entityOpts(), { required: true });
+    const vat = input('vat_rate', { inputmode: 'decimal', value: '0.15', required: true });
+    const base = select('vat_base', [{ value: 'GROSS_LESS_ADVANCE', label: 'Gross less advance recovery' }, { value: 'GROSS', label: 'Gross' }]);
+    const acc = (n, types) => select(n, accountOpts(types), { required: true });
+    const ar = acc('ar_account_id', ['ASSET']), ret = acc('retention_account_id', ['ASSET']), adv = acc('advance_account_id', ['LIABILITY']);
+    const rev = acc('revenue_account_id', ['REVENUE']), vout = acc('vat_output_account_id', ['LIABILITY']);
+    formPage('Propose contract policy', 'VAT and receivable posting accounts for client contracts. Takes effect only after the CFO approves it. Rates are tenant configuration, not tax advice.', [
+      h('div', { class: 'grid' }, field('Legal entity', ent), field('VAT rate (fraction)', vat, '0.15 = 15%'), field('VAT base', base),
+        field('Accounts receivable', ar), field('Retention receivable', ret), field('Advances from customers', adv), field('Contract revenue', rev), field('VAT output', vout))],
+    'Propose policy', async () => {
+      const res = await api('POST', '/v1/contract-policies', { legal_entity_id: ent.value, vat_rate: vat.value.trim(), vat_base: base.value, ar_account_id: ar.value,
+        retention_account_id: ret.value, advance_account_id: adv.value, revenue_account_id: rev.value, vat_output_account_id: vout.value });
+      created('contract_policy', res, 'Contract policy');
+    });
+  },
+
+  async contract() {
+    const proj = select('project_id', projectOpts(), { required: true });
+    const cust = select('customer_id', await docOpts('customer', 'ACTIVE'), { required: true });
+    const title = input('title', { type: 'text', required: true, maxlength: '200' });
+    const ref = input('client_reference', { type: 'text', required: true, maxlength: '100' });
+    const signed = input('signed_on', { type: 'date', value: today(), required: true });
+    const ret = input('retention_pct', { inputmode: 'decimal', value: '0.05', required: true });
+    const adv = input('advance_amount', { inputmode: 'decimal', value: '0', required: true });
+    const rec = input('advance_recovery_pct', { inputmode: 'decimal', value: '0', required: true });
+    const grid = lineGrid('Contract lines (bill of quantities as signed)', [
+      { key: 'description', label: 'Description', make: txt('description') },
+      { key: 'unit', label: 'Unit', make: txt('unit', { size: '5' }) },
+      { key: 'quantity', label: 'Quantity', make: num('quantity') },
+      { key: 'rate', label: 'Rate', make: num('rate') },
+    ], [], true);
+    formPage('New client contract', 'The contract value is computed from the lines. The CFO activates the contract with a recent multi-factor sign-in.', [
+      h('div', { class: 'grid' }, field('Project', proj), field('Customer', cust), field('Title', title), field('Client reference', ref), field('Signed on', signed),
+        field('Retention (fraction)', ret, '0.05 = 5%'), field('Advance amount', adv), field('Advance recovery (fraction of each certificate)', rec)), grid], 'Create contract', async () => {
+      const lines = grid.rows().map((r, i) => ({ line_no: i + 1, ...r }));
+      const res = await api('POST', '/v1/contracts', { project_id: proj.value, customer_id: cust.value, title: title.value.trim(), client_reference: ref.value.trim(),
+        signed_on: signed.value, retention_pct: ret.value.trim(), advance_amount: adv.value.trim(), advance_recovery_pct: rec.value.trim(), lines });
+      created('contract', res, 'Contract');
+    });
+  },
+
+  async measurement(contractID) {
+    const ctr = select('contract_id', await docOpts('contract', 'ACTIVE'), { required: true });
+    if (contractID) ctr.value = contractID;
+    const period = input('period_end', { type: 'date', value: today(), required: true });
+    let grid;
+    const holder = h('div');
+    const load = async () => {
+      const lines = ctr.value ? ((await api('GET', `/v1/p2p/contract/${ctr.value}`)).detail.lines || []) : [];
+      grid = lineGrid('Quantities measured this period (leave blank for no work)', [
+        { key: 'contract_line_no', label: 'Line', make: (v) => input('contract_line_no', { type: 'hidden', value: String(v.line_no) }) },
+        { key: 'description', label: 'Description', make: ro('description') },
+        { key: 'unit', label: 'Unit', make: ro('unit') },
+        { key: 'contract_qty', label: 'Contract quantity', make: (v) => h('span', {}, String(v.contract_qty)) },
+        { key: 'quantity', label: 'Measured quantity', make: num('quantity') },
+      ], lines.map((l) => ({ line_no: l.line_no, description: l.description, unit: l.unit, contract_qty: l.quantity })), false);
+      holder.replaceChildren(grid);
+    };
+    ctr.addEventListener('change', load);
+    formPage('Record measurement', 'Quantities of work done in the period. A site engineer verifies them; the database refuses quantities beyond the contract.', [
+      h('div', { class: 'grid' }, field('Contract', ctr), field('Period ending', period)), holder], 'Create measurement', async () => {
+      const lines = grid.rows().filter((r) => r.quantity).map((r) => ({ contract_line_no: Number(r.contract_line_no), quantity: r.quantity }));
+      if (!lines.length) throw new Error('Enter at least one measured quantity.');
+      const res = await api('POST', `/v1/contracts/${ctr.value}/measurements`, { period_end: period.value, lines });
+      created('measurement', res, 'Measurement');
+    });
+    await load();
+  },
+
+  async ipc(contractID) {
+    const ctr = select('contract_id', await docOpts('contract', 'ACTIVE'), { required: true });
+    if (contractID) ctr.value = contractID;
+    const period = input('period_end', { type: 'date', value: today(), required: true });
+    formPage('Prepare payment certificate', 'Every amount — gross, retention, advance recovery, VAT and amount due — is computed from verified measurements and the contract.', [
+      h('div', { class: 'grid' }, field('Contract', ctr), field('Period ending', period))], 'Prepare certificate', async () => {
+      const res = await api('POST', `/v1/contracts/${ctr.value}/ipcs`, { period_end: period.value });
+      created('ipc', res, 'Payment certificate');
+    });
+  },
+
+  async receipt(lineID) {
+    const lines = (await api('GET', '/v1/p2p/money_in?status=UNAPPLIED')).items;
+    const line = select('statement_line_id', lines.map((l) => ({ value: l.id, label: `${l.number} ${l.label} — ${money(l.amount)}` })), { required: true });
+    if (lineID) line.value = lineID;
+    const targets = [...(await docOpts('customer_invoice', 'APPROVED')).map((o) => ({ value: 'inv:' + o.value, label: 'Invoice ' + o.label })),
+      ...(await docOpts('contract', 'ACTIVE')).map((o) => ({ value: 'adv:' + o.value, label: 'Advance on ' + o.label }))];
+    const amountOf = () => (lines.find((l) => l.id === line.value) || {}).amount || '';
+    const grid = lineGrid('Apply the money to', [
+      { key: 'target', label: 'Invoice or contract advance', make: () => select('target', targets) },
+      { key: 'amount', label: 'Amount', make: num('amount') },
+    ], [{ amount: amountOf() }], true);
+    formPage('Record receipt', 'Apply money received on the bank statement. The whole amount must be applied; an AR supervisor independent of the statement import confirms it.', [
+      h('div', { class: 'grid' }, field('Money received', line)), grid], 'Record receipt', async () => {
+      const allocations = grid.rows().filter((r) => r.target && r.amount).map((r) => (r.target.startsWith('inv:')
+        ? { invoice_id: r.target.slice(4), amount: r.amount } : { contract_id: r.target.slice(4), amount: r.amount }));
+      const res = await api('POST', '/v1/receipts', { statement_line_id: line.value, allocations });
+      created('customer_receipt', res, 'Receipt');
+    });
+  },
+
   async policy() {
     const ent = select('legal_entity_id', entityOpts(), { required: true });
     const f = (n, v) => input(n, { inputmode: 'decimal', value: v, required: true });
@@ -873,15 +1063,17 @@ const FORMS = {
 // ---------- journals ----------
 async function renderJournals() {
   const p2pOnly = h('input', { type: 'checkbox', id: nextId('c'), checked: true });
+  const fetchJ = async (status) => (p2pOnly.checked
+    ? (await Promise.all(['P2P_', 'AR_'].map((p) => api('GET', `/v1/journals?status=${status}&source_prefix=${p}`)))).flatMap((r) => r.journals)
+    : (await api('GET', `/v1/journals?status=${status}`)).journals);
   const holder = h('div');
   page('Journals', 'Subledger documents create draft journals. A finance manager approves them and a controller posts them; neither can be the document’s creator.',
-    h('div', { class: 'toolbar' }, h('div', { class: 'check' }, p2pOnly, h('label', { for: p2pOnly.id }, 'Procure-to-pay journals only'))), holder);
+    h('div', { class: 'toolbar' }, h('div', { class: 'check' }, p2pOnly, h('label', { for: p2pOnly.id }, 'Subledger journals only (procure-to-pay and receivables)'))), holder);
   const load = async () => {
     holder.textContent = '';
-    const pref = p2pOnly.checked ? '&source_prefix=P2P_' : '';
     const sections = [['DRAFT', 'journal.approve', 'approve-batch', 'Approve selected'], ['APPROVED', 'journal.post', 'post-batch', 'Post selected']];
     for (const [status, perm, path, label] of sections) {
-      const js = (await api('GET', `/v1/journals?status=${status}${pref}`)).journals;
+      const js = await fetchJ(status);
       const can = S.can.has(perm);
       const boxes = new Map();
       const all = h('input', { type: 'checkbox', 'aria-label': `Select all ${status.toLowerCase()} journals` });
@@ -992,7 +1184,7 @@ async function renderRecon() {
   const load = async () => {
     out.textContent = '';
     if (!ent.value) return;
-    const checks = (await api('GET', `/v1/entities/${ent.value}/p2p-reconciliation`)).checks;
+    const checks = (await api('GET', `/v1/entities/${ent.value}/p2p-reconciliation`)).checks || [];
     for (const c of checks) c._class = c.difference !== '0' ? 'diff' : null;
     const breaks = checks.filter((c) => c._class).length;
     out.append(h('p', { class: breaks ? 'alert' : 'notice', role: 'status' }, breaks ? `${breaks} reconciliation difference(s) need investigation.` : 'Every subledger agrees with the general ledger.'),
@@ -1000,9 +1192,18 @@ async function renderRecon() {
         { label: 'Check', cell: (c) => c.check }, { label: 'Subledger', num: true, cell: (c) => money(c.subledger) },
         { label: 'General ledger', num: true, cell: (c) => money(c.gl) }, { label: 'Difference', num: true, cell: (c) => money(c.difference) },
         { label: 'Unposted / unmatched', num: true, cell: (c) => String(c.unposted_or_unmatched) }], checks));
+    const ar = (await api('GET', `/v1/entities/${ent.value}/ar-reconciliation`)).checks || [];
+    for (const c of ar) c._class = c.difference !== '0' && !c.check.startsWith('Unapplied') ? 'diff' : null;
+    if (ar.length) out.append(table('Receivables to general ledger', [
+      { label: 'Check', cell: (c) => c.check }, { label: 'Subledger', num: true, cell: (c) => money(c.subledger) },
+      { label: 'General ledger', num: true, cell: (c) => (c.check.startsWith('Unapplied') ? '' : money(c.gl)) },
+      { label: 'Difference', num: true, cell: (c) => (c.check.startsWith('Unapplied') ? '' : money(c.difference)) },
+      { label: 'Unposted / unapplied', num: true, cell: (c) => String(c.unposted_or_unmatched) }], ar));
+    const arBreaks = ar.filter((c) => c._class).length;
+    if (arBreaks) out.prepend(h('p', { class: 'alert', role: 'status' }, `${arBreaks} receivables difference(s) need investigation.`));
   };
   ent.addEventListener('change', () => load().catch(showError));
-  page('Reconciliation', 'GRNI, accounts payable, payments in transit and bank movements compared with posted general-ledger balances.', h('div', { class: 'toolbar' }, field('Legal entity', ent)), out);
+  page('Reconciliation', 'GRNI, payables, payments in transit, bank, receivables, retention and advances compared with posted general-ledger balances.', h('div', { class: 'toolbar' }, field('Legal entity', ent)), out);
   await load();
 }
 

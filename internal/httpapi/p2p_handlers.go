@@ -498,6 +498,9 @@ func (s *Server) p2pRecon(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	if out == nil {
+		out = []postgres.ReconCheck{} // an entity without a P2P policy has no checks: [] not null
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"checks": out})
 }
 
