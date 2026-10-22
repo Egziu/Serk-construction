@@ -547,7 +547,11 @@ function nextSteps(type, d) {
   if (type === 'purchase_requisition' && d.status === 'APPROVED') add('rfq.manage', `#/new/rfq/${d.id}`, 'Create RFQ');
   if (type === 'rfq' && d.status === 'ISSUED') add('rfq.manage', `#/new/quote/${d.id}`, 'Record a quote');
   if (type === 'rfq' && d.status === 'AWARDED') add('po.manage', `#/new/po/${d.id}`, 'Create purchase order');
-  if (type === 'purchase_order' && d.status === 'APPROVED') { add('grn.create', `#/new/grn/${d.id}`, 'Record goods receipt'); add('ap.enter', `#/new/invoice/${d.id}`, 'Enter supplier invoice'); }
+  if (type === 'purchase_order' && d.status === 'APPROVED') {
+    add('grn.create', `#/new/grn/${d.id}`, 'Record goods receipt'); add('ap.enter', `#/new/invoice/${d.id}`, 'Enter supplier invoice');
+    const assets = new Set(S.ref.accounts.filter((x) => x.kind === 'ASSET').map((x) => x.id));
+    if (((d.detail || {}).lines || []).some((l) => !l.stock_item_id && assets.has(l.account_id))) add('po.manage', `#/new/designate/${d.id}`, 'Designate stock items');
+  }
   if (type === 'supplier_invoice' && d.status === 'APPROVED') add('payment.prepare', `#/new/payment/${d.id}`, 'Prepare payment');
   if (type === 'customer_invoice' && d.status === 'APPROVED') add('ar.credit.create', `#/new/creditnote/${d.id}`, 'Issue credit note');
   if (type === 'supplier' && d.status === 'ACTIVE') add('supplier.manage', `#/new/supplierbank/${d.id}`, 'Add bank account');
@@ -1279,6 +1283,20 @@ const FORMS = {
       created('schedule_progress', res, 'Progress report');
     });
     await load();
+  },
+
+  async designate(poID) {
+    const po = (await api('GET', `/v1/p2p/purchase_order/${poID}`)).detail;
+    const assets = new Set(S.ref.accounts.filter((x) => x.kind === 'ASSET').map((x) => x.id));
+    const open = (po.lines || []).filter((l) => !l.stock_item_id && assets.has(l.account_id));
+    const line = select('line_no', open.map((l) => ({ value: String(l.line_no), label: `${l.line_no} — ${l.description} (${l.unit})` })), { required: true });
+    const item = select('stock_item_id', await docOpts('stock_item', 'ACTIVE'), { required: true });
+    formPage('Designate stock items', 'Names the stock item an inventory line of this purchase order delivers. It is set once, before anything is put away; the storekeeper then puts away only that item.', [
+      h('div', { class: 'grid' }, field('Purchase order line', line), field('Stock item', item))], 'Designate', async () => {
+      await api('POST', `/v1/purchase-orders/${poID}/lines/${line.value}/stock-item`, { stock_item_id: item.value });
+      say('Stock item designated.');
+      location.hash = `#/doc/purchase_order/${poID}`;
+    });
   },
 
   async stockitem() {

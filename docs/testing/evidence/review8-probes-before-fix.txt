@@ -1,0 +1,143 @@
+=== RUN   TestR8_ARApprovalAfterPeriodClose
+    zz_review8_test.go:83: period FY2026-Q4 (the only period, covering 2026-10-22) CLOSED while credit note 829dd09e and release 61863061 are DRAFT
+    zz_review8_test.go:98: OPEN: credit note APPROVED after its period was closed; its journal 2926fd51: approve ok=true  / post ok=false fiscal period is CLOSED — posting refused
+    zz_review8_test.go:98: OPEN: retention release APPROVED after its period was closed; its journal 8b3bedc1: approve ok=true  / post ok=false fiscal period is CLOSED — posting refused
+    zz_review8_test.go:103: contract position: invoiced 5841000 credited 230000 retention held 165500 released 100000 receivable open 5711000
+    zz_review8_test.go:105:   AR recon Accounts receivable                                              sub        5841000 gl        5841000 diff 0 open 2
+    zz_review8_test.go:105:   AR recon Retention receivable                                             sub         265500 gl         265500 diff 0 open 1
+    zz_review8_test.go:105:   AR recon Advances received                                                sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:105:   AR recon Unapplied money in (statement lines without a confirmed receipt) sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:112: receipt of the full original invoice after the closed-period credit: store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 5841000.000000): it would be over-allocated, is credited, or is not payable
+--- FAIL: TestR8_ARApprovalAfterPeriodClose (0.37s)
+=== RUN   TestR8_ARFutureDated
+    zz_review8_test.go:127: OPEN: credit note dated 2026-11-11 (today 2026-10-22) recorded and APPROVED now; credited 230000 already counts in the position and blocks receipts
+    zz_review8_test.go:138: OPEN: retention release dated 2026-11-11 APPROVED today (stock documents refuse future dates since R7-F3)
+--- FAIL: TestR8_ARFutureDated (0.28s)
+=== RUN   TestR8_CreditVATPerNoteRounding
+    zz_review8_test.go:164: OPEN: 10 credit notes of net 0.10 credit VAT 0.2; VAT at 15% on the credited 1 is 0.15 (difference 0.05, 133% of the correct VAT)
+    zz_review8_test.go:164: OPEN: 10 credit notes of net 0.30 credit VAT 0.4; VAT at 15% on the credited 3 is 0.45 (difference -0.05, 89% of the correct VAT)
+--- FAIL: TestR8_CreditVATPerNoteRounding (0.62s)
+=== RUN   TestR8_CreditAfterPartialPaymentAndRelease
+    zz_review8_test.go:189: held: credit of total 920,000 after 5,000,000 received on a 5,841,000 invoice refused: store: database invariant violated: credit note CRN-2026-000001 (920000.000000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 5000000.000000, credited 0)
+    zz_review8_test.go:195: credit net 731,304.35 total 841000 approved
+    zz_review8_test.go:199: held: receipt of 0.01 on the fully paid-and-credited invoice refused: store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 5841000.000000): it would be over-allocated, is credited, or is not payable
+    zz_review8_test.go:209: held: a further credit after settlement and release refused: store: database invariant violated: credit note CRN-2026-000003 (1.150000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 5000000.000000, credited 841000.000000)
+    zz_review8_test.go:213:   AR recon Accounts receivable                                              sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:213:   AR recon Retention receivable                                             sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:213:   AR recon Advances received                                                sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:213:   AR recon Unapplied money in (statement lines without a confirmed receipt) sub           0.01 gl           0.01 diff 0 open 1
+    zz_review8_test.go:224: position open 0 held 0 released 265500 received 5265500 credited 841000; GL AR 0 retention 0 VAT -686804.35 revenue -4578695.65
+    zz_review8_test.go:229: held: partial payment -> exact credit -> release -> receipt: AR 0, retention 0, position open 0, every reconciliation row 0
+--- PASS: TestR8_CreditAfterPartialPaymentAndRelease (0.47s)
+=== RUN   TestR8_ConcurrentCreditsAndReceipt
+    zz_review8_test.go:267: round 0: invoice total 5841000; credits of 2601900 net each and a receipt of 1752300 raced: errs <nil> / store: database invariant violated: credit note CRN-2026-000002 (2992185.000000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 1752300.000000, credited 2992185.000000) / <nil>; credited 2992185 + received 1752300 = 4744485
+    zz_review8_test.go:272: held: round 0: credited + received 4744485 <= total 5841000
+    zz_review8_test.go:267: round 1: invoice total 3663000; credits of 1631700 net each and a receipt of 1098900 raced: errs store: database invariant violated: credit note CRN-2026-000003 (1876455.000000) exceeds what is open on invoice CINV-2026-000002 (total 3663000.000000, received 1098900.000000, credited 1876455.000000) / <nil> / <nil>; credited 1876455 + received 1098900 = 2975355
+    zz_review8_test.go:272: held: round 1: credited + received 2975355 <= total 3663000
+    zz_review8_test.go:267: round 2: invoice total 2024000; credits of 901600 net each and a receipt of 607200 raced: errs store: database invariant violated: credit note CRN-2026-000005 (1036840.000000) exceeds what is open on invoice CINV-2026-000003 (total 2024000.000000, received 0, credited 1036840.000000) / <nil> / <nil>; credited 1036840 + received 607200 = 1644040
+    zz_review8_test.go:272: held: round 2: credited + received 1644040 <= total 2024000
+--- PASS: TestR8_ConcurrentCreditsAndReceipt (0.51s)
+=== RUN   TestR8_ConcurrentReleaseReceipts
+    zz_review8_test.go:305: held: concurrent receipts on one release: received 200000 of 265,500 (<nil> / store: database invariant violated: retention release RTR-2026-000001 cannot take this allocation (status APPROVED, amount 265500.000000): it would be over-allocated or is not payable)
+--- PASS: TestR8_ConcurrentReleaseReceipts (0.32s)
+=== RUN   TestR8_RawSQL_AR
+    zz_review8_test.go:330: raw credit insert with vat 0 / total 1000: stored vat 150 total 1150 before commit; commit: store: database invariant violated: privilege: ar.credit.create of customer_credit_note 5b39603a-53ba-409f-a3ec-557cd6f3163a requires a verified approval attestation for u-ar-clerk
+    zz_review8_test.go:331: held: unattested raw credit note insert refused: store: database invariant violated: privilege: ar.credit.create of customer_credit_note 5b39603a-53ba-409f-a3ec-557cd6f3163a requires a verified approval attestation for u-ar-clerk
+    zz_review8_test.go:339: held: swap the journal of an APPROVED credit note for the invoice journal refused: store: database invariant violated: privilege: credit note column journal_id cannot be changed in this transition
+    zz_review8_test.go:340: held: cancel an APPROVED credit note refused: store: database invariant violated: illegal credit note transition APPROVED -> CANCELLED
+    zz_review8_test.go:341: held: approve a DRAFT credit note raw, reusing the approved note's journal refused: store: database invariant violated: privilege: ar.credit.approve of customer_credit_note 4b205fec-1b13-4c07-95bd-5fce4b9fad41 requires a verified approval attestation for u-commercial
+    zz_review8_test.go:345: held: approve a release raw without attestation refused: store: database invariant violated: privilege: ar.retention.approve of retention_release 206d39fe-88e0-42d0-a4af-6576b29e89ab requires a verified approval attestation for u-commercial
+    zz_review8_test.go:346: held: insert a contract line into an ACTIVE contract refused: store: database invariant violated: contract lines change only while the contract is DRAFT
+    zz_review8_test.go:347: held: raw release insert above the retention held refused: store: database invariant violated: releases of contract CTR-2026-000001 (0 released, 100000.000000 in draft, 999999.000000 now) would exceed the retention held 265500.000000
+    zz_review8_test.go:353: held: allocation with two targets (invoice and release) refused: store: database invariant violated: new row for relation "receipt_allocations" violates check constraint "receipt_allocation_one_target"
+    zz_review8_test.go:359: held: a receipt allocated to a DRAFT retention release refused: store: database invariant violated: retention release RTR-2026-000001 cannot take this allocation (status DRAFT, amount 100000.000000): it would be over-allocated or is not payable
+    zz_review8_test.go:361: held: allocation added to a CONFIRMED receipt refused: store: database invariant violated: allocations are added only while the receipt is DRAFT
+    zz_review8_test.go:364: held: tenant role inserts the AR_CREDIT journal of a DRAFT credit note (exact reserved key) refused: store: database invariant violated: privilege: permission denied for table journals
+    zz_review8_test.go:372: held: schema-owner journal with key variant P2P:AR_CREDIT:4b… refused: store: database invariant violated: idempotency keys beginning "p2p:" are reserved to the subledger journal of the named document
+    zz_review8_test.go:372: held: schema-owner journal with key variant p2p:ar_credit:4b… refused: store: database invariant violated: idempotency keys beginning "p2p:" are reserved to the subledger journal of the named document
+    zz_review8_test.go:372: held: schema-owner journal with key variant p2p:AR_CREDIT:4B… refused: store: database invariant violated: journal ea7067ba-3f3a-4d13-a702-35f137e8db63 uses reserved source type AR_CREDIT but no AR_CREDIT document references it
+    zz_review8_test.go:378: held: the draft credit note still approves after the key attempts: <nil>
+--- PASS: TestR8_RawSQL_AR (0.37s)
+=== RUN   TestR8_RawSQL_Stock
+    zz_review8_test.go:399: held: raw transfer insert with a preset amount refused: store: database invariant violated: stock transfers are requested DRAFT
+    zz_review8_test.go:401: held: raw transfer insert without attestation refused: store: database invariant violated: privilege: stock.transfer.create of stock_transfer 464a1d34-9bc5-4eee-8f30-17a34060effe requires a verified approval attestation for u-storekeeper
+    zz_review8_test.go:405: held: raw transfer approval without attestation refused: store: database invariant violated: privilege: stock.transfer.approve of stock_transfer 7dd27fcc-1c4a-4481-872d-ae0718483f0b requires a verified approval attestation for u-inventory-controller
+    zz_review8_test.go:406: held: change the quantity of a DRAFT transfer refused: store: database invariant violated: privilege: permission denied for table stock_transfers
+    zz_review8_test.go:407: held: change the destination of a DRAFT transfer refused: store: database invariant violated: privilege: permission denied for table stock_transfers
+    zz_review8_test.go:408: held: insert a TRANSFER layer refused: store: database invariant violated: privilege: stock valuation state (stock_layers) is written only by stock documents
+    zz_review8_test.go:410: held: change po_lines.stock_item_id after approval refused: store: database invariant violated: privilege: permission denied for table po_lines
+    zz_review8_test.go:411: held: add a PO line to an APPROVED purchase order refused: store: database invariant violated: PO lines are added only while the PO is DRAFT
+    zz_review8_test.go:414: held: re-open an APPROVED transfer refused: store: database invariant violated: illegal stock transfer transition APPROVED -> DRAFT
+    zz_review8_test.go:415: held: cancel an APPROVED transfer refused: store: database invariant violated: illegal stock transfer transition APPROVED -> CANCELLED
+--- PASS: TestR8_RawSQL_Stock (0.34s)
+=== RUN   TestR8_TransferFractionalNoResidue
+    zz_review8_test.go:467: transfer 1.5 of 7e9f3c16: amount 126750.5 consumed 126750.5 destination layers 126750.5; balances 1798499.2 layers 1798499.2 documents 1798499.2
+    zz_review8_test.go:468: transfer 2.7777 of 7e9f3c16: amount 236133.59 consumed 236133.59 destination layers 236133.59; balances 1798499.2 layers 1798499.2 documents 1798499.2
+    zz_review8_test.go:469: transfer 111.1111 of 67ae9532: amount 105158.43 consumed 105158.43 destination layers 0; balances 1798499.2 layers 1798499.2 documents 1798499.2
+    zz_review8_test.go:470: transfer 77.7777 of 67ae9532: amount 73610.83 consumed 73610.83 destination layers 0; balances 1798499.2 layers 1798499.2 documents 1798499.2
+    zz_review8_test.go:482: transfer 4.611 of 7e9f3c16: amount 391255.74 consumed 391255.74 destination layers 391255.74; balances 1827186.74 layers 1827186.74 documents 1827186.74
+    zz_review8_test.go:483: transfer 50.0001 of 67ae9532: amount 47321.51 consumed 47321.51 destination layers 0; balances 1827186.74 layers 1827186.74 documents 1827186.74
+    zz_review8_test.go:502: closing: balances 0 layers 0 documents 0 GL inventory 0 residue []
+    zz_review8_test.go:506: held: FIFO and WAC through 6 transfers (split layers, a COUNT layer moved back), 21 fractional issues and exact closes: stock 0, layers 0, GL 0
+    zz_review8_test.go:508:   recon Inventory: 1200 Inventory                        sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:508:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:508:   recon Stock balances vs GL: 1200                       sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:508:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:508:   recon Stock balances vs documents: 1200                sub              0 gl              0 diff 0 open 0
+    zz_review8_test.go:508:   recon Cost layers vs stock balances: 1200              sub              0 gl              0 diff 0 open 0
+--- PASS: TestR8_TransferFractionalNoResidue (1.88s)
+=== RUN   TestR8_TransferAcrossProjects
+    zz_review8_test.go:552: before: P-001 01-MAT committed 2160000 actual 0 available 9940000; P-002 02-MAT actual 0 available 0
+    zz_review8_test.go:556: held: a P-001 storekeeper requesting a transfer into a P-002 warehouse refused: store: not found
+    zz_review8_test.go:563: OPEN: a P-001-scoped inventory controller, for whom the destination warehouse is "store: not found", approved moving 12 t into it
+    zz_review8_test.go:580: info: P-002 storekeeper sees 12 t on hand in P002-STORE, 0 stock_transfer documents in the list, and the transfer detail -> store: not found
+    zz_review8_test.go:592: after P-002 consumed the 12 t (1014000): P-001 committed 2160000 actual 0 available 9940000; P-002 actual 1014000 available -1014000
+    zz_review8_test.go:594: OPEN: the 12 t (1014000) bought on P-001's commitment and consumed by P-002 is counted against both budgets: P-001 available unchanged at 9940000 (committed 2160000), P-002 available fell by 1014000
+--- FAIL: TestR8_TransferAcrossProjects (0.42s)
+=== RUN   TestR8_PostureCheck
+    zz_review8_test.go:620: posture with TEMP revoked from PUBLIC and from serk_t_4e90e7cb03cd4a1ca34055e0cdbf9e9d: ["TEMP is granted on the database to tenant login postgres"]; superusers [postgres]
+    zz_review8_test.go:624: OPEN: the posture check reports superuser "postgres" as a tenant login ("TEMP is granted on the database to tenant login postgres"); cmd/serk-api exits in production whenever it reports anything
+    zz_review8_test.go:662: with CREATE on schema public granted to serk_t_4e90e7cb03cd4a1ca34055e0cdbf9e9d: posture ["TEMP is granted on the database to tenant login postgres"]; trigger write: <nil>; steel now 1012 t at 1014001
+    zz_review8_test.go:664: OPEN: (conditional) with CREATE on a schema, the tenant login wrote stock_balances (+1,000 t) through its own trigger and the posture check did not name it
+    zz_review8_test.go:678: with pg_catalog.pg_try_advisory_xact_lock(bigint) executable by PUBLIC: posture ["TEMP is granted on the database to tenant login postgres"]; tenant login takes it: true <nil>
+    zz_review8_test.go:680: OPEN: (conditional) a tenant login takes advisory lock 727002 (the relay leader lock) through pg_catalog.pg_try_advisory_xact_lock(bigint) and the posture check reports nothing new
+--- FAIL: TestR8_PostureCheck (0.41s)
+=== RUN   TestR8_HumanDecisionsAndScope
+    zz_review8_test.go:701: held: credit note approval by a ai principal refused: auth: forbidden: ar.credit.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review8_test.go:703: held: release approval by a ai principal refused: auth: forbidden: ar.retention.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review8_test.go:701: held: credit note approval by a service principal refused: auth: forbidden: ar.credit.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review8_test.go:703: held: release approval by a service principal refused: auth: forbidden: ar.retention.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review8_test.go:715: held: Go IsDraftAction and SQL approval_is_draft_action agree on the 11 new/changed actions
+    zz_review8_test.go:723: held: customer_credit_note of P-001 invisible to another project's manager: detail store: not found; list 0 rows <nil>
+    zz_review8_test.go:723: held: retention_release of P-001 invisible to another project's manager: detail store: not found; list 0 rows <nil>
+    zz_review8_test.go:727: held: approval by another project's commercial manager refused: store: not found
+    zz_review8_test.go:735: held: u-ar-clerk reads customer_credit_note (status DRAFT) and lists 1
+    zz_review8_test.go:735: held: u-commercial reads customer_credit_note (status DRAFT) and lists 1
+    zz_review8_test.go:735: held: u-controller reads customer_credit_note (status DRAFT) and lists 1
+    zz_review8_test.go:735: held: u-ar-clerk reads retention_release (status DRAFT) and lists 1
+    zz_review8_test.go:735: held: u-commercial reads retention_release (status DRAFT) and lists 1
+    zz_review8_test.go:735: held: u-controller reads retention_release (status DRAFT) and lists 1
+    zz_review8_test.go:741: info: a second AR clerk (not the issuer, not an approver) cancelled credit note 44945c85 (stock transfers allow only the preparer)
+    zz_review8_test.go:744: info: a second AR clerk cancelled retention release b6cd871d
+--- PASS: TestR8_HumanDecisionsAndScope (0.37s)
+=== RUN   TestR8_PutAwayUndesignatedLine
+    zz_review8_test.go:761: OPEN: PO line 1 'Reinforcement steel Grade 60' (no designated item) put away by the storekeeper as CU-WIRE-16: 12 t valued 1014000, no checker
+--- FAIL: TestR8_PutAwayUndesignatedLine (0.40s)
+=== RUN   TestR8_TransferLifecycleAndRaces
+    zz_review8_test.go:800: held: concurrent whole-balance transfers: one approved, the other store: database invariant violated: insufficient stock of STEEL-G60 in the warehouse: 0.0000 on hand, 12.0000 requested; B holds 12 t
+    zz_review8_test.go:808: held: a destination count recorded before an incoming transfer (stale) refused: store: database invariant violated: count SCT-2026-000001 is stale: the book quantity changed from 0.0000 to 100.0000 since it was recorded; count again
+    zz_review8_test.go:815: held: u-storekeeper reads stock_transfer (status APPROVED) and lists 3
+    zz_review8_test.go:815: held: u-inventory-controller reads stock_transfer (status APPROVED) and lists 3
+    zz_review8_test.go:815: held: u-controller reads stock_transfer (status APPROVED) and lists 3
+    zz_review8_test.go:822: held: transfer approval after its period closed refused: store: database invariant violated: stock document date 2026-10-22 is not in an open fiscal period of the entity
+--- PASS: TestR8_TransferLifecycleAndRaces (0.58s)
+=== RUN   TestR8_BudgetNettingByCount
+    zz_review8_test.go:854: before: committed 2160000 actual 0 available 9940000; surplus 5 t found and all 17 t issued to 01-MAT (1436500): committed 723500 actual 1436500 available 9940000
+    zz_review8_test.go:857: OPEN: 01-MAT consumed 1436500 of stock (12 t received + 5 t surplus) while 8 t of its PO are still open, yet its available budget is unchanged at 9940000: committed fell 2160000 -> 723500
+--- FAIL: TestR8_BudgetNettingByCount (0.49s)
+=== RUN   TestR8_SurplusCostAfterTransfer
+    zz_review8_test.go:890: info: store A holds only transferred layers at 120000; a surplus there is valued at 84500 (A's own older receipt), the latest receipt of the item is 120000
+--- PASS: TestR8_SurplusCostAfterTransfer (0.67s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	8.508s
+FAIL

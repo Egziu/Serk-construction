@@ -124,3 +124,10 @@ Closes JC-TRANSFER.
 - Kernel: `TestJourneyC_StockTransfer`, with figures in docs/testing/E2E_JOURNEY_C.md. It covers 9 refusals and proves that FIFO layer order survives a transfer.
 - HTTP: `TestAPIJourneyC_StockValuation`.
 - Browser: `TestConsoleBrowserJourneyC`, with transfer request and approval in the UI.
+
+## Addendum: independent review 8 (2026-10-22), migration 0028
+
+- **Budget semantics (R8-F3, replaces the R7-F4 netting).** Stock is an asset from put-away until it is issued. In `p2p_cost_position`, a purchase-order line on a stock inventory account commits `greatest(0, commitment − put-away value)`; what has been put away no longer burdens the ordering cost code, and the cost code named on the stock issue bears it as actual (`STK_ISSUE`). Count variances are actual cost of the code they are charged to. Consequences: stock bought on one project and transferred to and issued on another is charged once, to the consumer; budget released by put-away returns to the ordering code; between put-away and issue the stock is in no project's budget (it is visible in the stock valuation report).
+- **Item designation (R8-F8).** Nothing is put away from a purchase-order line on a stock inventory account until the line names its stock item. Procurement (`po.manage`, human-only) may designate an undesignated line of an approved order once, by an attested decision (`po.line.designate`), while nothing has been put away from it. The storekeeper cannot.
+- **Surplus cost basis (R8-I1).** A count surplus is valued at the item's most recent receipt cost in any warehouse (transfer layers are not receipts).
+- **Transfer scope (R8-F6).** Approving a transfer requires visibility of both warehouses.

@@ -414,3 +414,26 @@ func stockDate(d time.Time) error {
 	}
 	return nil
 }
+
+// DesignatePOLineItem names the stock item of an inventory purchase-order
+// line that was raised without one (R8-F8). It is procurement's decision
+// (po.manage, human), made once and before anything is put away; the
+// storekeeper never chooses the item.
+func (s *Service) DesignatePOLineItem(ctx context.Context, p auth.Principal, poID string, lineNo int, itemID string) error {
+	return s.p2pTx(ctx, p, auth.PermPOManage, func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := s.loadDoc(ctx, tx, p, auth.PermPOManage, "purchase_order", poID); err != nil {
+			return err
+		}
+		if _, err := s.visibleDoc(ctx, tx, p, "stock_item", itemID, false); err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, tx, p, "po.line.designate", "purchase_order", poID, "DESIGNATE"); err != nil {
+			return err
+		}
+		if err := postgres.Exec1(ctx, tx, `UPDATE po_lines SET stock_item_id = $3::uuid WHERE po_id = $1::uuid AND line_no = $2`, poID, lineNo, itemID); err != nil {
+			return mapNoRows(err)
+		}
+		return s.record(ctx, tx, p, "po.line.designate", "purchase_order", poID, "po.line_designated",
+			map[string]any{"po_id": poID, "line_no": lineNo, "stock_item_id": itemID})
+	})
+}

@@ -82,6 +82,16 @@ func (s *Service) ApproveStockTransfer(ctx context.Context, p auth.Principal, id
 		if err := auth.CheckMakerChecker(p, d.CreatedBy, "stock transfer"); err != nil {
 			return err
 		}
+		// R8-F6: the approver must see both warehouses.
+		var from, to string
+		if err := tx.QueryRow(ctx, `SELECT from_warehouse_id::text, to_warehouse_id::text FROM stock_transfers WHERE id = $1::uuid`, id).Scan(&from, &to); err != nil {
+			return err
+		}
+		for _, w := range []string{from, to} {
+			if _, err := s.visibleDoc(ctx, tx, p, "warehouse", w, false); err != nil {
+				return err
+			}
+		}
 		if err := s.authorize(ctx, tx, p, "stock.transfer.approve", "stock_transfer", id, "APPROVED"); err != nil {
 			return err
 		}

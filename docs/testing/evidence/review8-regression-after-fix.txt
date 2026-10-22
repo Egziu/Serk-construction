@@ -1,0 +1,276 @@
+=== RUN   TestR7_FIFOManyLayersSmallIssues
+    review7_regression_test.go:92: after 23 issues of 0.4321 t: on hand 0.0616 at 5243.59; issued 846829.78
+    review7_regression_test.go:98: closing qty 0 value 0; receipts 852073.37 issued 852073.37; bal 0 layers 0 docs 0; GL inventory 0
+    review7_regression_test.go:102: held: FIFO over 3 layers x 2 put-aways and 24 issues leaves no residue (GL 0, stock 0, issued = received 852073.37)
+    review7_regression_test.go:104:   recon Inventory: 1200 Inventory                        sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Stock balances vs GL: 1200                       sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Stock balances vs documents: 1200                sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:104:   recon Cost layers vs stock balances: 1200              sub              0 gl              0 diff 0 open 0
+--- PASS: TestR7_FIFOManyLayersSmallIssues (1.80s)
+=== RUN   TestR7_WACFractionalToZero
+    review7_regression_test.go:140: WAC closing qty 0 value 0 GL 0 bal 0 layers 0 docs 0
+    review7_regression_test.go:144: held: WAC with fractional averages, 4-dp issues and a shortage ends at stock 0 / GL 0
+    review7_regression_test.go:146:   recon Inventory: 1200 Inventory                        sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Stock balances vs GL: 1200                       sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Stock balances vs documents: 1200                sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:146:   recon Cost layers vs stock balances: 1200              sub              0 gl              0 diff 0 open 0
+--- PASS: TestR7_WACFractionalToZero (1.16s)
+=== RUN   TestR7_SurplusValuedFromRoundingRemainder
+=== RUN   TestR7_SurplusValuedFromRoundingRemainder/deflate_to_zero
+    review7_regression_test.go:166: after issuing 299.9999 of 300 at 10.40: book 0.0001 bags valued 0
+    review7_regression_test.go:179: surplus of 1000 bags valued 10400 (journal "717b3b5c-d439-4e32-a77f-920167f78ef2"); at the receipt price it is 10400; book now 1000.0001 bags at 10400
+    review7_regression_test.go:189: held: surplus valued within 5% of the receipt price
+=== RUN   TestR7_SurplusValuedFromRoundingRemainder/inflate
+    review7_regression_test.go:166: after issuing 299.9999 of 300 at 60.00: book 0.0001 bags valued 0.01
+    review7_regression_test.go:179: surplus of 1000 bags valued 60000 (journal "12eb48ac-0782-4337-8ec1-963a5dd77b85"); at the receipt price it is 60000; book now 1000.0001 bags at 60000.01
+    review7_regression_test.go:189: held: surplus valued within 5% of the receipt price
+--- PASS: TestR7_SurplusValuedFromRoundingRemainder (0.72s)
+    --- PASS: TestR7_SurplusValuedFromRoundingRemainder/deflate_to_zero (0.35s)
+    --- PASS: TestR7_SurplusValuedFromRoundingRemainder/inflate (0.37s)
+=== RUN   TestR7_PartialPutAwayOvershoot
+    review7_regression_test.go:209: GRN line debited inventory 0.02; three put-aways of 0.0035 carry 0.02; completing put-away: <nil>
+    review7_regression_test.go:216:   recon Inventory: 1200 Inventory                        sub           0.02 gl           0.02 diff 0 open 0
+    review7_regression_test.go:216:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:216:   recon Stock balances vs GL: 1200                       sub           0.02 gl           0.02 diff 0 open 0
+    review7_regression_test.go:216:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:216:   recon Stock balances vs documents: 1200                sub           0.02 gl           0.02 diff 0 open 0
+    review7_regression_test.go:216:   recon Cost layers vs stock balances: 1200              sub           0.02 gl           0.02 diff 0 open 0
+--- PASS: TestR7_PartialPutAwayOvershoot (0.35s)
+=== RUN   TestR7_RawSQLBypass
+    review7_regression_test.go:253: held: INSERT stock_consumptions: store: database invariant violated: privilege: stock valuation state (stock_consumptions) is written only by stock documents
+    review7_regression_test.go:254: held: DELETE stock_layers: store: database invariant violated: privilege: permission denied for table stock_layers
+    review7_regression_test.go:255: held: UPDATE stock_layers value: store: database invariant violated: privilege: stock valuation state (stock_layers) is written only by stock documents
+    review7_regression_test.go:256: held: INSERT stock_balances ON CONFLICT: store: database invariant violated: privilege: stock valuation state (stock_balances) is written only by stock documents
+    review7_regression_test.go:258: held: stk_consume in a CTE: store: database invariant violated: privilege: stock is consumed only by a stock document
+    review7_regression_test.go:259: held: stk_receive in INSERT ... SELECT: store: database invariant violated: privilege: stock is received only by a stock document
+    review7_regression_test.go:262: held: session_replication_role=replica: store: database invariant violated: privilege: permission denied to set parameter "session_replication_role"
+    review7_regression_test.go:263: held: put-away without attestation (raw insert): store: database invariant violated: privilege: stock.receipt.create of stock_receipt 3cc109f5-f49b-478d-83e2-6612c1cf3c36 requires a verified approval attestation for u-storekeeper
+    review7_regression_test.go:265: held: stock_balances via a forged deferred-constraint (SET CONSTRAINTS): store: database invariant violated: privilege: stock valuation state (stock_balances) is written only by stock documents
+    review7_regression_test.go:272: held: swap journal_id after approval: store: database invariant violated: privilege: the journal of a stock issue is attached once, by the approving transaction
+    review7_regression_test.go:273: held: re-approve an APPROVED issue (amount change): store: database invariant violated: privilege: permission denied for table stock_issues
+    review7_regression_test.go:274: held: edit STK journal lines in a later txn: store: database invariant violated: privilege: permission denied for table journal_lines
+    review7_regression_test.go:275: held: cancel STK journal: store: database invariant violated: privilege: journal.cancel of journal cb3437ce-c296-4a6c-bf5a-aede3fc94d98 requires a verified approval attestation for an authorised person
+    review7_regression_test.go:276: held: orphan STK_ISSUE journal: store: database invariant violated: privilege: permission denied for table journals
+    review7_regression_test.go:281: held: count DRAFT->APPROVED raw without attestation: store: database invariant violated: privilege: stock.count.approve of stock_count dc6bb01a-95dc-4572-a79c-41443fb1bd4c requires a verified approval attestation for u-x
+    review7_regression_test.go:284: held: approve issue raw without attestation: store: database invariant violated: privilege: stock.issue.approve of stock_issue 9a15dea7-c9cf-4fb1-bc1d-70a171b7e4d9 requires a verified approval attestation for u-site-engineer
+    review7_regression_test.go:289:   recon Inventory: 1200 Inventory                        sub        1296000 gl        1396000 diff 100000 open 1
+    review7_regression_test.go:289:   recon Received, not yet put away: 1200                 sub         789000 gl         789000 diff 0 open 2
+    review7_regression_test.go:289:   recon Stock balances vs GL: 1200                       sub        1296000 gl        1396000 diff 100000 open 1
+    review7_regression_test.go:289:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:289:   recon Stock balances vs documents: 1200                sub         422500 gl         422500 diff 0 open 0
+    review7_regression_test.go:289:   recon Cost layers vs stock balances: 1200              sub         422500 gl         422500 diff 0 open 0
+    review7_regression_test.go:295: held: a manual 100,000 journal to inventory shows as a reconciliation difference
+--- PASS: TestR7_RawSQLBypass (0.38s)
+=== RUN   TestR7_IdempotencyKeyPreclaim
+    review7_regression_test.go:312: accountant creates manual journal with key p2p:STK_ISSUE:e01396d0: kernel: invalid input: idempotency keys beginning "p2p:" are reserved to subledger journals
+    review7_regression_test.go:313: refused: a manual journal in the reserved p2p: key namespace            kernel: invalid input: idempotency keys beginning "p2p:" are reserved to subledger journals
+    review7_regression_test.go:320: refused: a raw journal in the reserved namespace                        store: database invariant violated: idempotency keys beginning "p2p:" are reserved to the subledger journal of the named document
+    review7_regression_test.go:325: held: issue approved despite the pre-claimed key
+--- PASS: TestR7_IdempotencyKeyPreclaim (0.32s)
+=== RUN   TestR7_IssueDateOutsidePeriods
+    review7_regression_test.go:343: held: issue dated 2025-06-30 refused at creation: store: database invariant violated: stock document date 2025-06-30 is not in an open fiscal period of the entity
+    review7_regression_test.go:343: held: issue dated 2031-01-01 refused at creation: kernel: invalid input: a stock document is dated today or earlier, in an open period
+    review7_regression_test.go:343: held: issue dated 0001-01-01 refused at creation: kernel: invalid input: a stock document is dated today or earlier, in an open period
+    review7_regression_test.go:363: held: count dated 2025-06-30 refused: store: database invariant violated: stock document date 2025-06-30 is not in an open fiscal period of the entity
+    review7_regression_test.go:363: held: count dated 2031-01-01 refused: kernel: invalid input: a stock document is dated today or earlier, in an open period
+    review7_regression_test.go:378:   recon Inventory: 1200 Inventory                        sub        1014000 gl        1014000 diff 0 open 0
+    review7_regression_test.go:378:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:378:   recon Stock balances vs GL: 1200                       sub        1014000 gl        1014000 diff 0 open 0
+    review7_regression_test.go:378:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:378:   recon Stock balances vs documents: 1200                sub        1014000 gl        1014000 diff 0 open 0
+    review7_regression_test.go:378:   recon Cost layers vs stock balances: 1200              sub        1014000 gl        1014000 diff 0 open 0
+--- PASS: TestR7_IssueDateOutsidePeriods (0.34s)
+=== RUN   TestR7_BudgetDoubleCount
+    review7_regression_test.go:410: ordered: committed 2160000 actual 0 available 9940000
+    review7_regression_test.go:411: put away 12 t: committed 1146000 actual 0 available 10954000
+    review7_regression_test.go:412: issued 10 t (845000): committed 1146000 actual 845000 available 10109000
+    review7_regression_test.go:423: held: 10 t consumed counted once; 2 t on the shelf is an asset, not cost
+--- PASS: TestR7_BudgetDoubleCount (0.37s)
+=== RUN   TestR7_PutAwayItemIdentityAndAI
+    review7_regression_test.go:444: held: store: database invariant violated: purchase order line 1 was ordered as another stock item
+    review7_regression_test.go:452: refused: a put-away from an undesignated line                           store: database invariant violated: purchase order line 1 does not name its stock item: procurement designates it before put-away
+    review7_regression_test.go:453: refused: the storekeeper designating the item                           auth: forbidden: po.manage
+    review7_regression_test.go:455: refused: a second designation                                           store: database invariant violated: the stock item of a purchase order line is set once
+    review7_regression_test.go:457: refused: a put-away as another item than designated                     store: database invariant violated: purchase order line 1 was ordered as another stock item
+    review7_regression_test.go:464: held: AI put-away refused: auth: forbidden: stock.receipt.create is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review7_regression_test.go:468: note: AI principal created a warehouse (no checker step exists for warehouses)
+    review7_regression_test.go:491: held: Go IsDraftAction and SQL approval_is_draft_action agree on all 11 stock actions
+--- PASS: TestR7_PutAwayItemIdentityAndAI (0.51s)
+=== RUN   TestR7_Visibility
+    review7_regression_test.go:524: project storekeeper: receipt into central -> store: not found ; central warehouse -> store: not found
+    review7_regression_test.go:537: list stock_receipt for project storekeeper: 1 rows (incl. central put-away)
+    review7_regression_test.go:546: held: tenant 2 stock on hand of tenant 1 entity: 0 lines, <nil>
+    review7_regression_test.go:554: project storekeeper issue from central warehouse: store: not found
+--- PASS: TestR7_Visibility (0.40s)
+=== RUN   TestR7_ConcurrentPutAwayAndCount
+    review7_regression_test.go:586: held: concurrent put-aways: 1 of 4 succeeded, stock 8; e.g. store: database invariant violated: put-away 8.0000 exceeds what the goods receipt line still holds (8.0000 of 12.0000 already put away)
+    review7_regression_test.go:604: round 0: count err=<nil> issue err=<nil>; book 300 -> 292; bal 950480 docs 950480 layers 950480
+    review7_regression_test.go:604: round 1: count err=store: database invariant violated: count SCT-2026-000002 is stale: the book quantity changed from 292.0000 to 287.0000 since it was recorded; count again issue err=<nil>; book 292 -> 287; bal 945780 docs 945780 layers 945780
+    review7_regression_test.go:604: round 2: count err=<nil> issue err=<nil>; book 287 -> 279; bal 938260 docs 938260 layers 938260
+    review7_regression_test.go:604: round 3: count err=<nil> issue err=<nil>; book 279 -> 271; bal 930740 docs 930740 layers 930740
+    review7_regression_test.go:604: round 4: count err=<nil> issue err=<nil>; book 271 -> 263; bal 923220 docs 923220 layers 923220
+--- PASS: TestR7_ConcurrentPutAwayAndCount (0.60s)
+=== RUN   TestR7_ReconSharedAccountUnposted
+    review7_regression_test.go:636:   recon Inventory: 1200 Inventory                        sub         685500 gl         685500 diff 0 open 1
+    review7_regression_test.go:636:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:636:   recon Stock balances vs GL: 1200                       sub         685500 gl         685500 diff 0 open 1
+    review7_regression_test.go:636:   recon Put away from goods receipts not yet posted: 1200 sub         422500 gl         422500 diff 0 open 1
+    review7_regression_test.go:636:   recon Stock balances vs documents: 1200                sub        1108000 gl        1108000 diff 0 open 0
+    review7_regression_test.go:636:   recon Cost layers vs stock balances: 1200              sub        1108000 gl        1108000 diff 0 open 0
+    review7_regression_test.go:639: GL inventory 685500; stock balances 1108000 (includes 5 t put away from the unposted GRN)
+    review7_regression_test.go:664:   recon Inventory: 1200 Inventory                        sub         685500 gl         785500 diff 100000 open 1
+    review7_regression_test.go:664:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review7_regression_test.go:664:   recon Stock balances vs GL: 1200                       sub         685500 gl         785500 diff 100000 open 1
+    review7_regression_test.go:664:   recon Put away from goods receipts not yet posted: 1200 sub         422500 gl         422500 diff 0 open 1
+    review7_regression_test.go:664:   recon Stock balances vs documents: 1200                sub        1108000 gl        1108000 diff 0 open 0
+    review7_regression_test.go:664:   recon Cost layers vs stock balances: 1200              sub        1108000 gl        1108000 diff 0 open 0
+--- PASS: TestR7_ReconSharedAccountUnposted (0.51s)
+=== RUN   TestR7_TriggerDepthGuardNeedsTempRevoked
+    review7_regression_test.go:712: conditional: with TEMP granted, the tenant login wrote stock_balances through a pg_temp trigger (steel 1012 t at 1014001)
+    review7_regression_test.go:730: held: posture check reports [TEMP is granted on the database to tenant login serk_t_3d495300fd8146c181b53257a09496f7]
+--- PASS: TestR7_TriggerDepthGuardNeedsTempRevoked (0.32s)
+=== RUN   TestR8_ARApprovalAfterPeriodClose
+    review8_regression_test.go:84: period FY2026-Q4 (the only period, covering 2026-10-22) CLOSED while credit note a9ca60aa and release 6736fd4c are DRAFT
+    review8_regression_test.go:94: held: credit note approval in a closed period refused: store: database invariant violated: document date 2026-10-22 is not in an open fiscal period of the entity
+    review8_regression_test.go:94: held: retention release approval in a closed period refused: store: database invariant violated: document date 2026-10-22 is not in an open fiscal period of the entity
+    review8_regression_test.go:104: contract position: invoiced 5841000 credited 0 retention held 265500 released 0 receivable open 5841000
+    review8_regression_test.go:106:   AR recon Accounts receivable                                              sub        5841000 gl        5841000 diff 0 open 0
+    review8_regression_test.go:106:   AR recon Retention receivable                                             sub         265500 gl         265500 diff 0 open 0
+    review8_regression_test.go:106:   AR recon Advances received                                                sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:106:   AR recon Unapplied money in (statement lines without a confirmed receipt) sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:113: receipt of the full original invoice after the closed-period credit: <nil>
+--- PASS: TestR8_ARApprovalAfterPeriodClose (0.34s)
+=== RUN   TestR8_ARFutureDated
+    review8_regression_test.go:125: held: credit note dated 2026-11-11 refused: kernel: invalid input: a credit note is dated today or earlier
+    review8_regression_test.go:137: held: release dated 2026-11-11 refused: kernel: invalid input: a retention release is dated today or earlier
+--- PASS: TestR8_ARFutureDated (0.26s)
+=== RUN   TestR8_CreditVATPerNoteRounding
+    review8_regression_test.go:174: accepted (R8-F5): 10 notes of net 0.10 carry VAT 0.2; VAT on the total 1 would be 0.15
+    review8_regression_test.go:174: accepted (R8-F5): 10 notes of net 0.30 carry VAT 0.4; VAT on the total 3 would be 0.45
+--- PASS: TestR8_CreditVATPerNoteRounding (0.59s)
+=== RUN   TestR8_CreditAfterPartialPaymentAndRelease
+    review8_regression_test.go:195: held: credit of total 920,000 after 5,000,000 received on a 5,841,000 invoice refused: store: database invariant violated: credit note CRN-2026-000001 (920000.000000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 5000000.000000, credited 0)
+    review8_regression_test.go:201: credit net 731,304.35 total 841000 approved
+    review8_regression_test.go:205: held: receipt of 0.01 on the fully paid-and-credited invoice refused: store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 5841000.000000): it would be over-allocated, is credited, or is not payable
+    review8_regression_test.go:215: held: a further credit after settlement and release refused: store: database invariant violated: credit note CRN-2026-000003 (1.150000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 5000000.000000, credited 841000.000000)
+    review8_regression_test.go:219:   AR recon Accounts receivable                                              sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:219:   AR recon Retention receivable                                             sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:219:   AR recon Advances received                                                sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:219:   AR recon Unapplied money in (statement lines without a confirmed receipt) sub           0.01 gl           0.01 diff 0 open 1
+    review8_regression_test.go:230: position open 0 held 0 released 265500 received 5265500 credited 841000; GL AR 0 retention 0 VAT -686804.35 revenue -4578695.65
+    review8_regression_test.go:235: held: partial payment -> exact credit -> release -> receipt: AR 0, retention 0, position open 0, every reconciliation row 0
+--- PASS: TestR8_CreditAfterPartialPaymentAndRelease (0.51s)
+=== RUN   TestR8_ConcurrentCreditsAndReceipt
+    review8_regression_test.go:273: round 0: invoice total 5841000; credits of 2601900 net each and a receipt of 1752300 raced: errs store: database invariant violated: credit note CRN-2026-000001 (2992185.000000) exceeds what is open on invoice CINV-2026-000001 (total 5841000.000000, received 1752300.000000, credited 2992185.000000) / <nil> / <nil>; credited 2992185 + received 1752300 = 4744485
+    review8_regression_test.go:278: held: round 0: credited + received 4744485 <= total 5841000
+    review8_regression_test.go:273: round 1: invoice total 3663000; credits of 1631700 net each and a receipt of 1098900 raced: errs <nil> / store: database invariant violated: credit note CRN-2026-000004 (1876455.000000) exceeds what is open on invoice CINV-2026-000002 (total 3663000.000000, received 1098900.000000, credited 1876455.000000) / <nil>; credited 1876455 + received 1098900 = 2975355
+    review8_regression_test.go:278: held: round 1: credited + received 2975355 <= total 3663000
+    review8_regression_test.go:273: round 2: invoice total 2024000; credits of 901600 net each and a receipt of 607200 raced: errs <nil> / store: database invariant violated: credit note CRN-2026-000006 (1036840.000000) exceeds what is open on invoice CINV-2026-000003 (total 2024000.000000, received 0, credited 1036840.000000) / <nil>; credited 1036840 + received 607200 = 1644040
+    review8_regression_test.go:278: held: round 2: credited + received 1644040 <= total 2024000
+--- PASS: TestR8_ConcurrentCreditsAndReceipt (0.63s)
+=== RUN   TestR8_ConcurrentReleaseReceipts
+    review8_regression_test.go:311: held: concurrent receipts on one release: received 200000 of 265,500 (<nil> / store: database invariant violated: retention release RTR-2026-000001 cannot take this allocation (status APPROVED, amount 265500.000000): it would be over-allocated or is not payable)
+--- PASS: TestR8_ConcurrentReleaseReceipts (0.37s)
+=== RUN   TestR8_RawSQL_AR
+    review8_regression_test.go:336: raw credit insert with vat 0 / total 1000: stored vat 150 total 1150 before commit; commit: store: database invariant violated: privilege: ar.credit.create of customer_credit_note 04a38d78-5bdb-45c7-92cb-a63a09d18d02 requires a verified approval attestation for u-ar-clerk
+    review8_regression_test.go:337: held: unattested raw credit note insert refused: store: database invariant violated: privilege: ar.credit.create of customer_credit_note 04a38d78-5bdb-45c7-92cb-a63a09d18d02 requires a verified approval attestation for u-ar-clerk
+    review8_regression_test.go:345: held: swap the journal of an APPROVED credit note for the invoice journal refused: store: database invariant violated: privilege: credit note column journal_id cannot be changed in this transition
+    review8_regression_test.go:346: held: cancel an APPROVED credit note refused: store: database invariant violated: illegal credit note transition APPROVED -> CANCELLED
+    review8_regression_test.go:347: held: approve a DRAFT credit note raw, reusing the approved note's journal refused: store: database invariant violated: privilege: ar.credit.approve of customer_credit_note fb0336a6-438f-43b8-9e9b-051217034f19 requires a verified approval attestation for u-commercial
+    review8_regression_test.go:351: held: approve a release raw without attestation refused: store: database invariant violated: privilege: ar.retention.approve of retention_release 0757d9b5-2b82-4961-9e04-782f2fb8256a requires a verified approval attestation for u-commercial
+    review8_regression_test.go:352: held: insert a contract line into an ACTIVE contract refused: store: database invariant violated: lines are added to an ACTIVE contract only by an approved variation
+    review8_regression_test.go:353: held: raw release insert above the retention held refused: store: database invariant violated: releases of contract CTR-2026-000001 (0 released, 100000.000000 in draft, 999999.000000 now) would exceed the retention held 265500.000000
+    review8_regression_test.go:359: held: allocation with two targets (invoice and release) refused: store: database invariant violated: new row for relation "receipt_allocations" violates check constraint "receipt_allocation_one_target"
+    review8_regression_test.go:365: held: a receipt allocated to a DRAFT retention release refused: store: database invariant violated: retention release RTR-2026-000001 cannot take this allocation (status DRAFT, amount 100000.000000): it would be over-allocated or is not payable
+    review8_regression_test.go:367: held: allocation added to a CONFIRMED receipt refused: store: database invariant violated: allocations are added only while the receipt is DRAFT
+    review8_regression_test.go:370: held: tenant role inserts the AR_CREDIT journal of a DRAFT credit note (exact reserved key) refused: store: database invariant violated: privilege: permission denied for table journals
+    review8_regression_test.go:378: held: schema-owner journal with key variant P2P:AR_CREDIT:fb… refused: store: database invariant violated: idempotency keys beginning "p2p:" are reserved to the subledger journal of the named document
+    review8_regression_test.go:378: held: schema-owner journal with key variant p2p:ar_credit:fb… refused: store: database invariant violated: idempotency keys beginning "p2p:" are reserved to the subledger journal of the named document
+    review8_regression_test.go:378: held: schema-owner journal with key variant p2p:AR_CREDIT:FB… refused: store: database invariant violated: journal ea142762-8fca-47eb-9b6f-6062900db03e uses reserved source type AR_CREDIT but no AR_CREDIT document references it
+    review8_regression_test.go:384: held: the draft credit note still approves after the key attempts: <nil>
+--- PASS: TestR8_RawSQL_AR (0.37s)
+=== RUN   TestR8_RawSQL_Stock
+    review8_regression_test.go:405: held: raw transfer insert with a preset amount refused: store: database invariant violated: stock transfers are requested DRAFT
+    review8_regression_test.go:407: held: raw transfer insert without attestation refused: store: database invariant violated: privilege: stock.transfer.create of stock_transfer b30440da-b725-4352-a6bc-786739da13bd requires a verified approval attestation for u-storekeeper
+    review8_regression_test.go:411: held: raw transfer approval without attestation refused: store: database invariant violated: privilege: stock.transfer.approve of stock_transfer cf4d9699-7425-4712-a55f-3d91782e7879 requires a verified approval attestation for u-inventory-controller
+    review8_regression_test.go:412: held: change the quantity of a DRAFT transfer refused: store: database invariant violated: privilege: permission denied for table stock_transfers
+    review8_regression_test.go:413: held: change the destination of a DRAFT transfer refused: store: database invariant violated: privilege: permission denied for table stock_transfers
+    review8_regression_test.go:414: held: insert a TRANSFER layer refused: store: database invariant violated: privilege: stock valuation state (stock_layers) is written only by stock documents
+    review8_regression_test.go:416: held: change po_lines.stock_item_id after approval refused: store: database invariant violated: the stock item of a purchase order line is set once
+    review8_regression_test.go:417: held: add a PO line to an APPROVED purchase order refused: store: database invariant violated: PO lines are added only while the PO is DRAFT
+    review8_regression_test.go:420: held: re-open an APPROVED transfer refused: store: database invariant violated: illegal stock transfer transition APPROVED -> DRAFT
+    review8_regression_test.go:421: held: cancel an APPROVED transfer refused: store: database invariant violated: illegal stock transfer transition APPROVED -> CANCELLED
+--- PASS: TestR8_RawSQL_Stock (0.36s)
+=== RUN   TestR8_TransferFractionalNoResidue
+    review8_regression_test.go:473: transfer 1.5 of 0cfe4ad3: amount 126750.5 consumed 126750.5 destination layers 126750.5; balances 1798499.2 layers 1798499.2 documents 1798499.2
+    review8_regression_test.go:474: transfer 2.7777 of 0cfe4ad3: amount 236133.59 consumed 236133.59 destination layers 236133.59; balances 1798499.2 layers 1798499.2 documents 1798499.2
+    review8_regression_test.go:475: transfer 111.1111 of a65b19c2: amount 105158.43 consumed 105158.43 destination layers 0; balances 1798499.2 layers 1798499.2 documents 1798499.2
+    review8_regression_test.go:476: transfer 77.7777 of a65b19c2: amount 73610.83 consumed 73610.83 destination layers 0; balances 1798499.2 layers 1798499.2 documents 1798499.2
+    review8_regression_test.go:488: transfer 4.611 of 0cfe4ad3: amount 391255.74 consumed 391255.74 destination layers 391255.74; balances 1827186.74 layers 1827186.74 documents 1827186.74
+    review8_regression_test.go:489: transfer 50.0001 of a65b19c2: amount 47321.51 consumed 47321.51 destination layers 0; balances 1827186.74 layers 1827186.74 documents 1827186.74
+    review8_regression_test.go:508: closing: balances 0 layers 0 documents 0 GL inventory 0 residue []
+    review8_regression_test.go:512: held: FIFO and WAC through 6 transfers (split layers, a COUNT layer moved back), 21 fractional issues and exact closes: stock 0, layers 0, GL 0
+    review8_regression_test.go:514:   recon Inventory: 1200 Inventory                        sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:514:   recon Received, not yet put away: 1200                 sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:514:   recon Stock balances vs GL: 1200                       sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:514:   recon Put away from goods receipts not yet posted: 1200 sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:514:   recon Stock balances vs documents: 1200                sub              0 gl              0 diff 0 open 0
+    review8_regression_test.go:514:   recon Cost layers vs stock balances: 1200              sub              0 gl              0 diff 0 open 0
+--- PASS: TestR8_TransferFractionalNoResidue (1.50s)
+=== RUN   TestR8_TransferAcrossProjects
+    review8_regression_test.go:559: before: P-001 01-MAT committed 1146000 actual 0 available 10954000; P-002 02-MAT actual 0 available 0
+    review8_regression_test.go:563: held: a P-001 storekeeper requesting a transfer into a P-002 warehouse refused: store: not found
+    review8_regression_test.go:572: held: P-001-scoped controller cannot approve into P-002: store: not found
+    review8_regression_test.go:587: info: P-002 storekeeper sees 12 t on hand in P002-STORE, 0 stock_transfer documents in the list, and the transfer detail -> store: not found
+    review8_regression_test.go:599: after P-002 consumed the 12 t (1014000): P-001 committed 1146000 actual 0 available 10954000; P-002 actual 1014000 available -1014000
+--- PASS: TestR8_TransferAcrossProjects (0.39s)
+=== RUN   TestR8_PostureCheck
+    review8_regression_test.go:633: posture with TEMP revoked from PUBLIC and from serk_t_c76f41b26f964d36ba29f28f2ac00f0b: []; superusers [postgres]
+    review8_regression_test.go:675: with CREATE on schema public granted to serk_t_c76f41b26f964d36ba29f28f2ac00f0b: posture ["tenant login serk_t_c76f41b26f964d36ba29f28f2ac00f0b may CREATE in schema public"]; trigger write: <nil>; steel now 1012 t at 1014001
+    review8_regression_test.go:691: with pg_catalog.pg_try_advisory_xact_lock(bigint) executable by PUBLIC: posture ["advisory-lock function pg_try_advisory_xact_lock is executable by tenant logins"]; tenant login takes it: true <nil>
+--- PASS: TestR8_PostureCheck (0.33s)
+=== RUN   TestR8_HumanDecisionsAndScope
+    review8_regression_test.go:714: held: credit note approval by a ai principal refused: auth: forbidden: ar.credit.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review8_regression_test.go:716: held: release approval by a ai principal refused: auth: forbidden: ar.retention.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review8_regression_test.go:714: held: credit note approval by a service principal refused: auth: forbidden: ar.credit.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review8_regression_test.go:716: held: release approval by a service principal refused: auth: forbidden: ar.retention.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review8_regression_test.go:728: held: Go IsDraftAction and SQL approval_is_draft_action agree on the 11 new/changed actions
+    review8_regression_test.go:736: held: customer_credit_note of P-001 invisible to another project's manager: detail store: not found; list 0 rows <nil>
+    review8_regression_test.go:736: held: retention_release of P-001 invisible to another project's manager: detail store: not found; list 0 rows <nil>
+    review8_regression_test.go:740: held: approval by another project's commercial manager refused: store: not found
+    review8_regression_test.go:748: held: u-ar-clerk reads customer_credit_note (status DRAFT) and lists 1
+    review8_regression_test.go:748: held: u-commercial reads customer_credit_note (status DRAFT) and lists 1
+    review8_regression_test.go:748: held: u-controller reads customer_credit_note (status DRAFT) and lists 1
+    review8_regression_test.go:748: held: u-ar-clerk reads retention_release (status DRAFT) and lists 1
+    review8_regression_test.go:748: held: u-commercial reads retention_release (status DRAFT) and lists 1
+    review8_regression_test.go:748: held: u-controller reads retention_release (status DRAFT) and lists 1
+--- PASS: TestR8_HumanDecisionsAndScope (0.27s)
+=== RUN   TestR8_PutAwayUndesignatedLine
+    review8_regression_test.go:776: held: store: database invariant violated: purchase order line 1 does not name its stock item: procurement designates it before put-away
+    review8_regression_test.go:780: held: raw designation of the line by the tenant role without attestation refused: store: database invariant violated: privilege: po.line.designate of purchase_order 74452a9c-e5c7-4c43-8b4e-68d0acf81867 requires a verified approval attestation for an authorised person
+    review8_regression_test.go:785: held: designation by a ai principal refused: auth: forbidden: po.line.designate is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review8_regression_test.go:785: held: designation by a service principal refused: auth: forbidden: po.line.designate is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review8_regression_test.go:797: held: designating the cement item (bags, other account rules) on the steel line refused: store: database invariant violated: purchase order line 1: the stock item must be ACTIVE, of the entity, in the line's unit, with the line's account as its inventory account
+    review8_regression_test.go:802: held: re-designation after put-away refused: store: database invariant violated: the stock item of a purchase order line is set once
+--- PASS: TestR8_PutAwayUndesignatedLine (0.38s)
+=== RUN   TestR8_TransferLifecycleAndRaces
+    review8_regression_test.go:838: held: concurrent whole-balance transfers: one approved, the other store: database invariant violated: insufficient stock of STEEL-G60 in the warehouse: 0.0000 on hand, 12.0000 requested; B holds 12 t
+    review8_regression_test.go:846: held: a destination count recorded before an incoming transfer (stale) refused: store: database invariant violated: count SCT-2026-000001 is stale: the book quantity changed from 0.0000 to 100.0000 since it was recorded; count again
+    review8_regression_test.go:853: held: u-storekeeper reads stock_transfer (status DRAFT) and lists 3
+    review8_regression_test.go:853: held: u-inventory-controller reads stock_transfer (status DRAFT) and lists 3
+    review8_regression_test.go:853: held: u-controller reads stock_transfer (status DRAFT) and lists 3
+    review8_regression_test.go:860: held: transfer approval after its period closed refused: store: database invariant violated: stock document date 2026-10-22 is not in an open fiscal period of the entity
+--- PASS: TestR8_TransferLifecycleAndRaces (0.45s)
+=== RUN   TestR8_BudgetNettingByCount
+    review8_regression_test.go:892: before: committed 1146000 actual 0 available 10954000; surplus 5 t found and all 17 t issued to 01-MAT (1436500): committed 1146000 actual 1436500 available 9517500
+    review8_regression_test.go:898: held: available 10954000 -> 9517500
+--- PASS: TestR8_BudgetNettingByCount (0.39s)
+=== RUN   TestR8_SurplusCostAfterTransfer
+    review8_regression_test.go:928: info: store A holds only transferred layers at 120000; a surplus there is valued at 120000 (A's own older receipt), the latest receipt of the item is 120000
+--- PASS: TestR8_SurplusCostAfterTransfer (0.50s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/kernel	16.466s

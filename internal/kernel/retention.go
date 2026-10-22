@@ -47,6 +47,9 @@ func (s *Service) RecordRetentionRelease(ctx context.Context, p auth.Principal, 
 	if !in.Amount.IsPositive() {
 		return "", fmt.Errorf("%w: a retention release is a positive amount", ErrInvalidInput)
 	}
+	if in.ReleaseDate.IsZero() || in.ReleaseDate.After(time.Now().UTC()) {
+		return "", fmt.Errorf("%w: a retention release is dated today or earlier", ErrInvalidInput)
+	}
 	var id string
 	err := s.p2pTx(ctx, p, auth.PermARRetentionCreate, func(ctx context.Context, tx pgx.Tx) error {
 		d, err := s.loadDoc(ctx, tx, p, auth.PermARRetentionCreate, "contract", contractID)
@@ -134,6 +137,10 @@ func (s *Service) CancelRetentionRelease(ctx context.Context, p auth.Principal, 
 		}
 		if err := requireStatus(d, "DRAFT"); err != nil {
 			return err
+		}
+		// R8-I2: the preparer, or someone who could approve it.
+		if perm == auth.PermARRetentionCreate && d.CreatedBy != p.UserID {
+			return fmt.Errorf("%w: only the preparer or an approver cancels a retention release", auth.ErrForbidden)
 		}
 		if err := s.authorize(ctx, tx, p, "ar.retention.cancel", "retention_release", id, "CANCELLED"); err != nil {
 			return err

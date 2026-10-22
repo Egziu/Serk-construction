@@ -6,6 +6,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/shopspring/decimal"
 
@@ -26,6 +27,7 @@ func (s *Server) registerStock() {
 	}))
 	m.Handle("POST /v1/warehouses", s.authed(s.createWarehouse))
 	m.Handle("POST /v1/goods-receipts/{id}/put-away", s.authed(s.putAway))
+	m.Handle("POST /v1/purchase-orders/{id}/lines/{line}/stock-item", s.authed(s.designatePOLine))
 	m.Handle("POST /v1/stock-issues", s.authed(s.createStockIssue))
 	m.Handle("POST /v1/stock-issues/{id}/approve", decide(func(ctx context.Context, p auth.Principal, id string, _ decisionBody) (any, error) {
 		jid, err := k().ApproveStockIssue(ctx, p, id)
@@ -109,6 +111,29 @@ func (s *Server) putAway(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := s.cfg.Kernel.PutAway(r.Context(), principalFrom(r.Context()), grn, b.POLineNo, b.StockItemID, b.WarehouseID, b.Quantity)
 	s.created(w, id, err)
+}
+
+func (s *Server) designatePOLine(w http.ResponseWriter, r *http.Request) {
+	po, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	line, err := strconv.Atoi(r.PathValue("line"))
+	if err != nil || line < 1 || line > 999 {
+		writeErr(w, http.StatusUnprocessableEntity, "validation", "line is a purchase-order line number")
+		return
+	}
+	var b struct {
+		StockItemID string `json:"stock_item_id"`
+	}
+	if !decode(w, r, &b) || !validIDs(w, b.StockItemID) {
+		return
+	}
+	if err := s.cfg.Kernel.DesignatePOLineItem(r.Context(), principalFrom(r.Context()), po, line, b.StockItemID); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": po, "line_no": line, "stock_item_id": b.StockItemID})
 }
 
 func (s *Server) createStockIssue(w http.ResponseWriter, r *http.Request) {

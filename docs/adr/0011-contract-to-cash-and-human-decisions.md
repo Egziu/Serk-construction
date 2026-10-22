@@ -196,3 +196,9 @@ A variation (change order) changes the scope of an ACTIVE contract on the client
 - Kernel: `TestJourneyB_Variation`, with figures in docs/testing/E2E_JOURNEY_B.md. It covers 13 refusals, including a reduction overtaken by verified work.
 - HTTP: `TestAPIJourneyB_ContractToCash`.
 - Browser: `TestConsoleBrowserJourneyB`, where the variation is recorded with the instruction hashed in the browser and approved by the CFO.
+
+## Addendum: independent review 8 (2026-10-22), migration 0028
+
+- **Dates (R8-F1, R8-F4).** A credit note or retention release is dated today or earlier, in an OPEN fiscal period of its entity, checked when it is recorded and again when it is approved. A document whose period closes while it is a draft can no longer be approved; it is cancelled and re-issued in an open period. This is the rule stock documents follow since R7-F3, and it exists because subledger journals are never cancelled or reversed.
+- **Who cancels a draft (R8-I2).** The preparer, or a holder of the approval permission.
+- **VAT on credit notes (R8-F5, proposed acceptance).** VAT is computed per credit note: `round(net × rate)` under the contract policy. Each credit note is a tax document and its VAT must be its own net times the rate; cumulative rounding would produce notes whose stated VAT is not that. Consequence: n credit notes may carry VAT that differs from the VAT on their summed net by at most n × 0.005 (asserted by `TestR8_CreditVATPerNoteRounding`); credited totals remain capped by the invoice total. **This acceptance is proposed by the delivering team and is not in force until a named human tax/finance risk owner accepts it** (register R8-F5).

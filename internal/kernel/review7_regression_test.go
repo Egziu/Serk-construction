@@ -382,12 +382,12 @@ func TestR7_IssueDateOutsidePeriods(t *testing.T) {
 // Budget: the issue's cost is counted again on top of the inventory PO commitment.
 // ---------------------------------------------------------------------------
 func TestR7_BudgetDoubleCount(t *testing.T) {
+	// Since R8-F3 (0028): an inventory PO line commits budget until its stock
+	// is put away (stock is an asset), and an issue is actual cost of the code
+	// it is charged to. Across receipt, put-away and issue, the stock consumed
+	// is counted exactly once, and what is still on the shelf is not counted.
 	w := newStockWorld(t)
 	f, c := w.f, w.cast
-	po := w.inventoryPO(t, "20", "500", "84500", "940")
-	grn, j := w.receipt(t, po, GRNLine{POLineNo: 1, QtyReceived: dec("12")})
-	w.financePost(t, j)
-	w.putAway(t, grn, 1, w.itemSteel, "12")
 	pos := func() postgres.CostPosition {
 		r, err := f.svc.ProjectCostReport(f.ctx, c.pm, f.project)
 		must(t, "cost report", err)
@@ -399,19 +399,28 @@ func TestR7_BudgetDoubleCount(t *testing.T) {
 		t.Fatal("cost code missing")
 		return postgres.CostPosition{}
 	}
-	before := pos()
+	po := w.inventoryPO(t, "20", "500", "84500", "940")
+	grn, j := w.receipt(t, po, GRNLine{POLineNo: 1, QtyReceived: dec("12")})
+	w.financePost(t, j)
+	ordered := pos()
+	w.putAway(t, grn, 1, w.itemSteel, "12")
+	stocked := pos()
 	amt := w.issueApprovePost(t, w.itemSteel, "10")
 	after := pos()
-	t.Logf("before issue: budget %s committed %s actual_other %s available %s", before.Budget, before.Committed, before.ActualOther, before.Available)
-	t.Logf("after issue of %s: budget %s committed %s actual_other %s available %s", amt, after.Budget, after.Committed, after.ActualOther, after.Available)
-	if !before.Available.Equal(after.Available) {
-		t.Errorf("OPEN: issuing stock bought on this cost code changed its available budget %s -> %s", before.Available, after.Available)
+	t.Logf("ordered: committed %s actual %s available %s", ordered.Committed, ordered.ActualOther, ordered.Available)
+	t.Logf("put away 12 t: committed %s actual %s available %s", stocked.Committed, stocked.ActualOther, stocked.Available)
+	t.Logf("issued 10 t (%s): committed %s actual %s available %s", amt, after.Committed, after.ActualOther, after.Available)
+	if !ordered.Committed.Sub(stocked.Committed).Equal(dec("1014000")) {
+		t.Errorf("OPEN: putting 12 t (1,014,000) into stock released %s of commitment", ordered.Committed.Sub(stocked.Committed))
 	}
-	if before.Available.Sub(after.Available).Equal(amt) && after.Committed.Equal(before.Committed) {
-		t.Errorf("OPEN: issuing stock bought on PO commitment %s consumes the cost code's budget again: available fell by %s (committed unchanged %s)",
-			before.Committed, amt, after.Committed)
+	if !stocked.Available.Sub(after.Available).Equal(amt) || !after.ActualOther.Equal(amt) {
+		t.Errorf("OPEN: the issue of %s changed available by %s (actual %s)", amt, stocked.Available.Sub(after.Available), after.ActualOther)
+	}
+	// Net effect from order to issue: only the 2 t still in stock (169,000) is not counted.
+	if !after.Available.Sub(ordered.Available).Equal(dec("169000")) {
+		t.Errorf("OPEN: from order to issue available moved by %s, want +169,000 (the 2 t still on the shelf)", after.Available.Sub(ordered.Available))
 	} else {
-		t.Logf("held: available %s -> %s", before.Available, after.Available)
+		t.Logf("held: 10 t consumed counted once; 2 t on the shelf is an asset, not cost")
 	}
 }
 
@@ -434,13 +443,19 @@ func TestR7_PutAwayItemIdentityAndAI(t *testing.T) {
 	} else {
 		t.Logf("held: %v", err)
 	}
-	// A line ordered without a designated item is still one item.
-	rfqLess := w.inventoryPOUndesignated(t)
-	grn2, j2 := w.receipt(t, rfqLess, GRNLine{POLineNo: 1, QtyReceived: dec("12")})
+	// A line ordered without a designated item (R8-F8): nothing is put away
+	// until procurement names the item; the storekeeper cannot name it.
+	poLess := w.inventoryPOUndesignated(t)
+	grn2, j2 := w.receipt(t, poLess, GRNLine{POLineNo: 1, QtyReceived: dec("12")})
 	w.financePost(t, j2)
-	w.putAway(t, grn2, 1, w.itemSteel, "6")
+	_, err = f.svc.PutAway(f.ctx, c.store, grn2, 1, w.itemSteel, w.store, dec("6"))
+	arDenied(t, "a put-away from an undesignated line", err, "designates it before put-away")
+	arDenied(t, "the storekeeper designating the item", f.svc.DesignatePOLineItem(f.ctx, c.store, poLess, 1, other), "forbidden")
+	must(t, "designate steel", f.svc.DesignatePOLineItem(f.ctx, c.buyer, poLess, 1, w.itemSteel))
+	arDenied(t, "a second designation", f.svc.DesignatePOLineItem(f.ctx, c.buyer, poLess, 1, other), "set once")
 	_, err = f.svc.PutAway(f.ctx, c.store, grn2, 1, other, w.store, dec("6"))
-	arDenied(t, "the rest of a line put away as another item", err, "one line is one item")
+	arDenied(t, "a put-away as another item than designated", err, "ordered as another stock item")
+	w.putAway(t, grn2, 1, w.itemSteel, "6")
 	ai := c.store
 	ai.UserID, ai.Kind = "u-store-agent", auth.KindAI
 	if id, err := f.svc.PutAway(f.ctx, ai, grn, 2, w.itemCement, w.store, dec("300")); err == nil {

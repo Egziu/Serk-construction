@@ -246,7 +246,7 @@ func TestJourneyC_Controls(t *testing.T) {
 	_, _, expPO := w.awardedPO(t, "5", "50") // posted to expense (5000)
 	expGRN, _ := w.receipt(t, expPO, GRNLine{POLineNo: 1, QtyReceived: dec("5")})
 	_, err = f.svc.PutAway(f.ctx, c.store, expGRN, 1, w.itemSteel, w.store, dec("5"))
-	arDenied(t, "put-away of a receipt posted to an expense account", err, "inventory account")
+	arDenied(t, "put-away of a receipt posted to an expense account", err, "does not name its stock item")
 	w.putAway(t, grn, 1, w.itemSteel, "12")
 	w.putAway(t, grn, 2, w.itemCement, "300")
 

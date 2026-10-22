@@ -36,6 +36,12 @@ func TestR7_API_StockReceiptDetailAndIssueDate(t *testing.T) {
 	steel := a.id("POST", "/v1/stock-items", buyer, map[string]any{"legal_entity_id": a.entity, "code": "STEEL-G60", "name": "Reinforcement steel",
 		"unit": "t", "valuation_method": "FIFO", "inventory_account_id": a.accounts["1200"]})
 	a.call(200, "POST", "/v1/stock-items/"+steel+"/approve", finMgr, nil)
+	// R8-F8: procurement names the stock item of the inventory PO line before put-away.
+	poID := a.call(200, "GET", "/v1/p2p/grn/"+grn, buyer, nil)["detail"].(map[string]any)["h"].(map[string]any)["po_id"].(string)
+	if st, _ := a.do("POST", "/v1/purchase-orders/"+poID+"/lines/1/stock-item", a.tok("u-storekeeper", P, false, "storekeeper"), map[string]any{"stock_item_id": steel}); st != 403 {
+		t.Errorf("the storekeeper designates the stock item of a PO line: %d, want 403", st)
+	}
+	a.call(200, "POST", "/v1/purchase-orders/"+poID+"/lines/1/stock-item", buyer, map[string]any{"stock_item_id": steel})
 	wh := a.id("POST", "/v1/warehouses", procMgr, map[string]any{"legal_entity_id": a.entity, "project_id": a.project, "code": "P-STORE", "name": "Project site store"})
 	rcpt := a.id("POST", "/v1/goods-receipts/"+grn+"/put-away", store, map[string]any{"po_line_no": 1, "stock_item_id": steel, "warehouse_id": wh, "quantity": "12"})
 	for name, tok := range map[string]string{"storekeeper": store, "controller": controller} {

@@ -33,6 +33,9 @@ func (s *Service) IssueCreditNote(ctx context.Context, p auth.Principal, invoice
 	if !netAmount.IsPositive() {
 		return "", fmt.Errorf("%w: a credit note is a positive amount", ErrInvalidInput)
 	}
+	if creditDate.IsZero() || creditDate.After(time.Now().UTC()) {
+		return "", fmt.Errorf("%w: a credit note is dated today or earlier", ErrInvalidInput)
+	}
 	var id string
 	err := s.p2pTx(ctx, p, auth.PermARCreditCreate, func(ctx context.Context, tx pgx.Tx) error {
 		d, err := s.loadDoc(ctx, tx, p, auth.PermARCreditCreate, "customer_invoice", invoiceID)
@@ -120,6 +123,10 @@ func (s *Service) CancelCreditNote(ctx context.Context, p auth.Principal, id, re
 		}
 		if err := requireStatus(d, "DRAFT"); err != nil {
 			return err
+		}
+		// R8-I2: the preparer, or someone who could approve it.
+		if perm == auth.PermARCreditCreate && d.CreatedBy != p.UserID {
+			return fmt.Errorf("%w: only the preparer or an approver cancels a credit note", auth.ErrForbidden)
 		}
 		if err := s.authorize(ctx, tx, p, "ar.credit.cancel", "customer_credit_note", id, "CANCELLED"); err != nil {
 			return err
