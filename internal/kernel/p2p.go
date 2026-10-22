@@ -156,11 +156,12 @@ func (s *Service) ProposeP2PPolicy(ctx context.Context, p auth.Principal, pol po
 	err := s.p2pTx(ctx, p, auth.PermP2PPolicyManage, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
 		id, err = postgres.InsertReturningID(ctx, tx, `INSERT INTO p2p_policies(legal_entity_id, version, currency, price_tolerance_pct, over_receipt_pct, vat_rate,
-			high_value_po_threshold, dual_payment_threshold, grni_account_id, ap_account_id, vat_input_account_id, ppv_account_id, created_by)
+			high_value_po_threshold, dual_payment_threshold, grni_account_id, ap_account_id, vat_input_account_id, ppv_account_id, created_by,
+			dual_payment_window_days)
 			SELECT $1::uuid, COALESCE(max(version), 0) + 1, (SELECT functional_currency FROM legal_entities WHERE id = $1::uuid), $2, $3, $4, $5, $6,
-			       $7::uuid, $8::uuid, $9::uuid, $10::uuid, $11 FROM p2p_policies WHERE legal_entity_id = $1::uuid RETURNING id::text`,
+			       $7::uuid, $8::uuid, $9::uuid, $10::uuid, $11, COALESCE(NULLIF($12::int, 0), 30) FROM p2p_policies WHERE legal_entity_id = $1::uuid RETURNING id::text`,
 			pol.LegalEntityID, pol.PriceTolerancePct, pol.OverReceiptPct, pol.VATRate, pol.HighValuePOThreshold, pol.DualPaymentThreshold,
-			pol.GRNIAccountID, pol.APAccountID, pol.VATInputAccountID, pol.PPVAccountID, p.UserID)
+			pol.GRNIAccountID, pol.APAccountID, pol.VATInputAccountID, pol.PPVAccountID, p.UserID, pol.DualPaymentWindowDays)
 		if err != nil {
 			return err
 		}
@@ -1131,8 +1132,10 @@ func (s *Service) ApprovePayment(ctx context.Context, p auth.Principal, id strin
 		}
 		var dual bool
 		var first string
-		if err := tx.QueryRow(ctx, `SELECT p.amount >= pol.dual_payment_threshold, COALESCE(p.approved_by, '') FROM payment_instructions p
-			JOIN p2p_policies pol ON pol.id = p.policy_id WHERE p.id = $1::uuid`, id).Scan(&dual, &first); err != nil {
+		// The database's own definition (amount, invoice total, supplier
+		// exposure within the policy window; migration 0016).
+		if err := tx.QueryRow(ctx, `SELECT p2p_payment_needs_dual_id($1::uuid), COALESCE(approved_by, '') FROM payment_instructions WHERE id = $1::uuid`,
+			id).Scan(&dual, &first); err != nil {
 			return err
 		}
 		if d.Status == "PARTIALLY_APPROVED" {

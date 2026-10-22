@@ -518,10 +518,17 @@ func TestR3_13_SplitPaymentsPreparerReleaseNumbering(t *testing.T) {
 	// L3: the preparer cannot release.
 	_, _, inv2, _ := w.r3invoice(t, po, "1", "R3-13b")
 	p2 := w.r3payment(t, inv2, "97175")
-	_, err := f.svc.ApprovePayment(f.ctx, c.finMgr, p2)
+	st, err := f.svc.ApprovePayment(f.ctx, c.finMgr, p2)
 	must(t, "approve", err)
+	if st == "PARTIALLY_APPROVED" { // supplier exposure (0016) asks for a second approver
+		_, err = f.svc.ApprovePayment(f.ctx, c.cfo, p2)
+		must(t, "second approval", err)
+	}
 	_, err = f.svc.ReleasePayment(f.ctx, c.treasury, p2)
 	r3held(t, "payment released by its preparer", err)
+	if err != nil && !strings.Contains(err.Error(), "prepared a payment cannot release") {
+		t.Errorf("preparer release refused for the wrong reason: %v", err)
+	}
 	// Info: numbering continues past 999,999 instead of truncating.
 	must(t, "counter", f.rawExec(`UPDATE p2p_counters SET last = 999999 WHERE doc_type = 'PAY'`))
 	num := ""

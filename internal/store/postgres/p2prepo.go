@@ -25,13 +25,17 @@ type P2PPolicy struct {
 	VATRate              decimal.Decimal `json:"vat_rate"`
 	HighValuePOThreshold decimal.Decimal `json:"high_value_po_threshold"`
 	DualPaymentThreshold decimal.Decimal `json:"dual_payment_threshold"`
-	GRNIAccountID        string          `json:"grni_account_id"`
-	APAccountID          string          `json:"ap_account_id"`
-	VATInputAccountID    string          `json:"vat_input_account_id"`
-	PPVAccountID         string          `json:"ppv_account_id"`
-	Status               string          `json:"status"`
-	CreatedBy            string          `json:"created_by"`
-	ApprovedBy           string          `json:"approved_by,omitempty"`
+	// DualPaymentWindowDays: payments to one supplier whose value dates lie
+	// within this many days count together against the threshold (0016).
+	// 0 = the database default (30).
+	DualPaymentWindowDays int    `json:"dual_payment_window_days,omitempty"`
+	GRNIAccountID         string `json:"grni_account_id"`
+	APAccountID           string `json:"ap_account_id"`
+	VATInputAccountID     string `json:"vat_input_account_id"`
+	PPVAccountID          string `json:"ppv_account_id"`
+	Status                string `json:"status"`
+	CreatedBy             string `json:"created_by"`
+	ApprovedBy            string `json:"approved_by,omitempty"`
 }
 
 // Doc is the common header of a P2P document as returned to callers.
