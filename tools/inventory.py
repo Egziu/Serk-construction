@@ -39,7 +39,7 @@ tests = {}  # name -> file
 for f in sorted(glob.glob(os.path.join(ROOT, "**/*_test.go"), recursive=True)):
     for t in re.findall(r"^func (Test\w+)\(t \*testing\.T\)", open(f).read(), re.M):
         tests[t] = os.path.relpath(f, ROOT)
-LOGS = ["docs/testing/evidence/full-suite-journey-c.txt", "docs/testing/evidence/full-suite-credit-notes.txt"]
+LOGS = ["docs/testing/evidence/full-suite-journey-c.txt", "docs/testing/evidence/full-suite-credit-notes.txt", "docs/testing/evidence/full-suite-retention-release.txt"]
 results = {}
 for lg in LOGS:  # later logs override earlier ones
     if os.path.exists(os.path.join(ROOT, lg)):
@@ -80,10 +80,10 @@ DOMAINS = [
       gaps="Statement authenticity depends on how the file is obtained: no bank-signed feed (R-BANKFEED)"),
  dict(name="Contracts and measurements (Journey B)", status="implemented", tables=r"^(customers|contract_|contracts|measurement)", routes=r"^/v1/(customers|contract|measurements)",
       screens=r"#/list/(contract|measurement|customer$)", perms=r"^(customer|contract|measure)\.", postings="-",
-      tests=r"^Test(JourneyB|APIJourneyB|ConsoleBrowserJourneyB|GovernedAI)", gaps="No variations/change orders; no retention release"),
- dict(name="IPC, AR invoicing and receipts (Journey B)", status="implemented", tables=r"^(ipcs|customer_invoices|customer_receipts|receipt_allocations|customer_credit_notes)",
-      routes=r"^/v1/(ipcs|customer-invoices|receipts|credit-notes)|ar-reconciliation|position", screens=r"#/list/(ipc|customer_invoice|customer_receipt|customer_credit_note|money_in)",
-      perms=r"^(ipc|ar)\.", postings="AR_INVOICE: Dr AR, retention, advances; Cr revenue, VAT output. AR_RECEIPT: Dr bank; Cr AR, advances. AR_CREDIT: Dr revenue, VAT output; Cr AR",
+      tests=r"^Test(JourneyB|APIJourneyB|ConsoleBrowserJourneyB|GovernedAI)", gaps="No variations/change orders; no retention bonds"),
+ dict(name="IPC, AR invoicing and receipts (Journey B)", status="implemented", tables=r"^(ipcs|customer_invoices|customer_receipts|receipt_allocations|customer_credit_notes|retention_releases)",
+      routes=r"^/v1/(ipcs|customer-invoices|receipts|credit-notes|retention-releases)|ar-reconciliation|position", screens=r"#/list/(ipc|customer_invoice|customer_receipt|customer_credit_note|retention_release|money_in)",
+      perms=r"^(ipc|ar)\.", postings="AR_INVOICE: Dr AR, retention, advances; Cr revenue, VAT output. AR_RECEIPT: Dr bank; Cr AR, advances. AR_CREDIT: Dr revenue, VAT output; Cr AR. AR_RETENTION: Dr AR; Cr retention",
       tests=r"^Test(JourneyB|APIJourneyB|ConsoleBrowserJourneyB)", gaps="No invoice cancellation, dunning, customer statements, FX contracts, withholding on receipts; credit-vs-measurement double deduction is procedural (JB-CREDIT-QTY)"),
  dict(name="Project cost and profitability reporting", status="partial", tables=r"^$", routes=r"cost-report|profitability", screens=r"#/cost", perms=r"^$",
       postings="Reads posted journals", tests=r"^Test(JourneyA|JourneyB)", gaps="No EVM wiring (pkg/evm is a library only), no forecasts or cost-to-complete"),

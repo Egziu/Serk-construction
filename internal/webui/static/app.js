@@ -191,6 +191,9 @@ const DOCS = {
   customer_credit_note: { title: 'Credit notes', one: 'Credit note', base: '/v1/credit-notes',
     statuses: ['DRAFT', 'APPROVED', 'CANCELLED'],
     actions: { DRAFT: [['approve', 'ar.credit.approve'], ['cancel', 'ar.credit.create', 'req'], ['cancel', 'ar.credit.approve', 'req']] } },
+  retention_release: { title: 'Retention releases', one: 'Retention release', base: '/v1/retention-releases',
+    statuses: ['DRAFT', 'APPROVED', 'CANCELLED'],
+    actions: { DRAFT: [['approve', 'ar.retention.approve'], ['cancel', 'ar.retention.create', 'req'], ['cancel', 'ar.retention.approve', 'req']] } },
   // Stock (Journey C).
   stock_item: { title: 'Stock items', one: 'Stock item', base: '/v1/stock-items', create: 'stock.item.manage', form: 'stockitem',
     statuses: ['PENDING', 'ACTIVE'], actions: { PENDING: [['approve', 'stock.item.approve']] } },
@@ -218,7 +221,8 @@ const NAV = [
   ['Payables', [['#/list/supplier_invoice', 'Invoices', 'p2p.read'], ['#/list/payment_instruction', 'Payments', 'p2p.read']]],
   ['Treasury', [['#/bank', 'Bank statements', 'bank.import|bank.reconcile'], ['#/list/company_bank_account', 'Company banks', 'scope.tenant_wide'], ['#/list/supplier_bank_account', 'Supplier banks', 'p2p.read']]],
   ['Revenue', [['#/list/contract', 'Contracts', 'p2p.read'], ['#/list/measurement', 'Measurements', 'p2p.read'], ['#/list/ipc', 'Payment certificates', 'p2p.read'],
-    ['#/list/customer_invoice', 'Customer invoices', 'p2p.read'], ['#/list/customer_credit_note', 'Credit notes', 'p2p.read'], ['#/list/money_in', 'Money received', 'ar.receipt.create|ar.receipt.confirm'],
+    ['#/list/customer_invoice', 'Customer invoices', 'p2p.read'], ['#/list/customer_credit_note', 'Credit notes', 'p2p.read'],
+    ['#/list/retention_release', 'Retention releases', 'p2p.read'], ['#/list/money_in', 'Money received', 'ar.receipt.create|ar.receipt.confirm'],
     ['#/list/customer_receipt', 'Receipts', 'scope.tenant_wide'], ['#/list/customer', 'Customers', 'p2p.read']]],
   ['Finance', [['#/journals', 'Journals', 'journal.read'], ['#/recon', 'Reconciliation', 'journal.read'], ['#/list/p2p_policy', 'P2P policies', 'scope.tenant_wide'],
     ['#/list/contract_policy', 'Contract policies', 'scope.tenant_wide']]],
@@ -258,6 +262,7 @@ const QUEUES = [
   ['ar.invoice.create', 'ipc', 'CERTIFIED', 'Certified IPCs to invoice'],
   ['ar.invoice.approve', 'customer_invoice', 'DRAFT', 'Customer invoices to approve'],
   ['ar.credit.approve', 'customer_credit_note', 'DRAFT', 'Credit notes to approve'],
+  ['ar.retention.approve', 'retention_release', 'DRAFT', 'Retention releases to approve'],
   ['ar.receipt.create', 'money_in', 'UNAPPLIED', 'Money received to apply'],
   ['ar.receipt.confirm', 'customer_receipt', 'DRAFT', 'Receipts to confirm'],
   ['stock.item.approve', 'stock_item', 'PENDING', 'Stock items to approve'],
@@ -419,7 +424,7 @@ const REF = { pr_id: 'purchase_requisition', rfq_id: 'rfq', po_id: 'purchase_ord
   supplier_id: 'supplier', supplier_bank_id: 'supplier_bank_account', company_bank_id: 'company_bank_account', policy_id: 'p2p_policy',
   customer_id: 'customer', contract_id: 'contract', ipc_id: 'ipc' };
 // Fields whose target depends on the document carrying them.
-const REF_BY_TYPE = { policy_id: { contract: 'contract_policy', ipc: 'contract_policy', customer_invoice: 'contract_policy', customer_credit_note: 'contract_policy' },
+const REF_BY_TYPE = { policy_id: { contract: 'contract_policy', ipc: 'contract_policy', customer_invoice: 'contract_policy', customer_credit_note: 'contract_policy', retention_release: 'contract_policy' },
   invoice_id: { customer_credit_note: 'customer_invoice' } };
 const refOf = (k, type) => (REF_BY_TYPE[k] && REF_BY_TYPE[k][type]) || REF[k];
 // Reading order: what the document is, its state, money, dates, people.
@@ -521,7 +526,8 @@ function nextSteps(type, d) {
   if (type === 'customer_invoice' && d.status === 'APPROVED') add('ar.credit.create', `#/new/creditnote/${d.id}`, 'Issue credit note');
   if (type === 'supplier' && d.status === 'ACTIVE') add('supplier.manage', `#/new/supplierbank/${d.id}`, 'Add bank account');
   if (type === 'grn' && d.status === 'CONFIRMED') add('stock.receive', `#/new/putaway/${d.id}`, 'Put away into a warehouse');
-  if (type === 'contract' && d.status === 'ACTIVE') { add('measure.create', `#/new/measurement/${d.id}`, 'Record measurement'); add('ipc.prepare', `#/new/ipc/${d.id}`, 'Prepare payment certificate'); }
+  if (type === 'contract' && d.status === 'ACTIVE') { add('measure.create', `#/new/measurement/${d.id}`, 'Record measurement'); add('ipc.prepare', `#/new/ipc/${d.id}`, 'Prepare payment certificate');
+    add('ar.retention.create', `#/new/retention/${d.id}`, 'Release retention'); }
   return links.length ? h('div', { class: 'actions' }, links) : null;
 }
 
@@ -1052,6 +1058,7 @@ const FORMS = {
     const line = select('statement_line_id', lines.map((l) => ({ value: l.id, label: `${l.number} ${l.label} — ${money(l.amount)}` })), { required: true });
     if (lineID) line.value = lineID;
     const targets = [...(await docOpts('customer_invoice', 'APPROVED')).map((o) => ({ value: 'inv:' + o.value, label: 'Invoice ' + o.label })),
+      ...(await docOpts('retention_release', 'APPROVED')).map((o) => ({ value: 'rel:' + o.value, label: 'Retention release ' + o.label })),
       ...(await docOpts('contract', 'ACTIVE')).map((o) => ({ value: 'adv:' + o.value, label: 'Advance on ' + o.label }))];
     const amountOf = () => (lines.find((l) => l.id === line.value) || {}).amount || '';
     const grid = lineGrid('Apply the money to', [
@@ -1060,8 +1067,8 @@ const FORMS = {
     ], [{ amount: amountOf() }], true);
     formPage('Record receipt', 'Apply money received on the bank statement. The whole amount must be applied; an AR supervisor independent of the statement import confirms it.', [
       h('div', { class: 'grid' }, field('Money received', line)), grid], 'Record receipt', async () => {
-      const allocations = grid.rows().filter((r) => r.target && r.amount).map((r) => (r.target.startsWith('inv:')
-        ? { invoice_id: r.target.slice(4), amount: r.amount } : { contract_id: r.target.slice(4), amount: r.amount }));
+      const key = { inv: 'invoice_id', rel: 'retention_release_id', adv: 'contract_id' };
+      const allocations = grid.rows().filter((r) => r.target && r.amount).map((r) => ({ [key[r.target.slice(0, 3)]]: r.target.slice(4), amount: r.amount }));
       const res = await api('POST', '/v1/receipts', { statement_line_id: line.value, allocations });
       created('customer_receipt', res, 'Receipt');
     });
@@ -1078,6 +1085,36 @@ const FORMS = {
       field('Reason', reason)], 'Issue credit note', async () => {
       const res = await api('POST', `/v1/customer-invoices/${inv.value}/credit-notes`, { net_amount: amount.value.trim(), credit_date: date.value, reason: reason.value.trim() });
       created('customer_credit_note', res, 'Credit note');
+    });
+  },
+
+  async retention(contractID) {
+    const ctr = select('contract_id', await docOpts('contract', 'ACTIVE'), { required: true });
+    if (contractID) ctr.value = contractID;
+    const amount = input('amount', { inputmode: 'decimal', autocomplete: 'off', required: true });
+    const date = input('release_date', { type: 'date', value: today(), required: true });
+    const milestone = select('milestone', [{ value: 'TAKING_OVER', label: 'Taking over (practical completion)' },
+      { value: 'DEFECTS_LIABILITY_END', label: 'End of defects liability period' }, { value: 'NEGOTIATED', label: 'Negotiated release' }]);
+    const ref = input('certificate_ref', { type: 'text', maxlength: '100', required: true });
+    const file = h('input', { type: 'file', name: 'certificate_file', accept: '.pdf,image/*' });
+    const sum = h('output', { class: 'hint', 'aria-live': 'polite' });
+    let sha = '';
+    file.addEventListener('change', async () => {
+      sha = '';
+      sum.textContent = '';
+      if (!file.files.length) return;
+      const buf = await crypto.subtle.digest('SHA-256', await file.files[0].arrayBuffer());
+      sha = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      sum.textContent = `SHA-256 ${sha}`;
+    });
+    formPage('Release retention', 'Records the client\'s retention release certificate. The amount becomes receivable once a commercial manager approves it with a fresh multi-factor sign-in; it cannot exceed the retention still held.', [
+      h('div', { class: 'grid' }, field('Contract', ctr), field('Amount released', amount), field('Release date', date), field('Milestone', milestone),
+        field('Client certificate reference', ref)),
+      field('Signed release certificate', file, 'Its SHA-256 is recorded with the release; the file stays with you.'), sum], 'Record release', async () => {
+      if (!sha) throw new Error('Attach the signed release certificate so its SHA-256 can be recorded.');
+      const res = await api('POST', `/v1/contracts/${ctr.value}/retention-releases`, { amount: amount.value.trim(), release_date: date.value,
+        milestone: milestone.value, certificate_ref: ref.value.trim(), certificate_sha256: sha });
+      created('retention_release', res, 'Retention release');
     });
   },
 

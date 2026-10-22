@@ -491,9 +491,10 @@ func (s *Service) ApproveCustomerInvoice(ctx context.Context, p auth.Principal, 
 // ReceiptAllocation applies part of a receipt to one customer invoice or to
 // one contract's advance.
 type ReceiptAllocation struct {
-	InvoiceID  string          `json:"invoice_id,omitempty"`
-	ContractID string          `json:"contract_id,omitempty"`
-	Amount     decimal.Decimal `json:"amount"`
+	InvoiceID          string          `json:"invoice_id,omitempty"`
+	ContractID         string          `json:"contract_id,omitempty"`
+	RetentionReleaseID string          `json:"retention_release_id,omitempty"`
+	Amount             decimal.Decimal `json:"amount"`
 }
 
 // RecordReceipt records a DRAFT receipt for a money-in statement line with
@@ -519,15 +520,18 @@ func (s *Service) RecordReceipt(ctx context.Context, p auth.Principal, statement
 			return mapNoRows(err)
 		}
 		for i, a := range allocs {
-			var inv, ctr *string
+			var inv, ctr, rel *string
 			if a.InvoiceID != "" {
 				inv = &allocs[i].InvoiceID
 			}
 			if a.ContractID != "" {
 				ctr = &allocs[i].ContractID
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO receipt_allocations(receipt_id, line_no, invoice_id, contract_id, amount) VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5)`,
-				id, i+1, inv, ctr, a.Amount); err != nil {
+			if a.RetentionReleaseID != "" {
+				rel = &allocs[i].RetentionReleaseID
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO receipt_allocations(receipt_id, line_no, invoice_id, contract_id, retention_release_id, amount)
+				VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6)`, id, i+1, inv, ctr, rel, a.Amount); err != nil {
 				return err
 			}
 		}

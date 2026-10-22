@@ -171,6 +171,23 @@ func TestAPIJourneyB_ContractToCash(t *testing.T) {
 	}
 	journals = append(journals, a.call(200, "POST", "/v1/credit-notes/"+cn+"/approve", commercialMFA, nil)["journal_id"].(string))
 
+	// Retention release at taking over (0023): half of the 432,000 held.
+	rel := map[string]any{"amount": "216000", "release_date": today, "milestone": "TAKING_OVER", "certificate_ref": "ERA-TOC-01",
+		"certificate_sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"}
+	if st, _ := a.do("POST", "/v1/contracts/"+ctr+"/retention-releases", arClerk, map[string]any{"amount": "432000.01", "release_date": today,
+		"milestone": "TAKING_OVER", "certificate_ref": "ERA-TOC-01", "certificate_sha256": rel["certificate_sha256"]}); st != 409 && st != 422 {
+		t.Errorf("release above the retention held: %d, want 409/422", st)
+	}
+	rr := a.id("POST", "/v1/contracts/"+ctr+"/retention-releases", arClerk, rel)
+	if st, _ := a.do("POST", "/v1/retention-releases/"+rr+"/approve", commercial, nil); st != 401 {
+		t.Errorf("release approval without fresh MFA: %d, want 401", st)
+	}
+	journals = append(journals, a.call(200, "POST", "/v1/retention-releases/"+rr+"/approve", commercialMFA, nil)["journal_id"].(string))
+	if st, _ := a.do("POST", "/v1/receipts", arClerk, map[string]any{"statement_line_id": moneyIn["ERA ADVANCE"],
+		"allocations": []map[string]any{{"invoice_id": inv2, "retention_release_id": rr, "amount": "1"}}}); st != 422 {
+		t.Errorf("an allocation naming two targets: %d, want 422", st)
+	}
+
 	// Finance approves and posts the AR journals.
 	for _, r := range a.call(200, "POST", "/v1/journals/approve-batch", finMgr, map[string]any{"journal_ids": journals})["results"].([]any) {
 		if !r.(map[string]any)["ok"].(bool) {
@@ -185,8 +202,8 @@ func TestAPIJourneyB_ContractToCash(t *testing.T) {
 
 	// Position, reconciliation, profitability.
 	pos := a.call(200, "GET", "/v1/contracts/"+ctr+"/position", commercial, nil)
-	for k, want := range map[string]string{"contract_value": "23060000", "certified_gross": "8640000", "retention_held": "432000", "invoiced_total": "8354000",
-		"credited_total": "115000", "received": "6691000", "receivable_open": "1548000"} {
+	for k, want := range map[string]string{"contract_value": "23060000", "certified_gross": "8640000", "retention_held": "216000", "invoiced_total": "8354000",
+		"credited_total": "115000", "retention_released": "216000", "received": "6691000", "receivable_open": "1764000"} {
 		if got := decOf(t, pos[k]); !got.Equal(decimal.RequireFromString(want)) {
 			t.Errorf("position %s: %s, want %s", k, got, want)
 		}

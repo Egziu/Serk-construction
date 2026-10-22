@@ -146,18 +146,38 @@ try {
   await act(clerk, 'Cancel', 'Cancel: done');
   log('credit note on a settled invoice refused by the database and withdrawn');
 
+  // ---- 6c. Retention release at taking over: AR clerk records it with the signed
+  //          certificate, the commercial manager approves (MFA) -------------------------
+  await nav(clerk, `#/doc/contract/${contractID}`, /^Contract CTR-/);
+  await clerk.getByRole('link', { name: 'Release retention' }).click();
+  await clerk.getByRole('heading', { level: 1, name: 'Release retention' }).waitFor();
+  await clerk.getByLabel('Amount released').fill('265500');
+  await clerk.getByLabel('Milestone').selectOption('TAKING_OVER');
+  await clerk.getByLabel('Client certificate reference').fill('ERA-TOC-01');
+  await clerk.getByLabel('Signed release certificate').setInputFiles({ name: 'ERA-TOC-01-signed.pdf', mimeType: 'application/pdf', buffer: Buffer.from('test') });
+  await clerk.locator('output').filter({ hasText: 'SHA-256 9f86d081' }).waitFor();
+  await audit(clerk, 'retention release form');
+  await clerk.getByRole('button', { name: 'Record release' }).click();
+  await clerk.getByRole('heading', { level: 1, name: /^Retention release RTR-/ }).waitFor();
+  const relID = await idFromHash(clerk);
+  await nav(com, `#/doc/retention_release/${relID}`, /^Retention release RTR-/);
+  await act(com, 'Approve', 'A draft journal was created');
+  await audit(com, 'approved retention release');
+  await snap(com, 'retention-release-approved');
+  log('retention 265,500 released at taking over');
+
   // ---- 7. Finance approves and posts the AR journals ------------------------------------
   const fin = await as('finMgr');
   const ctl = await as('controller');
   await nav(fin, '#/journals', 'Journals');
   await fin.getByLabel('Select all draft journals').check();
   await fin.getByRole('button', { name: 'Approve selected' }).click();
-  await fin.locator('p.notice').filter({ hasText: '3 of 3 journals done' }).waitFor();
+  await fin.locator('p.notice').filter({ hasText: '4 of 4 journals done' }).waitFor();
   await nav(ctl, '#/journals', 'Journals');
   await ctl.getByLabel('Select all approved journals').check();
   await ctl.getByRole('button', { name: 'Post selected' }).click();
-  await ctl.locator('p.notice').filter({ hasText: '3 of 3 journals done' }).waitFor();
-  log('3 AR journals approved and posted');
+  await ctl.locator('p.notice').filter({ hasText: '4 of 4 journals done' }).waitFor();
+  log('4 AR journals approved and posted');
 
   // ---- 8. Reconciliation and position ------------------------------------------------------
   await nav(ctl, '#/recon', 'Reconciliation');

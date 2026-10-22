@@ -166,3 +166,52 @@ This is a separate world with no advance received.
 | Receivable open | 1,663,000 − 115,000 = **1,548,000** (AR reconciliation agrees) |
 | Credited | 115,000 |
 | Project revenue posted | 8,640,000 − 100,000 = **8,540,000** |
+
+## Retention release (`TestJourneyB_RetentionRelease`, migration 0023)
+
+This is a separate world with no advance received.
+
+**Certificates**
+
+| IPC | Gross | Retention | VAT | Due |
+|---|---|---|---|---|
+| IPC 1 | 5,310,000 | 265,500 | 796,500 | 5,841,000 |
+| IPC 2 | 3,330,000 | 166,500 | 499,500 | 3,663,000 |
+
+Retention held: **432,000**.
+
+**Releases**
+
+- Release 1, taking over: 216,000. Release 2, end of defects liability: 216,000. Each generates `AR_RETENTION`: Dr 1100 / Cr 1150.
+- A further 0.01 is refused (nothing is left).
+- A receipt of 300,000 allocated wholly to release 2 is refused (over-allocation) and cancelled.
+
+**Receipts**
+
+| Receipt | Allocated to |
+|---|---|
+| 5,841,000 | Invoice 1 |
+| 216,000 | Release 1 |
+| 300,000 | 216,000 release 2 + 84,000 invoice 2 |
+
+**After posting**
+
+| Account | Balance |
+|---|---|
+| Retention (1150) | **0** |
+| AR (1100) | 5,841,000 + 3,663,000 + 432,000 − 6,357,000 = **3,579,000** |
+| Revenue (4000) | −8,640,000 (unchanged) |
+| VAT (2300) | −1,296,000 |
+
+- AR reconciliation: difference 0. The refused 300,000 line is unapplied money in.
+- Position: retention held 0, released 432,000, invoiced 9,504,000, received 6,357,000, open 3,579,000.
+
+**HTTP journey:** 216,000 released after the credit note.
+
+| Measure | Value |
+|---|---|
+| Retention held | 216,000 |
+| Retention released | 216,000 |
+| Receivable open | 1,548,000 + 216,000 = **1,764,000** |
+
+**Browser journey:** 265,500 released at taking over. Receivable open is 265,500 and retention held is 0.

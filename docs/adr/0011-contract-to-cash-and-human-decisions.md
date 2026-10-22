@@ -141,3 +141,33 @@ Closes JB-CREDIT-NOTE. An approved customer invoice and its `AR_INVOICE` journal
 - Kernel: `TestJourneyB_CreditNoteRacesReceipt`.
 - HTTP: `TestAPIJourneyB_ContractToCash`, which issues and approves a credit note on IPC 2's invoice, with MFA, permission and visibility probes.
 - Browser: `TestConsoleBrowserJourneyB` issues a credit note from the invoice page. The commercial manager opens it from the approval queue, the database refuses the approval because the invoice is settled, and the clerk withdraws it.
+
+## Addendum: retention release (2026-10-22), migration 0023
+
+Retention deducted on each certificate is debited to retention receivable when the invoice is approved. It becomes due when the client certifies its release.
+
+- **Who.** The AR clerk records a DRAFT release (`ar.retention.create`) on an ACTIVE contract, with:
+  - the amount and the date;
+  - the milestone: `TAKING_OVER`, `DEFECTS_LIABILITY_END` or `NEGOTIATED`;
+  - the client's release certificate reference and the SHA-256 of the signed file. The console computes the hash in the browser; the file is not uploaded.
+
+  A commercial manager approves it (`ar.retention.approve`): a different person, a human, with fresh MFA. The issuer or an approver may cancel a draft, with a reason.
+- **Limits.**
+  - Approved releases plus drafts never exceed the retention held on approved invoices (checked at recording).
+  - Approved releases never exceed it either, checked again under `FOR UPDATE` on the contract at approval.
+  - The date is in an open fiscal period and not before the contract signature.
+- **Accounting.** Approval generates `AR_RETENTION`: Dr accounts receivable / Cr retention receivable, on the contract policy. There is no VAT, because VAT was charged on the full certified gross at invoice time. The journal is bound, frozen and never reversed.
+- **Payment.** A receipt allocation may now name a retention release: exactly one of invoice, contract advance or release. Receipt confirmation refuses unapproved releases and over-allocation, under a row lock on the release.
+- **Reports.**
+  - Accounts receivable includes posted releases.
+  - Retention receivable nets them.
+  - The contract position shows `retention_held` (net) and `retention_released`, and the open receivable includes releases.
+
+**Not built:** retention bonds or guarantees in place of cash retention; release that depends on a defects list.
+
+**Tests.**
+
+- Kernel: `TestJourneyB_RetentionRelease`, with figures in docs/testing/E2E_JOURNEY_B.md. It covers 11 refusals and a receipt split across a release and an invoice.
+- Kernel: `TestJourneyB_RetentionReleaseRace`.
+- HTTP: `TestAPIJourneyB_ContractToCash`.
+- Browser: `TestConsoleBrowserJourneyB`, where the release is recorded with the certificate hashed in the browser and approved from the document page.

@@ -136,7 +136,7 @@ func TestConsoleBrowserJourneyB(t *testing.T) {
 		t.Fatalf("active contracts: %d", len(ctrs))
 	}
 	pos := a.call(200, "GET", "/v1/contracts/"+ctrs[0].(map[string]any)["id"].(string)+"/position", ctl, nil)
-	if pos["receivable_open"] != "0" || pos["retention_held"] != "265500" || pos["advance_recovered"] != "1000000" {
+	if pos["receivable_open"] != "265500" || pos["retention_held"] != "0" || pos["retention_released"] != "265500" || pos["advance_recovered"] != "1000000" {
 		t.Errorf("contract position after the UI journey: %v", pos)
 	}
 }
