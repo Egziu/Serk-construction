@@ -323,7 +323,9 @@ func (c Config) Validate() error {
 		}
 		if e := checkSecret(c.BankDigestKey, prod); e != "" {
 			bad("SERK_BANK_DIGEST_KEY %s (required with SERK_BANK_DATA_KEY)", e)
-		} else if string(c.BankDigestKey) == string(c.BankDataKey) || string(c.BankDigestKey) == string(c.TenantDBSecret) || string(c.BankDigestKey) == string(c.AbuseKey) {
+		} else if string(c.BankDigestKey) == string(c.BankDataKey) || string(c.BankDigestKey) == string(c.TenantDBSecret) || string(c.BankDigestKey) == string(c.AbuseKey) ||
+			(len(c.BankDataKeyPrevious) > 0 && string(c.BankDigestKey) == string(c.BankDataKeyPrevious)) ||
+			(len(c.ApprovalSecret) > 0 && string(c.BankDigestKey) == string(c.ApprovalSecret)) {
 			bad("SERK_BANK_DIGEST_KEY must differ from every other secret")
 		}
 		if c.BankDataKeyID == "" || len(c.BankDataKeyID) > 32 {

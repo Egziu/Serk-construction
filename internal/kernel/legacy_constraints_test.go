@@ -93,7 +93,9 @@ func TestLegacy_NotValidConstraintsAreValidatedOrReported(t *testing.T) {
 		t.Errorf("%d NOT VALID constraints remain", remaining)
 	}
 	var kept int
-	must(t, "kept", f.admin.QueryRow(f.ctx, `SELECT count(*) FROM migration_exceptions WHERE migration = 'validate-constraints'`).Scan(&kept))
+	// Counted for this test's row only: other tests record their own
+	// violators in the same (shared) ledger, in any order under -shuffle.
+	must(t, "kept", f.admin.QueryRow(f.ctx, `SELECT count(*) FROM migration_exceptions WHERE migration = 'validate-constraints' AND row_ref = $1`, lines[0]).Scan(&kept))
 	if kept != 1 {
 		t.Errorf("ledger entries %d, want 1 kept (append-only)", kept)
 	}

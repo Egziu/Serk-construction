@@ -71,8 +71,17 @@ func TestAttestationMarkers_DatabaseEnforcesSessionAndScope(t *testing.T) {
 		append([]string{"principal.project:" + f.project}, sess...)...)))
 	accepted("project-mapped subject, tenant scope", present(sign("u-pm", "pr.approve", "purchase_requisition", pr, hash,
 		append([]string{"principal.scope:tenant"}, sess...)...)))
-	accepted("unmapped subject (journal), project scope", present(sign("u-approver", "journal.approve", "journal", j, jhash,
-		append([]string{"principal.project:" + other}, sess...)...)))
+	// R11-F2: journals are scoped by their project (none = tenant-wide), and
+	// every type not deliberately unscoped needs tenant-wide scope.
+	refused("journal, another project's marker", present(sign("u-approver", "journal.approve", "journal", j, jhash,
+		append([]string{"principal.project:" + other}, sess...)...)), "outside the attested scope")
+	var per, perHash string
+	must(t, "period", f.admin.QueryRow(f.ctx, `SELECT id::text FROM fiscal_periods WHERE tenant_id = $1::uuid ORDER BY starts_on LIMIT 1`, f.tenant).Scan(&per))
+	perHash = f.subjectHash(t, "fiscal_period", per)
+	refused("entity-level subject (fiscal period), project scope", present(sign("u-cfo", "period.reopen", "fiscal_period", per, perHash,
+		append([]string{"principal.project:" + f.project}, sess...)...)), "outside the attested scope")
+	accepted("journal, tenant scope", present(sign("u-approver", "journal.approve", "journal", j, jhash,
+		append([]string{"principal.scope:tenant"}, sess...)...)))
 
 	// Revocation: every session of u-approver issued before now is revoked.
 	_, err = f.svc.RevokeSessions(f.ctx, fresh(c.finMgr), "u-approver", "Device lost: revoke every session")

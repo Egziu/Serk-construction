@@ -1,0 +1,55 @@
+### SERK encrypted offsite PITR drill 2026-10-22T20:17:57Z
+### postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1); age 1.1.1; OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024); archive_timeout=10s; host Linux 6.18.44-fc-v140
+[20:17:57] backup recipient age18up42amzkhkjjxzsrcln09lrwx0eut2xc8802adgzp92eyuk6swsyyf6sf (private key kept off the primary)
+[20:17:57] object signing key: Ed25519, public key 664cbf93caf66218… pinned on the recovery host
+[20:17:57] initdb primary (data checksums on); archive_command encrypts to the offsite store
+[20:17:57] cluster system identifier 7699589063354652004 (signed into every offsite object)
+[20:17:58] base backup streamed from pg_basebackup straight into age (no plaintext tar on disk)
+[20:17:58] base backup base_7699589063354652004_20261022T201758Z.tar.age took 0.37 s; offsite object 47M; signed inventory inventory_7699589063354652004_20261022T201758Z.txt; plaintext base files left on the primary host: 0
+[20:17:58] workload (all migrations + kernel flows incl. a supplier bank account)
+    load: PASS
+[20:18:00] markers: supplier tax id 'TIN-0001', supplier 'ABC STEEL PLC', journal 'Cement delivery — Dangote 50kg x 200'
+[20:18:00] restore point at LSN 0/382AC48; posted journals 9; plaintext bank rows in the database: 0
+[20:18:00] damage after the target: superuser TRUNCATE of the ledger
+[20:18:01] archiver: 5 encrypted objects offsite, failed_count=0
+
+== Proof that nothing left the primary in plaintext
+marker 'TIN-0001'                   offsite/spool: 0 file(s); control (primary data files before the damage): 1 file(s)
+marker 'ABC STEEL PLC'              offsite/spool: 0 file(s); control (primary data files before the damage): 2 file(s)
+marker 'Cement delivery — Dangot' offsite/spool: 0 file(s); control (primary data files before the damage): 1 file(s)
+marker 'schema_migrations'          offsite/spool: 0 file(s); control (primary data files before the damage): 7 file(s)
+bank number 1000… anywhere on the primary or offsite (ciphertext in the database): 0 file(s) (expected 0)
+manifest: 5 objects; digests: OK
+signatures: 5 objects, 0 invalid
+
+[20:18:02] recovery host: restore from the offsite store only, to 'serk_offsite_target'
+
+== Restore result
+pg_verifybackup on the decrypted base backup : backup successfully verified
+fingerprint (16 tables) restored vs target  : IDENTICAL
+posted journals at target / restored         : 9 / 9 (0 on the damaged primary)
+ledger_integrity_scan() target / restored    : none / none
+tenants / audit chains failing verification  : 12 / 0
+schema_migrations on restored instance       : 1-36 (36)
+data-checksum failures                       : 0
+supplier bank accounts restored              : 3 rows, 3 encrypted, 0 plaintext
+RTO: restore start -> promoted               : 0.99 s
+RTO: restore start -> verified               : 1.16 s
+
+[20:18:03] key hygiene: restore with a WRONG private key
+restore with the wrong key                   : refused (base backup does not decrypt)
+
+[20:18:03] authenticity: forged base backup (valid age ciphertext + manifest line, no valid signature)
+forged base: manifest digests still verify    : yes
+forged base: restore                          : refused before decryption (SIGNATURE INVALID for base_7699589063354652004_20261022T201758Z.tar.age: refusing to decrypt)
+[20:18:03] authenticity: forged WAL segment (the first segment after the base backup, needed to reach the target)
+forged WAL 000000010000000000000003: signature refusals logged : 2; target reached: no; restore rc=1
+
+[20:18:04] archive_push: retry, collision and foreign-object paths (R11-F4)
+stale partial upload present                 : rc=0
+repeated push after a lost acknowledgement   : rc=0, manifest lines 1
+different segment under an existing name     : rc=1 (archive: 0000000100000000000000E0.age already offsite with DIFFERENT content; refusing to overwrite or skip); offsite object unchanged: yes
+planted object signed for another cluster    : rc=0; replaced by this segment: yes
+
+DRILL VERDICT: PASS (restored from the signed, encrypted offsite copy only; clean integrity scan; no plaintext left the primary; wrong key, forged base and forged WAL refused; archive collisions refused)
+exit=0

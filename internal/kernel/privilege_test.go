@@ -50,10 +50,12 @@ func TestPrivileges_CatalogInvariants(t *testing.T) {
 			  AND array_to_string(p.proconfig, ',') LIKE 'search_path=%'
 			  AND array_to_string(p.proconfig, ',') NOT LIKE '%pg\_temp'
 			  AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')`,
+		// R11-F3: every function, not only definers: a trigger function runs
+		// with the session's search_path, where pg_temp comes first.
 		"function in public without a pinned search_path": `
 			SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 			WHERE n.nspname = 'public' AND p.prolang <> (SELECT oid FROM pg_language WHERE lanname = 'c')
-			  AND p.proconfig IS NULL AND p.prosecdef
+			  AND NOT COALESCE(array_to_string(p.proconfig, ',') LIKE 'search_path=%', false)
 			  AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')`,
 		"table writable by PUBLIC or deletable by an app role": `
 			SELECT c.relname || ':' || r FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,

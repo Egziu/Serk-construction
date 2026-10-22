@@ -43,8 +43,11 @@ type Env struct {
 	// application, time travel, scratch databases, cluster grants). It is
 	// SERK_TEST_SUPERUSER_DSN when set (so the rest of the suite can run as a
 	// non-superuser schema owner, as on managed PostgreSQL), else Admin.
-	Super      *pgx.Conn
-	SuperDSN   string
+	Super    *pgx.Conn
+	SuperDSN string
+	// HealthDSN is the privilege-less health login the router uses for
+	// readiness and the database posture check.
+	HealthDSN  string
 	AdminStore *postgres.Store
 	Router     *postgres.Router
 
@@ -95,9 +98,32 @@ func Setup(t *testing.T) *Env {
 		t.Fatal(err)
 	}
 	t.Cleanup(e.AdminStore.Close)
+	// The health connection is a real login in serk_health, as in
+	// production (R11-F1: running it as the admin hid a posture check that
+	// the health role could not execute). Falls back to the admin only where
+	// the cluster has no serk_health role.
+	e.HealthDSN = adminDSN
+	if _, err := admin.Exec(ctx, `DO $$
+		BEGIN
+		  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_health') THEN
+		    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_health_test') THEN
+		      CREATE ROLE serk_health_test LOGIN;
+		    END IF;
+		    GRANT serk_health TO serk_health_test;
+		  END IF;
+		END$$`); err != nil {
+		t.Fatalf("health login: %v", err)
+	}
+	var hasHealth bool
+	_ = admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_health_test')`).Scan(&hasHealth)
+	if hasHealth {
+		hu, _ := url.Parse(adminDSN)
+		hu.User = url.User("serk_health_test")
+		e.HealthDSN = hu.String()
+	}
 	e.Router, err = postgres.NewRouter(ctx, postgres.RouterConfig{
 		Credentials: postgres.DerivedCredentials{BaseDSN: e.BaseDSN, Secret: Secret},
-		HealthDSN:   adminDSN,
+		HealthDSN:   e.HealthDSN,
 	})
 	if err != nil {
 		t.Fatal(err)

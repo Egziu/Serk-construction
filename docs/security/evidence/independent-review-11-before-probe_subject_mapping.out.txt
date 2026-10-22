@@ -1,0 +1,51 @@
+SET
+       subject_type       |                 db_behaviour                  
+--------------------------+-----------------------------------------------
+ bank_statement_line      | NULL -> NO SCOPE CHECK
+ bank_statement_source    | NULL -> NO SCOPE CHECK
+ company_bank_account     | NULL -> NO SCOPE CHECK
+ contract_policy          | NULL -> NO SCOPE CHECK
+ customer                 | NULL -> NO SCOPE CHECK
+ customer_receipt         | NULL -> NO SCOPE CHECK
+ fiscal_period            | NULL -> NO SCOPE CHECK
+ fx_policy                | NULL -> NO SCOPE CHECK
+ fx_snapshot              | NULL -> NO SCOPE CHECK
+ fx_source                | NULL -> NO SCOPE CHECK
+ journal                  | NULL -> NO SCOPE CHECK
+ p2p_policy               | NULL -> NO SCOPE CHECK
+ payment_instruction      | NULL -> NO SCOPE CHECK
+ stock_item               | NULL -> NO SCOPE CHECK
+ supplier                 | NULL -> NO SCOPE CHECK
+ supplier_bank_account    | NULL -> NO SCOPE CHECK
+ wbs_version              | NULL -> NO SCOPE CHECK
+ workflow_definition      | NULL -> NO SCOPE CHECK
+ workflow_definition_body | NULL -> NO SCOPE CHECK
+ workflow_instance        | NULL -> NO SCOPE CHECK
+ boq_version              | mapped (missing row -> tenant scope required)
+ contract                 | mapped (missing row -> tenant scope required)
+ contract_variation       | mapped (missing row -> tenant scope required)
+ customer_credit_note     | mapped (missing row -> tenant scope required)
+ customer_invoice         | mapped (missing row -> tenant scope required)
+ grn                      | mapped (missing row -> tenant scope required)
+ ipc                      | mapped (missing row -> tenant scope required)
+ measurement              | mapped (missing row -> tenant scope required)
+ purchase_order           | mapped (missing row -> tenant scope required)
+ purchase_requisition     | mapped (missing row -> tenant scope required)
+ retention_release        | mapped (missing row -> tenant scope required)
+ rfq                      | mapped (missing row -> tenant scope required)
+ rfq_quote                | mapped (missing row -> tenant scope required)
+ schedule_progress        | mapped (missing row -> tenant scope required)
+ schedule_version         | mapped (missing row -> tenant scope required)
+ stock_count              | mapped (missing row -> tenant scope required)
+ stock_issue              | mapped (missing row -> tenant scope required)
+ stock_receipt            | mapped (missing row -> tenant scope required)
+ stock_transfer           | mapped (missing row -> tenant scope required)
+ supplier_invoice         | mapped (missing row -> tenant scope required)
+ warehouse                | mapped (missing row -> tenant scope required)
+(41 rows)
+
+     form      | proj | subject_text 
+---------------+------+--------------
+ upper-case id |      | 
+(1 row)
+

@@ -1,0 +1,5 @@
+archive_push exit code: 0
+offsite object before: bed13ae199c45b9b315435c9c63c26fdc51386d1d660a59b3543f1fad4d93fee
+offsite object after : bed13ae199c45b9b315435c9c63c26fdc51386d1d660a59b3543f1fad4d93fee  (UNCHANGED)
+plaintext stored offsite: 383dbb7987fabc60f329a8e9a1c318f042c901d501ec5729dafd92227d5cce1c  -
+plaintext of the segment PostgreSQL was told is archived: 8c6b7472b0563d0de6c6c9507f6e8119b3b9061845577e2e030c867ed55f4e9d  /tmp/r11_new_segment

@@ -1,0 +1,32 @@
+=== RUN   TestR11_UnmappedSubjectScope
+    zz_review11_scope_test.go:90: held: journal: honest API, token scope b95b759d…: refused (store: not found)
+    zz_review11_scope_test.go:102: OPEN: journal of project 4c5a8c40… approved by a principal whose signed token scope is project b95b759d… only: APPROVED by u-approver; attested perms: [ap.approve_exception bank.details.reveal customer.approve fx.approve fx.policy.approve fx.read journal.approve journal.read p2p.read payment.approve principal.human principal.iat:1792699586 principal.project:b95b759d-a7cb-4394-8305-753585b157fd principal.session:jti-r11-j scope.tenant_wide stock.item.approve supplier.bank.approve wbs.approve workflow.read]
+    zz_review11_scope_test.go:127: held: payment: honest API, project-scoped token: refused (store: not found)
+    zz_review11_scope_test.go:138: OPEN: payment d2eefc6a… approved (PARTIALLY_APPROVED; row PARTIALLY_APPROVED by u-finance-manager) by a finance manager whose signed token is restricted to project 4c5a8c40… (kernel policy: tenant-wide only); attested perms: [ap.approve_exception bank.details.reveal customer.approve fx.approve fx.policy.approve fx.read journal.approve journal.read p2p.read payment.approve principal.human principal.iat:1792699585 principal.project:4c5a8c40-3935-44d7-87c6-46a7e211e259 principal.session:jti-r11-p scope.tenant_wide stock.item.approve supplier.bank.approve wbs.approve workflow.read]
+    zz_review11_scope_test.go:152: held: wbs: honest API, token scope b95b759d…: refused (auth: forbidden: project 4c5a8c40-3935-44d7-87c6-46a7e211e259 is outside the principal's scope)
+    zz_review11_scope_test.go:160: OPEN: WBS version of project 4c5a8c40… approved (previous version superseded) by a principal whose signed token scope is project b95b759d… only: APPROVED by u-r11-wbs-approver
+--- FAIL: TestR11_UnmappedSubjectScope (0.42s)
+=== RUN   TestR11_MarkerSmuggling
+    zz_review11_scope_test.go:190: held: signer refused "principal.scope:tenant": attest: invalid attestation: signer refused: permission: permission "principal.scope:tenant" is not granted by the token
+    zz_review11_scope_test.go:190: held: signer refused "Principal.scope:tenant": attest: invalid attestation: signer refused: permission: permission "Principal.scope:tenant" is not granted by the token
+    zz_review11_scope_test.go:190: held: signer refused "principal.scope:tenant ": attest: invalid attestation: signer refused: permission: permission "principal.scope:tenant " is not granted by the token
+    zz_review11_scope_test.go:190: held: signer refused " principal.scope:tenant": attest: invalid attestation: signer refused: permission: permission " principal.scope:tenant" is not granted by the token
+    zz_review11_scope_test.go:190: held: signer refused "principal.scope:TENANT": attest: invalid attestation: signer refused: permission: permission "principal.scope:TENANT" is not granted by the token
+    zz_review11_scope_test.go:190: held: signer refused "principal.project:CD41D30E-55EC-4642-9765-76B6FDFFB91D": attest: invalid attestation: signer refused: permission: permission "principal.project:CD41D30E-55EC-4642-9765-76B6FDFFB91D" is not granted by the token
+    zz_review11_scope_test.go:190: held: signer refused "principal.project:cd41d30e-55ec-4642-9765-76b6fdffb91d ": attest: invalid attestation: signer refused: permission: permission "principal.project:cd41d30e-55ec-4642-9765-76b6fdffb91d " is not granted by the token
+    zz_review11_scope_test.go:190: held: signer refused "principal.project:2ac88242-e41e-4035-aeda-27d3c9561fba": attest: invalid attestation: signer refused: permission: permission "principal.project:2ac88242-e41e-4035-aeda-27d3c9561fba" is not granted by the token
+    zz_review11_scope_test.go:190: held: signer refused "principal.session:other": attest: invalid attestation: signer refused: permission: permission "principal.session:other" is not granted by the token
+    zz_review11_scope_test.go:190: held: signer refused "principal.iat:0": attest: invalid attestation: signer refused: permission: permission "principal.iat:0" is not granted by the token
+    zz_review11_scope_test.go:204: held: duplicated session marker signed by the signer but refused by the database: store: database invariant violated: privilege: approval attestation: missing session markers
+    zz_review11_scope_test.go:212: held: signer refused claims without session markers: attest: invalid attestation: signer refused: session: the claims do not carry the token's session and issue time
+    zz_review11_scope_test.go:221: held: ScopeMarkers refused project ids [""]: auth: forbidden: malformed project id in the session
+    zz_review11_scope_test.go:221: held: ScopeMarkers refused project ids ["a,b"]: auth: forbidden: malformed project id in the session
+    zz_review11_scope_test.go:221: held: ScopeMarkers refused project ids ["a\x1fb"]: auth: forbidden: malformed project id in the session
+--- PASS: TestR11_MarkerSmuggling (0.07s)
+=== RUN   TestR11_TempShadowsUnpinnedWorkflowGate
+    zz_review11_scope_test.go:241: held: control (no TEMP): raw approve refused: store: database invariant violated: journal.approve of journal 13871d0b-edfa-4fae-b062-4ee8874a7e29 requires its mandatory approval workflow
+    zz_review11_scope_test.go:266: OPEN: with TEMP granted, journal 13871d0b… under the mandatory 'journal.posting' workflow was APPROVED directly (workflow instances for it: 0): pg_temp.workflow_definitions shadowed the table in unpinned workflow_require_effect()
+--- FAIL: TestR11_TempShadowsUnpinnedWorkflowGate (0.09s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	0.586s
+FAIL

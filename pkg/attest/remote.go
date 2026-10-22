@@ -118,7 +118,7 @@ func (r *Remote) Issue(ctx context.Context, c Claims) (Attestation, error) {
 	// R10-F6: the fields the signer fills must be well formed.
 	now := time.Now().Unix()
 	if got.V != Version || got.KeyID == "" || len(got.KeyID) > 16 || !nonceForm.MatchString(got.Nonce) || !sigForm.MatchString(out.Attestation.Sig) ||
-		got.ExpiresAt <= got.IssuedAt || got.ExpiresAt-got.IssuedAt > int64(MaxTTL/time.Second) || got.IssuedAt > now+60 || got.ExpiresAt <= now {
+		got.ExpiresAt <= got.IssuedAt || got.ExpiresAt-got.IssuedAt > int64(MaxTTL/time.Second) || got.IssuedAt > now+60 || got.IssuedAt < now-int64(MaxTTL/time.Second)-60 || got.ExpiresAt <= now {
 		return Attestation{}, fmt.Errorf("%w: malformed attestation from the signer", ErrInvalid)
 	}
 	return *out.Attestation, nil

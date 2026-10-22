@@ -147,3 +147,26 @@ Independent review 10 found that the §5 drill authenticated nothing (R10-F8): t
 - The signing key on a real primary is a host secret. An attacker who controls the primary can sign forged objects. That threat is the reason for an *offsite* copy with object lock/WORM retention, and it needs the real storage (GATEA-08).
 - The pinned public key, the age identity and their rotation need a human key ceremony; see the KEY_CUSTODY runbook.
 - Production data volume, cross-region copies and the retention schedule are untested.
+
+## 7. Drill v2 after review 11 (2026-10-22)
+
+Independent review 11 found three weaknesses in the §6 drill. All three are corrected:
+- **R11-F4.** The idempotent push accepted any validly signed object of the same name without checking what it contained.
+- **R11-F5.** The fixed base-backup name let an older signed base stand in for a newer one.
+- **R11-F6.** Verification and decryption read the store twice.
+
+The changes:
+- **Signed message v2:** the cluster system identifier, the object name, the ciphertext digest and the plaintext digest. The metadata travels in a sidecar file, and the signature covers it.
+- **Push rule:** an existing object is accepted only if it holds this segment. A different segment under an existing name fails the archive command and is never overwritten. An object of another cluster is replaced.
+- **Base backups:** each base is named by system identifier and time, and a signed inventory names it.
+- **Restore:** verify one local copy, decrypt that copy, and compare the plaintext digest.
+
+Raw output: `docs/operations/evidence/pitr-offsite-signed-drill-v2-2026-10-22.txt`. **PASS** at migrations 1–36:
+- fingerprint identical and integrity scan clean;
+- `pg_verifybackup` verified;
+- wrong key, forged base and forged WAL refused;
+- all four archive paths behaved as specified (stale partial upload, lost acknowledgement, collision refused with the object unchanged, foreign-cluster object replaced).
+
+The first v2 run failed on the drill's own setup: the planted partial file was owned by root, so the archive process could not replace it. The run in the evidence file is the second.
+
+**Still not proven.** Deletion or rollback of offsite objects by someone with delete rights (removing the newest inventory or WAL) is not detectable from the store alone. The controls are object lock/WORM retention and monitoring that the expected newest backup exists, and both need real storage (GATEA-08).

@@ -1,0 +1,100 @@
+# Independent review 11: commit de5810d (migration 0035, signer markers, signed offsite backups)
+
+Reviewer: independent, adversarial, evidence-only. I did not rely on the commit message or the docs.
+Scope: `git diff 2e0c9a2 de5810d`. Environment: PostgreSQL 16.15 on /tmp:5433, Go 1.26.10. Synthetic data only.
+Databases created for this review: `serk_r11a` (superuser owner), `serk_r11b` (non-superuser owner `serk_owner_t`, production shape) and `serk_r11base` (baseline 2e0c9a2, for the regression check).
+Drill: `/var/lib/postgresql/drill_r11`.
+Probe sources were copied here and removed from the repository tree (`git status` is clean).
+
+## Verdict
+
+**Not ready to release.** Five defects need fixing first:
+
+1. **R11-F1.** 0035 breaks the production posture check. The health role can no longer run it, so `serk-api` exits at startup in production. This is a regression from 2e0c9a2.
+2. **R11-F2.** R10-F1 (scope) is closed only for the 21 subject types that `serk_subject_project()` maps. A compromised API can still approve, end to end through the real signer:
+   - journals and WBS versions of another project;
+   - payment instructions with a project-restricted token.
+3. **R11-F3.** R10-F3 (pg_temp shadowing) is closed only for functions that already pinned `search_path`. With TEMP granted, a tenant session can shadow a table inside 48 unpinned trigger and helper functions. One consequence: a single attested approval replaces a mandatory multi-step workflow.
+4. **R11-F4.** The new idempotent `archive_push` accepts any validly signed object already stored under a segment's name, without checking what it contains. The segment is then silently never archived.
+
+The session-marker design itself held against every smuggling variant I tried.
+
+## Findings
+
+| ID | Sev | Finding | Evidence | Suggested fix |
+|---|---|---|---|---|
+| R11-F1 | **High** (regression) | OPEN: `serk_object_owner()` (new in 0035) gets the default `REVOKE EXECUTE … FROM PUBLIC` (0008/0009 `ALTER DEFAULT PRIVILEGES`). The comment at 0035 says "Left executable … the posture check (run as the privilege-less health role) needs it", but that is false. `serk_database_posture()` is not SECURITY DEFINER and calls it, so `SELECT … FROM serk_database_posture()` as `serk_health` or `serk_monitor` fails with `permission denied for function serk_object_owner`, in both owner modes. `Router.Posture` runs through the health role (`internal/store/postgres/router.go:266`), and `cmd/serk-api/main.go:58-61` calls `os.Exit(1)` in production on any posture error. At baseline 2e0c9a2 the same query as `serk_health` returned 22 rows. The test harness hides this because it sets `HealthDSN: adminDSN` (`internal/testdb/testdb.go:100`). | `probe_posture_roles.out`: ACL `serk_owner_t=X/serk_owner_t` only, then `ERROR: permission denied for function serk_object_owner` for health and monitor in r11a and r11b. `probe_posture_baseline_2e0c9a2.out`: `22`. | `GRANT EXECUTE ON FUNCTION serk_object_owner() TO serk_health, serk_monitor` (or make posture SECURITY DEFINER with pinned path). Add a test that runs `Posture` through a real `serk_health`-member login, not the admin DSN. |
+| R11-F2 | **Medium** (R10-F1 incompletely fixed) | OPEN: `serk_subject_project()` returns NULL (meaning "no scope check") for 20 attested subject types the kernel does scope (`probe_subject_mapping.out`). They include `journal` and `wbs_version` (kernel `RequireProject` at `kernel.go:216` and `wbs.go:50`), and `workflow_instance` (`workflow.go:536`). They also include every entity-level document the kernel restricts to tenant-wide scope (`docscope.go:25-28`): `payment_instruction`, `company_bank_account`, `customer_receipt`, `bank_statement_line`, `p2p_policy`, `contract_policy`, `bank_statement_source` and others. The attack is a compromised API that decides with a forged principal but sends the real token's markers. The real isolated signer signs, because the markers are the token's own. Results (both owner modes): (a) the journal of project P was **APPROVED** by an approver whose signed token lists only project Q, with attested perms `principal.project:<Q>`; (b) a WBS version of P was **APPROVED** (the prior version superseded) by a Q-only token; (c) payment instruction → **PARTIALLY_APPROVED** by a finance manager whose token is restricted to one project (the kernel requires tenant-wide). The honest API refused all three. The existing `attestation_markers_test.go` treats "unmapped subject (journal), project scope" as *accepted*, so this gap is written into the tests as expected behaviour. The 0035 comment "The same mapping as the kernel's docProject" is true but beside the point: `docProject` covers P2P docs only. | `go_probes_superuser.out`, `go_probes_nonsuperuser.out` (`TestR11_UnmappedSubjectScope`, 3× OPEN). `probe_subject_mapping.out`. | Map `journal` (project_id, NULL→''), `wbs_version`, `workflow_instance` (facts project / subject's project), and return `''` (tenant scope required) for every entity-level type. Make the `ELSE` branch fail closed (`''`) and list only the deliberately unscoped types (e.g. `supplier`, `customer`, `stock_item`) explicitly. |
+| R11-F3 | **Medium** (conditional on TEMP; R10-F3 incompletely fixed) | OPEN: the 0035 rewrite only touches functions whose `proconfig` already starts with `search_path=`. The 48 non-extension public functions with **no** pinned path were left as they were (`probe_functions_without_pg_temp.txt`, all `prosecdef=f`). Among them are the trigger functions `journals_workflow_gate`, `workflow_require_effect`, `workflow_instances_guard`, `workflow_approvals`, `wbs_versions_attest` and `fx_policies_attest`. Triggers fired by tenant DML run with the session's path, where pg_temp comes first. Reproduced with TEMP granted to the tenant login: `CREATE TEMP TABLE workflow_definitions (LIKE public.workflow_definitions)`, then one ordinary attested `journal.approve` and `UPDATE public.journals SET status='APPROVED'`. Result: a journal under the **mandatory** `journal.posting` workflow became **APPROVED** with 0 workflow instances. Without TEMP it is refused ("requires its mandatory approval workflow"). By the same mechanism, `workflow_instances_guard`'s quorum check reads `workflow_decisions` and `workflow_effects` unqualified (not exercised). The privilege invariant only checks SECURITY DEFINER functions (`internal/kernel/privilege_test.go:52-56`, `AND p.prosecdef`). Mitigation: TEMP is revoked from PUBLIC (0006) and the posture check reports a TEMP grant, but R11-F1 currently breaks that check. | `go_probes_*.out` (`TestR11_TempShadowsUnpinnedWorkflowGate`: control refused, then OPEN, both modes). `probe_functions_without_pg_temp.txt`. | `ALTER FUNCTION … SET search_path = pg_catalog, public, pg_temp` for every public non-extension function. Extend the invariant to all functions, not only definers. |
+| R11-F4 | **Medium** | OPEN: `archive_push.sh` (drill line 150) exits 0 if `$OFFSITE/$name.age` exists and its signature verifies. It never checks that the object holds *this* segment. The signature covers only name + ciphertext digest, and the primary cannot decrypt to compare. Probe: archiving a *different* 16 MiB segment under an existing name returned exit 0, and the offsite object stayed UNCHANGED (stored plaintext `383dbb…` ≠ segment `8c6b74…`). The archiver then deletes its copy. Without any attacker, a re-initdb or rebuilt cluster that reuses the offsite prefix and signing key silently loses every segment whose name repeats. With an attacker who can write offsite and has validly signed objects from another cluster or prefix under the same key, future names can be pre-planted. Either way the loss shows up only at restore time. PostgreSQL's archiving guidance is to fail when a file of that name exists with different content. | `probe_archive_push_stale.out` (`probe_archive_push_stale.sh`). | Sign `name ‖ sha256(ciphertext) ‖ sha256(plaintext segment) ‖ system_identifier` and store the plaintext digest beside the object. On an existing object, accept only if the signed plaintext digest equals `sha256($src)`, otherwise fail. Use one prefix per system identifier. |
+| R11-F5 | Low | OPEN: the signed message is `serk-offsite-v1\n<name>\n<sha256>` (lines 117/130), and the base backup always has the fixed name `base.tar.age` (lines 189-191). The signature therefore binds no backup identity (label, start LSN, time, system identifier). Any base backup the key ever signed verifies as "the" base. Probe: an older signed base substituted after a newer one verified (`older base … verifies: yes`). The manifest is unsigned, so deleting objects (for example the newest WAL) is not detected. With a named recovery target the restore fails closed. With `recovery_target = latest` it would silently stop early. The name binding does hold for WAL (a renamed segment was refused). | `probe_base_replay.out`. Script lines 117, 130, 189-191. | Include the backup label / start LSN / system identifier in the base object's name and signed message. Sign a per-backup inventory (base + expected WAL range) and check it before restore. |
+| R11-F6 | Low | OPEN: verify-then-decrypt reads the offsite path twice. `restore()` calls `verify_object.sh … "$OFFSITE/base.tar.age"` and then `age -d … "$OFFSITE/base.tar.age"` (lines 272-273); `restore_fetch.sh` does the same (lines 291-292). A writer to the store can swap the object between the two reads (TOCTOU), so "verified before decryption" holds only for a store the attacker cannot modify concurrently. This matters for the production analogue (rclone/S3 mount). | Citation: drill lines 272-273, 291-292. Not raced in practice. | Copy the object once to local storage, verify that copy, and decrypt the same copy. |
+| R11-F7 | Info | OPEN: `SERK_BANK_DIGEST_KEY` is compared with the data key, the tenant secret and the abuse key, but not with `SERK_BANK_DATA_KEY_PREVIOUS` (`internal/config/config.go:324-328`). Production config with digest key = previous data key was accepted. HKDF context separation limits the cryptographic impact, but the "must differ from every other secret" rule is not enforced. | `go_probe_config.out`. | Add the comparison (and with the signer key where known). |
+| R11-F8 | Info | `attest.Remote` checks `IssuedAt > now+60` and `ExpiresAt <= now` (`pkg/attest/remote.go:121`), but sets no lower bound on `IssuedAt`. The register's wording ("issue/expiry times within a few seconds of the API's clock") overstates this. The database still enforces `exp - iat ≤ 300` and `exp > now`, so there is no security impact. | Citation. | Align the doc, or add `IssuedAt >= now-MaxTTL-60`. |
+
+## Held controls (held:)
+
+- **Marker smuggling at the signer.** The signer refused each of these with "not granted by the token": `principal.scope:tenant` from a project-scoped token, case variants (`Principal.scope:tenant`, `principal.scope:TENANT`), leading or trailing whitespace, an upper-case project UUID, a trailing-space project marker, another project's marker, a foreign session marker and `principal.iat:0`. Claims without the session/iat markers were refused (`session: the claims do not carry the token's session and issue time`). (`TestR11_MarkerSmuggling`, both modes.)
+- **Duplicate session marker.** The signer signs a duplicate of the token's own session marker, but `approval_authorize()` refuses it ("missing session markers").
+- **Malformed project ids.** `ScopeMarkers` refuses `""`, `"a,b"` and `"a\x1fb"`.
+- **Odd subject ids.** Upper-case UUID subject ids yield NULL from both `serk_subject_project` and `p2p_subject_text`, so there is no subject hash and no bypass (`probe_subject_mapping.out`).
+- **Single writer.** Only `approval_authorize(jsonb)` inserts into `approval_attestations`. `serk_app` has SELECT only.
+- **search_path rewrite.** Every *pinned* `search_path` now ends with `pg_temp`: 0 pinned functions lack it. `TestR10_PgTempShadowsApprovalEvidence` passes.
+- **Maintenance path.** A tenant session cannot call `serk_maintenance_session()` (permission denied). It cannot perform the hmac:→hkey: change either: `permission denied for table supplier_bank_accounts` (`TestR11_TenantRedigest`, both modes).
+- **Digest functions.** `p2p_account_digest(text)` and `p2p_account_digest_for(uuid,text)` are executable by the owner only.
+- **Owner grant options.** Re-running the 0035 `deploy/01-schema-owner.sql` GRANT on an existing `WITH ADMIN OPTION` membership turns INHERIT and SET to false (`probe_regrant_options.out`, rolled back).
+- **Revocations.** `session_revocations` is append-only. `serk_app` has INSERT/SELECT only.
+- **Drill.** It runs end to end: **PASS**. The restored fingerprint is identical, a wrong key is refused, a forged base is refused before decryption while the manifest still verifies, and a forged WAL gets 2 signature refusals and never reaches the target (`drill_run.out`). A renamed, validly signed WAL object is refused because the name is bound (`probe_base_replay.out`).
+- **Existing tests.** The R10 regression, markers, bank-at-rest and privilege tests all pass in non-superuser mode (`existing_r10_tests_nonsuperuser.out`).
+
+## Not tested
+
+- The HTTP API layer and a real OIDC/JWKS signer path (I used the repo's `r10Verifier` stand-in).
+- Exploiting `workflow_instances_guard` quorum shadowing (`workflow_decisions`, `workflow_effects`). It was identified by reading the code only.
+- The `wbs_versions_attest` and `fx_policies_attest` SUPERSEDED/RETIRED shadowing. Per the code, the pinned deferred `*_successor_check` contains it; not exercised.
+- Actually racing the R11-F6 TOCTOU.
+- A rebuilt-cluster scenario run end to end through PostgreSQL for R11-F4. The mechanism was shown by calling `archive_push.sh` directly.
+- Production object stores (rclone/S3).
+- PostgreSQL versions other than 16.
+- `constraints.go` and `pkg/legacy` beyond the existing tests and a code read; no defects found.
+- A deeper analysis of `EncryptBankAccounts` running concurrently with in-flight approvals or payments. The behaviour is documented as fail-closed.
+
+## Files in this directory
+
+- Probe sources: `zz_review11_scope_test.go.txt`, `zz_review11_config_test.go.txt`, `probe_posture_roles.sh`, `probe_subject_mapping.sql`, `probe_archive_push_stale.sh`, `probe_base_replay.sh`.
+- Raw outputs:
+  - `go_probes_superuser.out`, `go_probes_nonsuperuser.out`
+  - `go_probe_redigest_*.out`, `go_probe_config.out`
+  - `probe_posture_roles.out`, `probe_posture_baseline_2e0c9a2.out`
+  - `probe_subject_mapping.out`, `probe_functions_without_pg_temp.txt`
+  - `probe_archive_push_stale.out`, `probe_base_replay.out`, `probe_regrant_options.out`
+  - `drill_run.out`, `existing_r10_tests_nonsuperuser.out`
+  - `approval_subject_hash.sql`
+
+---
+
+## Resolution (delivering team, 2026-10-22): migration 0036, harness, config, drill
+
+The delivering team wrote these fixes, not the reviewer. They are **AI-verified with executed tests and have not been independently re-reviewed.**
+- The probes are kept as regression tests in `internal/kernel/review11_regression_test.go` and `internal/config/review11_regression_test.go`. Before-fix output is under `docs/security/evidence/independent-review-11-before-*`.
+- All probes now report `held:` in both owner modes.
+
+| ID | Resolution | Proof after the fix |
+|---|---|---|
+| R11-F1 | `serk_object_owner()` is granted to `serk_monitor` and `serk_health`. The **test harness now runs readiness and the posture check through a real login in `serk_health`** (`serk_health_test`), as production does, instead of the admin connection that hid this. New test `TestR11_PostureThroughHealthLogin`. | `held: posture through serk_health_test: 23 issue(s) on the test cluster`. That count comes from the shared test cluster's leftover logins and is the expected answer there. Every posture-related test (`TestR8_*`, `TestR9_*`, `TestBankAtRest_*`) passes through the health login. |
+| R11-F2 | `serk_subject_project()` now fails closed. Only master data every project role acts on stays unscoped: supplier, customer, stock item, supplier bank account, workflow definitions. Journals, WBS versions and workflow instances map to their project, with no project meaning tenant-wide. Any other or unknown type, and any non-UUID subject id, requires tenant-wide scope. | `TestR11_UnmappedSubjectScope` PASS (both modes): the out-of-scope journal, WBS version and payment approvals through the real signer are refused (`… is outside the attested scope`). `TestAttestationMarkers_*` now asserts that a journal with another project's marker is refused, a fiscal period with a project marker is refused, and tenant scope is accepted. |
+| R11-F3 | Every function in `public` (not extension-owned) now pins `search_path = pg_catalog, public, pg_temp`. Before, only functions with an existing pinned path were rewritten. The privilege invariant now checks **every** function, not just SECURITY DEFINER ones. | `TestR11_TempShadowsUnpinnedWorkflowGate` PASS: with TEMP granted, the shadow is refused (`requires its mandatory approval workflow`). `TestPrivileges_*` PASS. |
+| R11-F4 | Signed message v2 binds the cluster's system identifier and the **plaintext** digest. `archive_push` accepts an existing object only if it verifies for this cluster **and** its signed plaintext digest equals the segment's. A different segment under an existing name fails the command (PostgreSQL keeps the segment), and the object is never overwritten. An object signed for another cluster is replaced. | Drill v2 PASS (`docs/operations/evidence/pitr-offsite-signed-drill-v2-2026-10-22.txt`): `different segment under an existing name: rc=1 (… DIFFERENT content; refusing …); offsite object unchanged: yes`; `planted object signed for another cluster: rc=0; replaced by this segment: yes`. |
+| R11-F5 | Each base backup has its own name (`base_<system id>_<UTC time>.tar.age`), and a signed inventory names the base a restore uses. The recovery host checks the decrypted plaintext against the signed digest. **Residual:** an attacker who can delete objects can still remove the newest inventory, rolling back to an older valid base, or delete newer WAL. A named recovery target fails closed; `latest` would stop early. Object-lock/WORM storage and monitoring the expected newest backup are the controls (GATEA-08, staging). | Drill v2 PASS. Forged base refused: `SIGNATURE INVALID for base_7699…tar.age`. |
+| R11-F6 | The recovery host copies each object (base, inventory, every WAL segment) once to local storage, verifies the copy, decrypts the same copy, and checks the plaintext digest. | Drill v2 PASS (restore and forged-object paths). |
+| R11-F7 | `SERK_BANK_DIGEST_KEY` must also differ from `SERK_BANK_DATA_KEY_PREVIOUS` and from the approval signing key. | `TestR11_DigestKeyEqualsPreviousDataKey` and the new `TestProductionRules` case PASS. |
+| R11-F8 | `attest.Remote` now also refuses an issue time more than `MaxTTL` + 60 s in the past. | `TestR10_RemoteComparesPermsByLengthOnly` and the `TestSignerIsolation_*` tests PASS. |
+
+**Full suites after the fixes** (Go 1.26.10, `-race`, PostgreSQL 16, fresh databases):
+
+| Owner mode | Database | Result | Log |
+|---|---|---|---|
+| Non-superuser owner (deploy/02 applied) | `serk_full36n2` | **345 PASS, 0 FAIL, 0 SKIP** | `docs/testing/evidence/full-suite-review11-fixes-nonsuperuser-fresh-db.txt` |
+| Superuser owner, `-shuffle=on` | `serk_full36s2` | **345 PASS, 0 FAIL, 0 SKIP** | `docs/testing/evidence/full-suite-review11-fixes-superuser-shuffled-fresh-db.txt` |
+
+An earlier shuffled run (`serk_full36s`) had 1 failure, in `TestLegacy_NotValidConstraintsAreValidatedOrReported`, which depended on test order. It counted every entry in the shared exception ledger, so entries left there by other tests broke it. The count is now restricted to the test's own row. The rerun above, with both suites at the final state, is the evidence. Post-fix probe output: `docs/security/evidence/independent-review-11-after-{nonsuperuser,superuser}.txt`.

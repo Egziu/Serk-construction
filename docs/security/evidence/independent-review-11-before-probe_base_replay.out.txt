@@ -1,0 +1,4 @@
+current base verifies: yes
+older base substituted by the attacker verifies: yes (accepted as the base backup)
+SIGNATURE INVALID for 000000010000000000000009.age: refusing to decrypt
+renamed WAL object: refused (name is bound)

@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-22T19:58:59Z",
- "source_commit": "2e0c9a2",
+ "generated_at": "2026-10-22T20:44:59Z",
+ "source_commit": "de5810d",
  "source_commit_note": "The commit whose tree was evaluated. This file is committed afterwards, so the release tag points at a child of source_commit that differs from it only by the generated documents (GATE_STATUS.json, inventory, register, feature matrix). The checkpoint record names both.",
  "release_decision": "NO-GO",
  "release_decision_reason": "Gate A not passed (BLOCKED items); Gate B/C partly evidenced (Journeys A and B), other items not tested or partial; Gate P requires independent human sign-off",
@@ -286,7 +286,8 @@
     "docs/operations/BACKUP_PITR_RESTORE_PROOF.md",
     "docs/operations/evidence/pitr-drill-2026-10-21.txt",
     "docs/operations/evidence/pitr-offsite-encrypted-drill-2026-10-22.txt",
-    "docs/operations/evidence/pitr-offsite-signed-drill-2026-10-22.txt"
+    "docs/operations/evidence/pitr-offsite-signed-drill-2026-10-22.txt",
+    "docs/operations/evidence/pitr-offsite-signed-drill-v2-2026-10-22.txt"
    ],
    "residual_risk": "not production-scale; offsite store is a directory, not object storage with retention lock; a compromised primary can sign forged objects (object lock is the control); private-key and signing-key custody (vault/HSM) and key ceremony are human-owned; RPO/RTO targets need business sign-off",
    "independent_reviewer": "",

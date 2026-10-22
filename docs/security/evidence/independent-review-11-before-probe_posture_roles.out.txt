@@ -1,0 +1,22 @@
+== serk_r11a
+acl serk_object_owner: postgres=X/postgres
+acl serk_database_posture: postgres=X/postgres serk_monitor=X/postgres serk_health=X/postgres
+-- SET ROLE serk_health; SELECT count(*) FROM serk_database_posture()
+SET
+ERROR:  permission denied for function serk_object_owner
+CONTEXT:  SQL function "serk_database_posture" during startup
+-- SET ROLE serk_monitor; SELECT count(*) FROM serk_database_posture()
+SET
+ERROR:  permission denied for function serk_object_owner
+CONTEXT:  SQL function "serk_database_posture" during startup
+== serk_r11b
+acl serk_object_owner: serk_owner_t=X/serk_owner_t
+acl serk_database_posture: serk_owner_t=X/serk_owner_t serk_monitor=X/serk_owner_t serk_health=X/serk_owner_t
+-- SET ROLE serk_health; SELECT count(*) FROM serk_database_posture()
+SET
+ERROR:  permission denied for function serk_object_owner
+CONTEXT:  SQL function "serk_database_posture" during startup
+-- SET ROLE serk_monitor; SELECT count(*) FROM serk_database_posture()
+SET
+ERROR:  permission denied for function serk_object_owner
+CONTEXT:  SQL function "serk_database_posture" during startup

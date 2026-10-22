@@ -102,6 +102,10 @@ func TestProductionRules(t *testing.T) {
 			delete(m, "SERK_OIDC_AUDIENCE")
 			m["SERK_TOKEN_SECRET"] = goodSecret2
 		},
+		"digest key equal to the previous data key (R11-F7)": func(m map[string]string) {
+			m["SERK_BANK_DATA_KEY_PREVIOUS"] = m["SERK_BANK_DIGEST_KEY"]
+			m["SERK_BANK_DATA_KEY_PREVIOUS_ID"] = "old-1"
+		},
 		"http JWKS":           func(m map[string]string) { m["SERK_OIDC_JWKS_URL"] = "http://id/certs" },
 		"partial OIDC":        func(m map[string]string) { delete(m, "SERK_OIDC_AUDIENCE") },
 		"unknown environment": func(m map[string]string) { m["SERK_ENV"] = "prod" },

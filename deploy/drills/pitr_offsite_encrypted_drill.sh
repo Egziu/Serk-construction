@@ -44,6 +44,11 @@
 #     name, journal description), each with a positive control in the
 #     primary's own data files; the bank number is checked to be absent from
 #     the primary's data files too (it is ciphertext in the database);
+#   * after review 11 (R11-F4..F6): the signature also binds the cluster's
+#     system identifier and the PLAINTEXT digest; an existing object with
+#     different content is never accepted or overwritten; each base backup
+#     has its own name and a signed inventory names it; the recovery host
+#     verifies and decrypts one local copy and checks the plaintext digest;
 #   * the verdict requires a CLEAN ledger_integrity_scan(), not merely the
 #     same findings before and after (the workload no longer includes the
 #     test that deliberately fabricates an unbalanced posted journal).
@@ -107,61 +112,95 @@ openssl genpkey -algorithm ed25519 -out "$PRIMARY_KEYS/sign.key" 2>/dev/null
 openssl pkey -in "$PRIMARY_KEYS/sign.key" -pubout -out "$KEYS/sign.pub" 2>/dev/null
 chown -R postgres:postgres "$PRIMARY_KEYS" "$KEYS"; chmod 0600 "$PRIMARY_KEYS/sign.key"
 log "object signing key: Ed25519, public key $(openssl pkey -pubin -in "$KEYS/sign.pub" -outform DER 2>/dev/null | sha256sum | cut -c1-16)… pinned on the recovery host"
-# sign_object NAME FILE: writes FILE.sig over "serk-offsite-v1\nNAME\nSHA256\n".
+# Signed message (v2, after review 11): the cluster's system identifier,
+# the object name, the SHA-256 of the ciphertext and of the plaintext:
+#   serk-offsite-v2 \n SYSID \n NAME \n SHA256(cipher) \n SHA256(plain) \n
+# The sidecar FILE.meta carries SYSID and SHA256(plain); FILE.sig the
+# signature. Binding the plaintext digest lets the primary tell whether an
+# existing offsite object holds THIS segment (R11-F4); binding the system
+# identifier stops objects of another (or a rebuilt) cluster signed with the
+# same key from standing in (R11-F4/F5); the recovery host checks the
+# decrypted plaintext against the signed digest.
+#
+# sign_object NAME FILE PLAINSHA: writes FILE.meta and FILE.sig.
 cat >"$W/sign_object.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-name=\$1; file=\$2
+name=\$1; file=\$2; plain=\$3
+sysid=\$(cat $W/sysid)
 sum=\$(sha256sum "\$file" | cut -d' ' -f1)
+printf '%s\n%s\n' "\$sysid" "\$plain" >"\$file.meta"
 msg=\$(mktemp); trap 'rm -f "\$msg"' EXIT
-printf 'serk-offsite-v1\n%s\n%s\n' "\$name" "\$sum" >"\$msg"
+printf 'serk-offsite-v2\n%s\n%s\n%s\n%s\n' "\$sysid" "\$name" "\$sum" "\$plain" >"\$msg"
 openssl pkeyutl -sign -inkey $PRIMARY_KEYS/sign.key -rawin -in "\$msg" -out "\$file.sig"
 echo "\$sum"
 EOF
 # verify_object NAME FILE: exit 0 only if FILE.sig is a valid signature of
-# the pinned key over NAME and FILE's digest. Runs on the recovery host.
+# the pinned key over the v2 message for NAME, FILE's digest and the pinned
+# system identifier; prints the signed plaintext digest. Runs wherever an
+# object must be trusted (recovery host; primary for idempotent retries).
 cat >"$W/verify_object.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 name=\$1; file=\$2
-test -f "\$file" && test -f "\$file.sig" || { echo "unsigned or missing object \$name" >&2; exit 1; }
+test -f "\$file" && test -f "\$file.sig" && test -f "\$file.meta" || { echo "unsigned or missing object \$name" >&2; exit 1; }
+want=\$(cat $KEYS/sysid)
+sysid=\$(sed -n 1p "\$file.meta"); plain=\$(sed -n 2p "\$file.meta")
+[[ "\$sysid" == "\$want" && "\$plain" =~ ^[0-9a-f]{64}\$ ]] || { echo "OBJECT OF ANOTHER CLUSTER (\$name): refusing" >&2; exit 1; }
 sum=\$(sha256sum "\$file" | cut -d' ' -f1)
 msg=\$(mktemp); trap 'rm -f "\$msg"' EXIT
-printf 'serk-offsite-v1\n%s\n%s\n' "\$name" "\$sum" >"\$msg"
+printf 'serk-offsite-v2\n%s\n%s\n%s\n%s\n' "\$sysid" "\$name" "\$sum" "\$plain" >"\$msg"
 openssl pkeyutl -verify -pubin -inkey $KEYS/sign.pub -rawin -in "\$msg" -sigfile "\$file.sig" >/dev/null 2>&1 \
   || { echo "SIGNATURE INVALID for \$name: refusing to decrypt" >&2; exit 1; }
+echo "\$plain"
 EOF
 chmod 0755 "$W/sign_object.sh" "$W/verify_object.sh"
 
 # -------------------------------------------------------------- primary ---
 log "initdb primary (data checksums on); archive_command encrypts to the offsite store"
 as_pg "$PGBIN/initdb -D $W/primary -U postgres --auth=trust --data-checksums -E UTF8 --locale=C.UTF-8" >/dev/null
+# The cluster's system identifier: signed into every object; pinned on the
+# recovery host next to the public key (here: the same value in both places).
+SYSID=$("$PGBIN/pg_controldata" "$W/primary" | awk -F: '/Database system identifier/ { gsub(/ /, "", $2); print $2 }')
+[[ $SYSID =~ ^[0-9]+$ ]] || { echo "cannot read the system identifier" >&2; exit 1; }
+echo "$SYSID" >"$W/sysid"; echo "$SYSID" >"$KEYS/sysid"; chown postgres:postgres "$W/sysid" "$KEYS/sysid"
+log "cluster system identifier $SYSID (signed into every offsite object)"
 cat >"$W/archive_push.sh" <<EOF
 #!/usr/bin/env bash
-# archive_command: encrypt the segment to the recipient, sign "name+digest"
-# with the primary's key, copy object and signature to the offsite store
-# under temporary names, verify, then rename into place. Idempotent: if a
-# previous attempt completed the rename but PostgreSQL did not see success,
-# the existing signed object is accepted (a WAL file's content is fixed by
-# its name); a partial upload never blocks a retry.
+# archive_command: encrypt the segment to the recipient, sign it (v2), copy
+# object, metadata and signature to the offsite store under temporary names,
+# verify, then rename into place.
+#   - An existing object whose signature verifies for THIS cluster and whose
+#     signed plaintext digest equals this segment's is accepted (a retry
+#     after a lost acknowledgement).
+#   - An existing, verifiable object with DIFFERENT content is never
+#     overwritten and never accepted: the command fails and PostgreSQL keeps
+#     the segment (R11-F4; PostgreSQL's archiving rule).
+#   - An unverifiable object (partial upload, forgery, another cluster's) is
+#     replaced.
 set -euo pipefail
 src=\$1; name=\$2
 tmp=$SPOOL/\$name.age
-if [[ -f $OFFSITE/\$name.age ]] && $W/verify_object.sh "\$name.age" $OFFSITE/\$name.age 2>/dev/null; then
-  grep -q " \$name.age\$" $OFFSITE/MANIFEST.sha256 2>/dev/null || \
-    printf '%s  %s\n' "\$(sha256sum $OFFSITE/\$name.age | cut -d' ' -f1)" "\$name.age" >>$OFFSITE/MANIFEST.sha256
-  exit 0
+psha=\$(sha256sum "\$src" | cut -d' ' -f1)
+if [[ -f $OFFSITE/\$name.age ]] && have=\$($W/verify_object.sh "\$name.age" $OFFSITE/\$name.age 2>/dev/null); then
+  if [[ "\$have" == "\$psha" ]]; then
+    grep -q " \$name.age\\\$" $OFFSITE/MANIFEST.sha256 2>/dev/null || \
+      printf '%s  %s\n' "\$(sha256sum $OFFSITE/\$name.age | cut -d' ' -f1)" "\$name.age" >>$OFFSITE/MANIFEST.sha256
+    exit 0
+  fi
+  echo "archive: \$name.age already offsite with DIFFERENT content; refusing to overwrite or skip" >&2
+  exit 1
 fi
 age -r $RECIPIENT -o "\$tmp" "\$src"
-sum=\$($W/sign_object.sh "\$name.age" "\$tmp")
-cp "\$tmp" $OFFSITE/\$name.age.part; cp "\$tmp.sig" $OFFSITE/\$name.age.sig.part
-cmp "\$tmp" $OFFSITE/\$name.age.part; cmp "\$tmp.sig" $OFFSITE/\$name.age.sig.part
+sum=\$($W/sign_object.sh "\$name.age" "\$tmp" "\$psha")
+for x in "" .meta .sig; do cp "\$tmp\$x" $OFFSITE/\$name.age\$x.part; cmp "\$tmp\$x" $OFFSITE/\$name.age\$x.part; done
 mv -f $OFFSITE/\$name.age.sig.part $OFFSITE/\$name.age.sig
+mv -f $OFFSITE/\$name.age.meta.part $OFFSITE/\$name.age.meta
 mv -f $OFFSITE/\$name.age.part $OFFSITE/\$name.age
 # Replace any line left by an earlier, unverifiable upload of this name.
 sed -i "/  \$name\\.age\$/d" $OFFSITE/MANIFEST.sha256 2>/dev/null || true
 printf '%s  %s\n' "\$sum" "\$name.age" >>$OFFSITE/MANIFEST.sha256
-rm -f "\$tmp" "\$tmp.sig"
+rm -f "\$tmp" "\$tmp.sig" "\$tmp.meta"
 EOF
 chmod 0755 "$W/archive_push.sh"
 cat >>"$W/primary/postgresql.conf" <<EOF
@@ -184,13 +223,27 @@ log "base backup streamed from pg_basebackup straight into age (no plaintext tar
 t0=$(now)
 # -D - writes one tar to stdout; WAL needed for consistency is fetched into
 # it, and PostgreSQL's backup_manifest is embedded in the same stream.
-as_pg "$PGBIN/pg_basebackup -h $SOCK -p $P1 -U postgres -D - -Ft -X fetch -c fast" | age -r "$RECIPIENT" -o "$SPOOL/base.tar.age"
+# Each base backup has its own name (system identifier and time), so an older
+# signed base cannot stand in for a newer one (R11-F5); a signed inventory
+# names the base a restore must use. The plaintext digest is taken from the
+# same stream (tee), so nothing is written in plaintext.
+BASE="base_${SYSID}_$(date -u +%Y%m%dT%H%M%SZ).tar.age"
+as_pg "$PGBIN/pg_basebackup -h $SOCK -p $P1 -U postgres -D - -Ft -X fetch -c fast" \
+  | tee >(sha256sum | cut -d' ' -f1 >"$SPOOL/base.psha") | age -r "$RECIPIENT" -o "$SPOOL/$BASE"
 [[ ${PIPESTATUS[0]} == 0 ]] || { echo "pg_basebackup failed" >&2; exit 1; }
-sum=$(as_pg "$W/sign_object.sh base.tar.age $SPOOL/base.tar.age")
-mv "$SPOOL/base.tar.age" "$SPOOL/base.tar.age.sig" "$OFFSITE/"
-printf '%s  base.tar.age\n' "$sum" >>"$OFFSITE/MANIFEST.sha256"
+for _ in $(seq 1 100); do [[ -s $SPOOL/base.psha ]] && break; sleep 0.1; done
+chown postgres:postgres "$SPOOL/$BASE" "$SPOOL/base.psha"
+sum=$(as_pg "$W/sign_object.sh $BASE $SPOOL/$BASE $(cat "$SPOOL/base.psha")")
+mv "$SPOOL/$BASE" "$SPOOL/$BASE.sig" "$SPOOL/$BASE.meta" "$OFFSITE/"
+printf '%s  %s\n' "$sum" "$BASE" >>"$OFFSITE/MANIFEST.sha256"
+INV="inventory_${SYSID}_$(date -u +%Y%m%dT%H%M%SZ).txt"
+printf 'serk-offsite-inventory-v1\nsystem_identifier=%s\nbase=%s\n' "$SYSID" "$BASE" >"$SPOOL/$INV"
+chown postgres:postgres "$SPOOL/$INV"
+as_pg "$W/sign_object.sh $INV $SPOOL/$INV $(sha256sum "$SPOOL/$INV" | cut -d' ' -f1)" >/dev/null
+mv "$SPOOL/$INV" "$SPOOL/$INV.sig" "$SPOOL/$INV.meta" "$OFFSITE/"
+rm -f "$SPOOL/base.psha"
 PLAIN_ON_PRIMARY=$(find "$W" -maxdepth 3 \( -name base.tar -o -name backup_manifest \) | wc -l)
-log "base backup took $(secs "$t0" "$(now)") s; offsite object $(du -sh "$OFFSITE/base.tar.age" | cut -f1); plaintext base files left on the primary host: $PLAIN_ON_PRIMARY"
+log "base backup $BASE took $(secs "$t0" "$(now)") s; offsite object $(du -sh "$OFFSITE/$BASE" | cut -f1); signed inventory $INV; plaintext base files left on the primary host: $PLAIN_ON_PRIMARY"
 
 # --------------------------------------------------------------- workload ---
 DSN1="postgres://postgres@/serk?host=$SOCK&port=$P1"
@@ -259,7 +312,7 @@ echo "bank number ${MARK_BANK:0:4}… anywhere on the primary or offsite (cipher
 [[ $bank_primary == 0 ]] || leak=1
 echo "manifest: $(wc -l <"$OFFSITE/MANIFEST.sha256") objects; digests: $(cd "$OFFSITE" && sha256sum -c MANIFEST.sha256 --quiet && echo OK || echo FAILED)"
 badsig=0
-for o in "$OFFSITE"/*.age; do "$W/verify_object.sh" "$(basename "$o")" "$o" 2>/dev/null || badsig=$((badsig + 1)); done
+for o in "$OFFSITE"/*.age; do "$W/verify_object.sh" "$(basename "$o")" "$o" >/dev/null 2>&1 || badsig=$((badsig + 1)); done
 echo "signatures: $(ls "$OFFSITE"/*.age | wc -l) objects, $badsig invalid"
 
 # ------------------------------------------- recovery host: restore ---
@@ -269,8 +322,23 @@ restore() { # dir port identity-file target-settings...
   # Base backup: verify the signature with the pinned key, then decrypt and
   # unpack; run pg_verifybackup against PostgreSQL's own backup_manifest.
   # Plaintext exists only on the recovery host.
-  "$W/verify_object.sh" base.tar.age "$OFFSITE/base.tar.age" || return 8
-  age -d -i "$ident" -o "$dir/base.tar" "$OFFSITE/base.tar.age" 2>/dev/null || return 9
+  # The newest inventory that verifies names the base backup. Every object
+  # is copied once to the recovery host, and the COPY is verified and then
+  # decrypted (no second read of the store, R11-F6); the decrypted bytes
+  # must match the signed plaintext digest.
+  local inv base psha
+  inv=$(ls "$OFFSITE" | grep -E '^inventory_[0-9]+_[0-9TZ]+\.txt$' | sort | tail -1)
+  [[ -n $inv ]] || return 8
+  cp "$OFFSITE/$inv" "$OFFSITE/$inv.sig" "$OFFSITE/$inv.meta" "$dir/" || return 8
+  psha=$("$W/verify_object.sh" "$inv" "$dir/$inv") || return 8
+  [[ $(sha256sum "$dir/$inv" | cut -d' ' -f1) == "$psha" ]] || return 8
+  base=$(sed -n 's/^base=//p' "$dir/$inv")
+  [[ $base =~ ^base_[0-9]+_[0-9TZ]+\.tar\.age$ ]] || return 8
+  cp "$OFFSITE/$base" "$OFFSITE/$base.sig" "$OFFSITE/$base.meta" "$dir/" || return 8
+  psha=$("$W/verify_object.sh" "$base" "$dir/$base") || return 8
+  age -d -i "$ident" -o "$dir/base.tar" "$dir/$base" 2>/dev/null || return 9
+  rm -f "$dir/$base" "$dir/$base.sig" "$dir/$base.meta" "$dir/$inv" "$dir/$inv.sig" "$dir/$inv.meta"
+  [[ $(sha256sum "$dir/base.tar" | cut -d' ' -f1) == "$psha" ]] || return 8
   as_pg "tar -xf $dir/base.tar -C $dir" && rm -f "$dir/base.tar"
   if [[ -f $dir/backup_manifest ]]; then
     VERIFY_OUT=$(as_pg "$PGBIN/pg_verifybackup -n $dir" 2>&1) && VERIFY_RC=0 || VERIFY_RC=$?
@@ -288,8 +356,12 @@ restore() { # dir port identity-file target-settings...
 set -euo pipefail
 name=\$1; dst=\$2
 test -f $OFFSITE/\$name.age || exit 1
-$W/verify_object.sh "\$name.age" $OFFSITE/\$name.age || exit 1
-age -d -i $ident -o "\$dst" $OFFSITE/\$name.age
+t=\$(mktemp -d $dir.fetch.XXXXXX); trap 'rm -rf "\$t"' EXIT
+cp $OFFSITE/\$name.age $OFFSITE/\$name.age.sig $OFFSITE/\$name.age.meta "\$t/" || exit 1
+psha=\$($W/verify_object.sh "\$name.age" "\$t/\$name.age") || exit 1
+age -d -i $ident -o "\$t/plain" "\$t/\$name.age"
+[[ \$(sha256sum "\$t/plain" | cut -d' ' -f1) == "\$psha" ]] || { echo "PLAINTEXT DIGEST MISMATCH for \$name" >&2; exit 1; }
+mv "\$t/plain" "\$dst"
 EOF
   chmod 0755 "$dir/restore_fetch.sh"
   {
@@ -359,8 +431,8 @@ echo "restore with the wrong key                   : $WRONG"
 echo
 log "authenticity: forged base backup (valid age ciphertext + manifest line, no valid signature)"
 FORGE=$W/forge; mkdir -p "$FORGE"; cp -a "$OFFSITE" "$FORGE/orig"
-head -c 65536 /dev/urandom | age -r "$RECIPIENT" -o "$OFFSITE/base.tar.age"
-sed -i "s/^[0-9a-f]*  base.tar.age\$/$(sha256sum "$OFFSITE/base.tar.age" | cut -d' ' -f1)  base.tar.age/" "$OFFSITE/MANIFEST.sha256"
+head -c 65536 /dev/urandom | age -r "$RECIPIENT" -o "$OFFSITE/$BASE"
+sed -i "s/^[0-9a-f]*  $BASE\$/$(sha256sum "$OFFSITE/$BASE" | cut -d' ' -f1)  $BASE/" "$OFFSITE/MANIFEST.sha256"
 MANIFEST_OK=$(cd "$OFFSITE" && sha256sum -c MANIFEST.sha256 --quiet 2>/dev/null && echo yes || echo no)
 set +e
 restore "$HOST2/restore_forged_base" "$P2" "$KEYS/backup.key" "recovery_target_name = 'serk_offsite_target'" "recovery_target_action = 'promote'" 2>"$W/forged_base.err"
@@ -391,10 +463,37 @@ echo "forged WAL $SEGNAME: signature refusals logged : $REFUSED_LOG; target reac
 FW_OK=no; [[ $REFUSED_LOG -gt 0 && $REACHED == 0 && $rc_fw != 0 ]] && FW_OK=yes
 rm -rf "$OFFSITE"; cp -a "$FORGE/orig" "$OFFSITE"
 
+# ------------------------------- archive_push retry and collision paths ---
 echo
-if [[ $FP == IDENTICAL && $SCAN == none && $SCAN_TARGET == none && $BAD_CHAINS == 0 && $CHECKSUM_FAIL == 0 && $leak == 0 && $ctrl == 1 && $rc == 9 && $PLAIN_BANK == 0 \
+log "archive_push: retry, collision and foreign-object paths (R11-F4)"
+head -c 16777216 /dev/urandom >"$W/seg_a"; head -c 16777216 /dev/urandom >"$W/seg_b"; chown postgres:postgres "$W/seg_a" "$W/seg_b"
+NA=0000000100000000000000E0; NB=0000000100000000000000E1
+echo junk >"$OFFSITE/$NA.age.part"; chown postgres:postgres "$OFFSITE/$NA.age.part"
+set +e
+as_pg "$W/archive_push.sh $W/seg_a $NA"; rc_part=$?
+as_pg "$W/archive_push.sh $W/seg_a $NA"; rc_ack=$?
+before=$(sha256sum "$OFFSITE/$NA.age" | cut -d' ' -f1)
+as_pg "$W/archive_push.sh $W/seg_b $NA" 2>"$W/collision.err"; rc_col=$?
+after=$(sha256sum "$OFFSITE/$NA.age" | cut -d' ' -f1)
+# An object planted for NB, validly signed but for ANOTHER cluster (same key).
+cp "$W/sysid" "$W/sysid.real"; echo 7000000000000000001 >"$W/sysid"
+age -r "$RECIPIENT" -o "$OFFSITE/$NB.age" "$W/seg_a"; chown postgres:postgres "$OFFSITE/$NB.age"
+as_pg "$W/sign_object.sh $NB.age $OFFSITE/$NB.age $(sha256sum "$W/seg_a" | cut -d' ' -f1)" >/dev/null
+cp "$W/sysid.real" "$W/sysid"
+as_pg "$W/archive_push.sh $W/seg_b $NB"; rc_foreign=$?
+nb_plain=$("$W/verify_object.sh" "$NB.age" "$OFFSITE/$NB.age" 2>/dev/null)
+set -e
+echo "stale partial upload present                 : rc=$rc_part"
+echo "repeated push after a lost acknowledgement   : rc=$rc_ack, manifest lines $(grep -c " $NA.age\$" "$OFFSITE/MANIFEST.sha256")"
+echo "different segment under an existing name     : rc=$rc_col ($(head -1 "$W/collision.err")); offsite object unchanged: $([[ $before == "$after" ]] && echo yes || echo NO)"
+echo "planted object signed for another cluster    : rc=$rc_foreign; replaced by this segment: $([[ $nb_plain == "$(sha256sum "$W/seg_b" | cut -d' ' -f1)" ]] && echo yes || echo NO)"
+PUSH_OK=no
+[[ $rc_part == 0 && $rc_ack == 0 && $rc_col != 0 && $before == "$after" && $rc_foreign == 0 && $nb_plain == "$(sha256sum "$W/seg_b" | cut -d' ' -f1)" ]] && PUSH_OK=yes
+
+echo
+if [[ $PUSH_OK == yes && $FP == IDENTICAL && $SCAN == none && $SCAN_TARGET == none && $BAD_CHAINS == 0 && $CHECKSUM_FAIL == 0 && $leak == 0 && $ctrl == 1 && $rc == 9 && $PLAIN_BANK == 0 \
       && $badsig == 0 && $rc_fb == 8 && $FW_OK == yes && $PLAIN_ON_PRIMARY == 0 ]]; then
-  echo "DRILL VERDICT: PASS (restored from the signed, encrypted offsite copy only; clean integrity scan; no plaintext left the primary; wrong key, forged base and forged WAL refused)"
+  echo "DRILL VERDICT: PASS (restored from the signed, encrypted offsite copy only; clean integrity scan; no plaintext left the primary; wrong key, forged base and forged WAL refused; archive collisions refused)"
 else
-  echo "DRILL VERDICT: FAIL (fp=$FP scan=$SCAN scan_target=$SCAN_TARGET bad_chains=$BAD_CHAINS checksums=$CHECKSUM_FAIL leak=$leak ctrl=$ctrl wrongkey_rc=$rc plaintext_bank=$PLAIN_BANK badsig=$badsig forged_base_rc=$rc_fb forged_wal=$FW_OK plain_base=$PLAIN_ON_PRIMARY)"; exit 1
+  echo "DRILL VERDICT: FAIL (fp=$FP scan=$SCAN scan_target=$SCAN_TARGET bad_chains=$BAD_CHAINS checksums=$CHECKSUM_FAIL leak=$leak ctrl=$ctrl wrongkey_rc=$rc plaintext_bank=$PLAIN_BANK badsig=$badsig forged_base_rc=$rc_fb forged_wal=$FW_OK plain_base=$PLAIN_ON_PRIMARY push=$PUSH_OK)"; exit 1
 fi

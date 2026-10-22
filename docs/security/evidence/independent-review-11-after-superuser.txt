@@ -1,0 +1,34 @@
+### Review 11 probes AFTER the fixes (migration 0036), extracted from: go test -race -count=1 -p 1 -shuffle=on -v ./... ; fresh database serk_full36s2, superuser owner postgres, migrations 0001-0036; 2026-10-22T20:34:58Z; go version go1.26.10 linux/amd64
+    review11_regression_test.go:14: held: config: invalid (production):
+--- PASS: TestR11_DigestKeyEqualsPreviousDataKey (0.00s)
+    review11_regression_test.go:90: held: journal: honest API, token scope 0919673a…: refused (store: not found)
+    review11_regression_test.go:104: held: journal: compromised API refused: store: database invariant violated: privilege: approval attestation: journal 4691b706-ea33-49d5-96e5-8ea78f7192f8 is outside the attested scope of u-approver (DRAFT by )
+    review11_regression_test.go:127: held: payment: honest API, project-scoped token: refused (store: not found)
+    review11_regression_test.go:140: held: payment: compromised API refused: store: database invariant violated: privilege: approval attestation: payment_instruction 6d346e52-43f7-420a-b981-0a88ca8686cd is outside the attested scope of u-finance-manager (SUBMITTED by )
+    review11_regression_test.go:152: held: wbs: honest API, token scope 0919673a…: refused (auth: forbidden: project e8bd8b00-bddc-409f-9972-55f1e1cbf6c5 is outside the principal's scope)
+    review11_regression_test.go:162: held: wbs: compromised API refused: store: database invariant violated: privilege: approval attestation: wbs_version 6d10177d-659f-4446-820a-df070fa35425 is outside the attested scope of u-r11-wbs-approver (DRAFT by )
+--- PASS: TestR11_UnmappedSubjectScope (0.42s)
+    review11_regression_test.go:241: held: control (no TEMP): raw approve refused: store: database invariant violated: journal.approve of journal c4c9ab32-9ca2-438a-b0f7-bfafd6baba64 requires its mandatory approval workflow
+    review11_regression_test.go:268: held: shadow refused: store: database invariant violated: journal.approve of journal c4c9ab32-9ca2-438a-b0f7-bfafd6baba64 requires its mandatory approval workflow (status DRAFT)
+--- PASS: TestR11_TempShadowsUnpinnedWorkflowGate (0.09s)
+    review11_regression_test.go:297: held: tenant hmac:->hkey: change refused: store: database invariant violated: privilege: permission denied for table supplier_bank_accounts (digest still hmac:cdcdcdc…)
+    review11_regression_test.go:303: held: tenant calling serk_maintenance_session(): value=false err=store: database invariant violated: privilege: permission denied for function serk_maintenance_session
+--- PASS: TestR11_TenantRedigest (0.13s)
+    review11_regression_test.go:190: held: signer refused "principal.scope:tenant": attest: invalid attestation: signer refused: permission: permission "principal.scope:tenant" is not granted by the token
+    review11_regression_test.go:190: held: signer refused "Principal.scope:tenant": attest: invalid attestation: signer refused: permission: permission "Principal.scope:tenant" is not granted by the token
+    review11_regression_test.go:190: held: signer refused "principal.scope:tenant ": attest: invalid attestation: signer refused: permission: permission "principal.scope:tenant " is not granted by the token
+    review11_regression_test.go:190: held: signer refused " principal.scope:tenant": attest: invalid attestation: signer refused: permission: permission " principal.scope:tenant" is not granted by the token
+    review11_regression_test.go:190: held: signer refused "principal.scope:TENANT": attest: invalid attestation: signer refused: permission: permission "principal.scope:TENANT" is not granted by the token
+    review11_regression_test.go:190: held: signer refused "principal.project:FE4CDC4F-E2A0-4B00-9290-F98444BF206A": attest: invalid attestation: signer refused: permission: permission "principal.project:FE4CDC4F-E2A0-4B00-9290-F98444BF206A" is not granted by the token
+    review11_regression_test.go:190: held: signer refused "principal.project:fe4cdc4f-e2a0-4b00-9290-f98444bf206a ": attest: invalid attestation: signer refused: permission: permission "principal.project:fe4cdc4f-e2a0-4b00-9290-f98444bf206a " is not granted by the token
+    review11_regression_test.go:190: held: signer refused "principal.project:3f4596ce-1259-4c4d-a9f5-107205ece7c5": attest: invalid attestation: signer refused: permission: permission "principal.project:3f4596ce-1259-4c4d-a9f5-107205ece7c5" is not granted by the token
+    review11_regression_test.go:190: held: signer refused "principal.session:other": attest: invalid attestation: signer refused: permission: permission "principal.session:other" is not granted by the token
+    review11_regression_test.go:190: held: signer refused "principal.iat:0": attest: invalid attestation: signer refused: permission: permission "principal.iat:0" is not granted by the token
+    review11_regression_test.go:204: held: duplicated session marker signed by the signer but refused by the database: store: database invariant violated: privilege: approval attestation: missing session markers
+    review11_regression_test.go:212: held: signer refused claims without session markers: attest: invalid attestation: signer refused: session: the claims do not carry the token's session and issue time
+    review11_regression_test.go:221: held: ScopeMarkers refused project ids [""]: auth: forbidden: malformed project id in the session
+    review11_regression_test.go:221: held: ScopeMarkers refused project ids ["a,b"]: auth: forbidden: malformed project id in the session
+    review11_regression_test.go:221: held: ScopeMarkers refused project ids ["a\x1fb"]: auth: forbidden: malformed project id in the session
+--- PASS: TestR11_MarkerSmuggling (0.08s)
+    review11_regression_test.go:318: held: posture through serk_health_test: 23 issue(s) on the test cluster
+--- PASS: TestR11_PostureThroughHealthLogin (0.05s)
