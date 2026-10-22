@@ -39,7 +39,7 @@ tests = {}  # name -> file
 for f in sorted(glob.glob(os.path.join(ROOT, "**/*_test.go"), recursive=True)):
     for t in re.findall(r"^func (Test\w+)\(t \*testing\.T\)", open(f).read(), re.M):
         tests[t] = os.path.relpath(f, ROOT)
-LOGS = ["docs/testing/evidence/full-suite-journey-c.txt", "docs/testing/evidence/full-suite-credit-notes.txt", "docs/testing/evidence/full-suite-retention-release.txt", "docs/testing/evidence/full-suite-review7-fixes.txt", "docs/testing/evidence/full-suite-stock-transfers.txt", "docs/testing/evidence/full-suite-variations-fresh-db.txt"]
+LOGS = ["docs/testing/evidence/full-suite-journey-c.txt", "docs/testing/evidence/full-suite-credit-notes.txt", "docs/testing/evidence/full-suite-retention-release.txt", "docs/testing/evidence/full-suite-review7-fixes.txt", "docs/testing/evidence/full-suite-stock-transfers.txt", "docs/testing/evidence/full-suite-variations-fresh-db.txt", "docs/testing/evidence/full-suite-planning-fresh-db.txt"]
 results = {}
 for lg in LOGS:  # later logs override earlier ones
     if os.path.exists(os.path.join(ROOT, lg)):
@@ -90,8 +90,10 @@ DOMAINS = [
  dict(name="Inventory and stock valuation (FIFO/WAC)", status="implemented", tables=r"^(stock_|warehouses)", routes=r"^/v1/(stock|warehouses)|put-away|stock-",
       screens=r"#/(stock|list/stock|list/warehouse)", perms=r"^(stock|warehouse)\.", postings="STK_ISSUE: Dr project cost, Cr inventory. STK_ADJUST: inventory vs variance. Transfers: no journal (same account)",
       tests=r"^Test(JourneyC|APIJourneyC|ConsoleBrowserJourneyC|R7_)", gaps="No supplier returns, landed costs, in-transit stock, serial/lot tracking; invoice variance not revalued into stock (JC-INVOICE-REVALUE)"),
- dict(name="Planning, CPM and EVM", status="absent", tables=r"^(schedule|activities|baseline)", routes=r"^/v1/(schedule|plans)", screens=r"^#/(plan|schedule)", perms=r"^plan\.",
-      postings="-", tests=r"^TestEVM|^TestEvm", gaps="pkg/evm computes EVM figures but nothing stores or schedules work"),
+ dict(name="Planning, CPM and EVM", status="partial", tables=r"^schedule_", routes=r"^/v1/(schedules|progress)|/schedules$|/progress$|/evm$",
+      screens=r"#/(list/schedule|evm)", perms=r"^schedule\.", postings="- (AC read from posted journals)",
+      tests=r"^Test(CPM|Calendar|ScheduleBaseline|APISchedule|ConsoleBrowserPlanning)",
+      gaps="No resource levelling, calendars per activity, progress-based forecast dates, or price-index (constant-basis) EVM wiring; AC is all posted project expense"),
  dict(name="Variations and claims", status="partial", tables=r"^(contract_variations|variation_lines|claim)", routes=r"^/v1/(variations|claims)|/variations$",
       screens=r"#/list/contract_variation", perms=r"^contract\.(manage|approve)", postings="- (revenue follows certification)",
       tests=r"^Test(JourneyB_Variation|APIJourneyB|ConsoleBrowserJourneyB)", gaps="Variations built (0026); claims, daywork and extension-of-time records not started"),

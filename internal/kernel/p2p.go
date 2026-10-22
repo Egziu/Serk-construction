@@ -71,6 +71,9 @@ func docProject(ctx context.Context, tx pgx.Tx, docType, id string) (string, err
 		q = `SELECT project_id::text FROM customer_invoices WHERE id = $1::uuid`
 	case "customer_credit_note":
 		q = `SELECT project_id::text FROM customer_credit_notes WHERE id = $1::uuid`
+	case "schedule_version", "schedule_progress":
+		q = map[string]string{"schedule_version": "schedule_versions", "schedule_progress": "schedule_progress"}[docType]
+		q = `SELECT project_id::text FROM ` + q + ` WHERE id = $1::uuid`
 	case "contract_variation":
 		q = `SELECT c.project_id::text FROM contract_variations v JOIN contracts c ON c.id = v.contract_id WHERE v.id = $1::uuid`
 	case "retention_release":

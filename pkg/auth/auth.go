@@ -126,6 +126,8 @@ const (
 	PermStockAdjustApprove   Permission = "stock.adjust.approve"
 	PermStockTransfer        Permission = "stock.transfer"
 	PermStockTransferApprove Permission = "stock.transfer.approve"
+	PermScheduleManage       Permission = "schedule.manage"
+	PermScheduleApprove      Permission = "schedule.approve"
 )
 
 // Role is a named permission bundle. Roles are tenant-scoped data in
@@ -157,7 +159,7 @@ var DefaultRoles = map[string]Role{
 		PermPeriodReopen, PermAuditRead, PermScopeTenantWide, PermWorkflowRead, PermWorkflowPublish, PermApprovalHighValue,
 		PermPaymentApprove, PermP2PPolicyApprove, PermBudgetOverride, PermBankAcctApprove, PermBankDetailsReveal, PermContractApprove, PermContractPolicyApprove, PermP2PRead}},
 	"auditor":            {Name: "auditor", Permissions: []Permission{PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PRead}},
-	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermStockIssueApprove, PermP2PRead}},
+	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermStockIssueApprove, PermScheduleApprove, PermP2PRead}},
 	"project_accountant": {Name: "project_accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermWorkflowRead}},
 	"process_owner":      {Name: "process_owner", Permissions: []Permission{PermWorkflowDefine, PermWorkflowRead}},
 	"workflow_admin":     {Name: "workflow_admin", Permissions: []Permission{PermWorkflowAdmin, PermWorkflowRead, PermScopeTenantWide}},
@@ -180,7 +182,9 @@ var DefaultRoles = map[string]Role{
 	// adjustment journal it generates is approved by finance and posted by a
 	// controller, and its preparer may do neither.
 	"inventory_controller": {Name: "inventory_controller", Permissions: []Permission{PermStockAdjustApprove, PermStockTransferApprove, PermScopeTenantWide, PermP2PRead}},
-	"ar_supervisor":        {Name: "ar_supervisor", Permissions: []Permission{PermARInvoiceApprove, PermARReceiptConfirm, PermScopeTenantWide, PermP2PRead}},
+	// Plans and reports progress; a project manager approves (GATED-02).
+	"planner":       {Name: "planner", Permissions: []Permission{PermScheduleManage, PermP2PRead}},
+	"ar_supervisor": {Name: "ar_supervisor", Permissions: []Permission{PermARInvoiceApprove, PermARReceiptConfirm, PermScopeTenantWide, PermP2PRead}},
 }
 
 // Principal kinds, as asserted by the identity provider (token claim

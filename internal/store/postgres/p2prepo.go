@@ -73,12 +73,14 @@ var p2pTables = map[string]struct{ table, creator, children string }{
 	"retention_release":    {"retention_releases", "created_by", ""},
 	"contract_variation":   {"contract_variations", "created_by", ""},
 	// Journey C (0021).
-	"stock_item":     {"stock_items", "created_by", ""},
-	"warehouse":      {"warehouses", "created_by", ""},
-	"stock_receipt":  {"stock_receipts", "created_by", ""},
-	"stock_issue":    {"stock_issues", "created_by", ""},
-	"stock_count":    {"stock_counts", "created_by", ""},
-	"stock_transfer": {"stock_transfers", "created_by", ""},
+	"stock_item":        {"stock_items", "created_by", ""},
+	"warehouse":         {"warehouses", "created_by", ""},
+	"stock_receipt":     {"stock_receipts", "created_by", ""},
+	"stock_issue":       {"stock_issues", "created_by", ""},
+	"stock_count":       {"stock_counts", "created_by", ""},
+	"stock_transfer":    {"stock_transfers", "created_by", ""},
+	"schedule_version":  {"schedule_versions", "created_by", ""},
+	"schedule_progress": {"schedule_progress", "created_by", ""},
 }
 
 // DocTypes reports whether a document type is known (for callers that must
@@ -304,6 +306,8 @@ var listSQL = map[string]string{
 	"stock_receipt":         `SELECT r.id::text, r.number, r.status, r.created_by, r.created_at, COALESCE(w.project_id::text, ''), r.amount, i.code || ' ' || r.quantity || ' ' || i.unit || ' into ' || w.code FROM stock_receipts r JOIN stock_items i ON i.id = r.stock_item_id JOIN warehouses w ON w.id = r.warehouse_id`,
 	"stock_issue":           `SELECT s.id::text, s.number, s.status, s.created_by, s.created_at, s.project_id::text, COALESCE(s.amount, 0), i.code || ' ' || s.quantity || ' ' || i.unit || ' from ' || w.code FROM stock_issues s JOIN stock_items i ON i.id = s.stock_item_id JOIN warehouses w ON w.id = s.warehouse_id`,
 	"stock_count":           `SELECT c.id::text, c.number, c.status, c.created_by, c.created_at, COALESCE(c.project_id::text, ''), COALESCE(c.amount, 0), i.code || ' counted ' || c.counted_qty || ' (book ' || c.system_qty || ') in ' || w.code FROM stock_counts c JOIN stock_items i ON i.id = c.stock_item_id JOIN warehouses w ON w.id = c.warehouse_id`,
+	"schedule_version":      `SELECT s.id::text, 'v' || s.version, s.status, s.created_by, s.created_at, s.project_id::text, COALESCE((SELECT sum(budget) FROM schedule_activities a WHERE a.version_id = s.id), 0), s.description || COALESCE(' — finish ' || s.finish_date, '') FROM schedule_versions s`,
+	"schedule_progress":     `SELECT p.id::text, p.number, p.status, p.created_by, p.created_at, p.project_id::text, 0::numeric, 'Progress at ' || p.status_date || ' on v' || s.version FROM schedule_progress p JOIN schedule_versions s ON s.id = p.version_id`,
 	"stock_transfer":        `SELECT t.id::text, t.number, t.status, t.created_by, t.created_at, COALESCE(wf.project_id::text, ''), COALESCE(t.amount, 0), i.code || ' ' || t.quantity || ' ' || i.unit || ' ' || wf.code || ' to ' || wt.code FROM stock_transfers t JOIN stock_items i ON i.id = t.stock_item_id JOIN warehouses wf ON wf.id = t.from_warehouse_id JOIN warehouses wt ON wt.id = t.to_warehouse_id`,
 	// Money-in statement lines not yet recorded as a receipt (AR worklist).
 	"money_in": `SELECT l.id::text, s.statement_no || '/' || l.line_no, CASE WHEN EXISTS (SELECT 1 FROM customer_receipts r WHERE r.statement_line_id = l.id AND r.status <> 'CANCELLED') THEN 'RECORDED' ELSE 'UNAPPLIED' END,
@@ -550,4 +554,29 @@ func StockOnHand(ctx context.Context, tx pgx.Tx, entity string) ([]StockLine, er
 		out = append(out, l)
 	}
 	return out, rows.Err()
+}
+
+// EVMReport is earned value at a status date (0027, ADR 0013).
+type EVMReport struct {
+	VersionID    string           `json:"schedule_version_id"`
+	BAC          decimal.Decimal  `json:"bac"`
+	PV           decimal.Decimal  `json:"pv"`
+	EV           decimal.Decimal  `json:"ev"`
+	AC           decimal.Decimal  `json:"ac"`
+	SV           decimal.Decimal  `json:"sv"`
+	CV           decimal.Decimal  `json:"cv"`
+	SPI          *decimal.Decimal `json:"spi"`
+	CPI          *decimal.Decimal `json:"cpi"`
+	ProgressDate *time.Time       `json:"progress_date"`
+}
+
+// ScheduleEVM reads schedule_evm; ErrNotFound when the project has no baseline.
+func ScheduleEVM(ctx context.Context, tx pgx.Tx, projectID string, statusDate time.Time) (EVMReport, error) {
+	var r EVMReport
+	err := tx.QueryRow(ctx, `SELECT version_id::text, bac, pv, ev, ac, sv, cv, spi, cpi, progress_date FROM schedule_evm($1::uuid, $2)`, projectID, statusDate).Scan(
+		&r.VersionID, &r.BAC, &r.PV, &r.EV, &r.AC, &r.SV, &r.CV, &r.SPI, &r.CPI, &r.ProgressDate)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return r, ErrNotFound
+	}
+	return r, err
 }

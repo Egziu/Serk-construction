@@ -211,6 +211,11 @@ const DOCS = {
   stock_transfer: { title: 'Stock transfers', one: 'Stock transfer', base: '/v1/stock-transfers', create: 'stock.transfer', form: 'stocktransfer',
     statuses: ['DRAFT', 'APPROVED', 'REJECTED', 'CANCELLED'],
     actions: { DRAFT: [['approve', 'stock.transfer.approve'], ['reject', 'stock.transfer.approve', 'req'], ['cancel', 'stock.transfer', 'req']] } },
+  schedule_version: { title: 'Schedules', one: 'Schedule', base: '/v1/schedules', create: 'schedule.manage', form: 'schedule',
+    statuses: ['DRAFT', 'SUBMITTED', 'BASELINE', 'REJECTED', 'SUPERSEDED'],
+    actions: { DRAFT: [['submit', 'schedule.manage']], SUBMITTED: [['approve', 'schedule.approve'], ['reject', 'schedule.approve', 'req']] } },
+  schedule_progress: { title: 'Progress reports', one: 'Progress report', base: '/v1/progress', create: 'schedule.manage', form: 'progress',
+    statuses: ['DRAFT', 'APPROVED', 'REJECTED'], actions: { DRAFT: [['approve', 'schedule.approve'], ['reject', 'schedule.approve', 'req']] } },
   money_in: { title: 'Money received', one: 'Money received', statuses: ['UNAPPLIED', 'RECORDED'], actions: {},
     link: (d) => (d.status === 'UNAPPLIED' && S.can.has('ar.receipt.create') ? `#/new/receipt/${d.id}` : null) },
 };
@@ -221,6 +226,7 @@ const ACTION_LABEL = { submit: 'Submit for approval', approve: 'Approve', reject
 const NAV = [
   ['Overview', [['#/home', 'My work', null]]],
   ['Project', [['#/list/boq_version', 'BOQ', 'p2p.read'], ['#/list/purchase_requisition', 'Requisitions', 'p2p.read'], ['#/cost', 'Cost report', 'p2p.read']]],
+  ['Planning', [['#/list/schedule_version', 'Schedules', 'p2p.read'], ['#/list/schedule_progress', 'Progress', 'p2p.read'], ['#/evm', 'Earned value', 'p2p.read']]],
   ['Procurement', [['#/list/rfq', 'RFQs', 'p2p.read'], ['#/list/rfq_quote', 'Quotes', 'p2p.read'], ['#/list/purchase_order', 'Purchase orders', 'p2p.read'], ['#/list/supplier', 'Suppliers', 'p2p.read']]],
   ['Site', [['#/list/grn', 'Goods receipts', 'p2p.read']]],
   ['Stores', [['#/stock', 'Stock on hand', 'p2p.read'], ['#/list/stock_issue', 'Stock issues', 'p2p.read'], ['#/list/stock_count', 'Stock counts', 'p2p.read'],
@@ -275,6 +281,9 @@ const QUEUES = [
   ['ar.retention.approve', 'retention_release', 'DRAFT', 'Retention releases to approve'],
   ['ar.receipt.create', 'money_in', 'UNAPPLIED', 'Money received to apply'],
   ['ar.receipt.confirm', 'customer_receipt', 'DRAFT', 'Receipts to confirm'],
+  ['schedule.manage', 'schedule_version', 'DRAFT', 'Schedules to submit'],
+  ['schedule.approve', 'schedule_version', 'SUBMITTED', 'Schedules to approve'],
+  ['schedule.approve', 'schedule_progress', 'DRAFT', 'Progress reports to approve'],
   ['stock.item.approve', 'stock_item', 'PENDING', 'Stock items to approve'],
   ['stock.receive', 'grn', 'CONFIRMED', 'Goods receipts to put away'],
   ['stock.issue.approve', 'stock_issue', 'DRAFT', 'Stock issues to approve'],
@@ -325,6 +334,7 @@ async function route() {
       case 'recon': return await renderRecon();
       case 'cost': return await renderCost();
       case 'stock': return await renderStock();
+      case 'evm': return await renderEVM();
       default: return await renderHome();
     }
   } catch (e) {
@@ -442,14 +452,14 @@ const refOf = (k, type) => (REF_BY_TYPE[k] && REF_BY_TYPE[k][type]) || REF[k];
 // Reading order: what the document is, its state, money, dates, people.
 const ORDER = ['number', 'invoice_number', 'statement_no', 'code', 'name', 'description', 'justification', 'status', 'technical_status', 'match_status',
   'currency', 'subtotal', 'tax_amount', 'total', 'amount', 'invoice_date', 'due_date', 'received_on', 'value_date', 'needed_by', 'valid_until', 'due_at'];
-const MONEY = /amount|total|price|balance|subtotal|threshold|rate$|gross$|_value$|recovery$|_held$|received$|recovered$|_open$|_released$|_cost$|value_change$|_approved$/;
+const MONEY = /amount|total|price|balance|subtotal|threshold|rate$|gross$|_value$|recovery$|_held$|received$|recovered$|_open$|_released$|_cost$|value_change$|_approved$|^budget$/;
 const STAMP = /_at$/;
 const rank = (k) => { const i = ORDER.indexOf(k); return i < 0 ? ORDER.length + (/_by$|_at$/.test(k) ? 1 : 0) : i; };
 const ordered = (keys) => [...keys].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 function fmtValue(k, v) {
   if (typeof v === 'boolean') return v ? 'Yes' : 'No';
   if (STAMP.test(k)) return when(v);
-  if (MONEY.test(k) && !/_pct$/.test(k)) return money(v);
+  if (MONEY.test(k) && !/_pct$|_float$/.test(k)) return money(v);
   return String(v);
 }
 function kv(obj, type) {
@@ -467,13 +477,16 @@ function kv(obj, type) {
   }
   return dl;
 }
-const LINE_ORDER = ['line_no', 'po_line_no', 'pr_line_no', 'po_line', 'item_no', 'description', 'unit', 'quantity', 'qty_received', 'received_qty',
+const LINE_ORDER = ['line_no', 'po_line_no', 'pr_line_no', 'po_line', 'item_no', 'code', 'activity_code', 'name', 'pred_code', 'succ_code', 'link_type', 'lag',
+  'duration', 'early_start', 'early_finish', 'late_start', 'late_finish', 'total_float', 'free_float', 'critical', 'budget', 'percent_complete',
+  'actual_start', 'actual_finish', 'description', 'unit', 'quantity', 'qty_received', 'received_qty',
   'billed_qty_cumulative', 'est_unit_price', 'unit_price', 'po_price', 'invoice_price', 'rate', 'price_variance_pct', 'within_tolerance', 'est_amount', 'amount', 'note'];
 function rowsTable(caption, rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const lr = (k) => { const i = LINE_ORDER.indexOf(k); return i < 0 ? LINE_ORDER.length : i; };
-  const keys = Object.keys(rows[0]).filter((k) => !HIDE.has(k) && !/_id$/.test(k) && typeof rows[0][k] !== 'object').sort((a, b) => lr(a) - lr(b));
-  return table(caption, keys.map((k) => ({ label: words(k), num: /quantity|qty|price|amount|rate|total|pct|line/.test(k),
+  const offsets = new Set(['es', 'ef', 'ls', 'lf']);
+  const keys = Object.keys(rows[0]).filter((k) => !HIDE.has(k) && !offsets.has(k) && !/_id$/.test(k) && typeof rows[0][k] !== 'object').sort((a, b) => lr(a) - lr(b));
+  return table(caption, keys.map((k) => ({ label: words(k), num: /quantity|qty|price|amount|rate|total|pct|line|budget|duration|float|percent|lag/.test(k),
     cell: (r) => (r[k] == null ? '' : /_pct$/.test(k) ? `${(Number(r[k]) * 100).toFixed(2)}%` : fmtValue(k, r[k])) })), rows);
 }
 
@@ -490,12 +503,13 @@ async function renderDoc(type, id) {
       h('p', {}, chip(md.status || head.match_status), ` price tolerance ${(Number(md.price_tolerance_pct) * 100).toFixed(2)}% · VAT ${(Number(md.vat_rate) * 100).toFixed(2)}% · policy version ${md.policy_version}`),
       rowsTable('Invoice against purchase order and confirmed receipts', md.lines)));
   }
-  parts.push(rowsTable('Lines', det.lines), rowsTable('Items', det.items), rowsTable('Allocations', det.alloc));
+  parts.push(rowsTable('Lines', det.lines), rowsTable('Items', det.items), rowsTable('Allocations', det.alloc),
+    rowsTable('Activities (critical path computed; the database re-verifies it)', det.activities), rowsTable('Dependencies', det.links));
   if (Array.isArray(det.quotes)) parts.push(rowsTable('Quotes received', det.quotes.map((x) => x.q)));
   if (det.payee) parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Payee (approved bank account)'), kv(det.payee)));
   if (type === 'contract' && d.status === 'ACTIVE') parts.push(await positionPanel(d.id));
   parts.push(actionsPanel(type, d, det), nextSteps(type, d), revealPanel(type, d));
-  page(`${meta.one} ${d.number || head.code || ''}`.trim(), null, ...parts);
+  page(`${meta.one} ${d.number || head.code || (head.version ? 'v' + head.version : '')}`.trim(), null, ...parts);
 }
 
 // Full account numbers are masked everywhere; a holder of bank.details.reveal
@@ -1182,6 +1196,91 @@ const FORMS = {
     });
   },
 
+  async schedule() {
+    const proj = select('project_id', projectOpts(), { required: true });
+    const desc = input('description', { type: 'text', maxlength: '500', required: true });
+    const start = input('start_date', { type: 'date', value: today(), required: true });
+    const finish = input('required_finish', { type: 'date' });
+    const holidays = input('holidays', { type: 'text', placeholder: '2026-12-25, 2027-01-07' });
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((name, i) => {
+      const cb = h('input', { type: 'checkbox', name: 'weekday', value: String(i), id: nextId('wd') });
+      cb.checked = i >= 1 && i <= 6;
+      return h('div', { class: 'check' }, cb, h('label', { for: cb.id }, name));
+    });
+    let acts;
+    const actHolder = h('div');
+    const loadActs = async () => {
+      const ccs = proj.value ? (await api('GET', `/v1/projects/${proj.value}/cost-codes`)).cost_codes : [];
+      const ccOpts = [{ value: '', label: '(none)' }, ...opt(ccs, (c) => `${c.code} ${c.name}`)];
+      acts = lineGrid('Activities', [
+        { key: 'code', label: 'Code', make: txt('code', { size: '8' }) },
+        { key: 'name', label: 'Name', make: txt('name') },
+        { key: 'duration', label: 'Duration (working days)', make: num('duration') },
+        { key: 'cost_code_id', label: 'Cost code', make: () => select('cost_code_id', ccOpts) },
+        { key: 'budget', label: 'Budget', make: num('budget') },
+      ], [], true);
+      actHolder.replaceChildren(acts);
+    };
+    proj.addEventListener('change', () => loadActs().catch(showError));
+    await loadActs();
+    const links = lineGrid('Dependencies', [
+      { key: 'pred', label: 'Predecessor', make: txt('pred', { size: '8' }) },
+      { key: 'succ', label: 'Successor', make: txt('succ', { size: '8' }) },
+      { key: 'type', label: 'Type', make: () => select('type', ['FS', 'SS', 'FF', 'SF'].map((x) => ({ value: x, label: x }))) },
+      { key: 'lag', label: 'Lag (days)', make: num('lag') },
+    ], [], true);
+    formPage('New schedule', 'Activities and dependencies on a working-day calendar. The critical path is computed when you save and verified again by the database when you submit; a project manager approves it as the baseline.', [
+      h('div', { class: 'grid' }, field('Project', proj), field('Description', desc), field('Start date', start), field('Required finish (optional)', finish),
+        field('Holidays (dates, comma-separated)', holidays)),
+      h('fieldset', {}, h('legend', {}, 'Working days'), days), actHolder, links], 'Compute and save', async () => {
+      const weekdays = [...document.querySelectorAll('input[name=weekday]')].filter((c) => c.checked).map((c) => Number(c.value));
+      const hol = holidays.value.split(',').map((x) => x.trim()).filter(Boolean);
+      const activities = acts.rows().filter((r) => r.code).map((r) => ({ code: r.code, name: r.name, duration: Number(r.duration || 0),
+        budget: r.budget || '0', cost_code_id: r.cost_code_id || undefined }));
+      const deps = links.rows().filter((r) => r.pred && r.succ).map((r) => ({ pred: r.pred, succ: r.succ, type: r.type, lag: Number(r.lag || 0) }));
+      const res = await api('POST', `/v1/projects/${proj.value}/schedules`, { description: desc.value.trim(), start_date: start.value, working_weekdays: weekdays,
+        holidays: hol, required_finish: finish.value || undefined, activities, links: deps });
+      created('schedule_version', res, 'Schedule');
+    });
+  },
+
+  async progress() {
+    const proj = select('project_id', projectOpts(), { required: true });
+    const at = input('status_date', { type: 'date', value: today(), required: true });
+    let grid;
+    let seq = 0;
+    const holder = h('div');
+    const load = async () => {
+      const mine = ++seq;
+      grid = null;
+      holder.textContent = '';
+      if (!proj.value) return;
+      const base = (await api('GET', `/v1/p2p/schedule_version?status=BASELINE`)).items.find((x) => x.project_id === proj.value);
+      if (mine !== seq) return;
+      if (!base) { holder.append(h('p', { class: 'empty' }, 'The project has no baseline schedule.')); return; }
+      const acts = (await api('GET', `/v1/p2p/schedule_version/${base.id}`)).detail.activities || [];
+      if (mine !== seq) return;
+      grid = lineGrid('Progress by activity (leave percent blank to skip)', [
+        { key: 'activity_code', label: 'Activity', make: (v) => input('activity_code', { type: 'hidden', value: v.code }) },
+        { key: 'name', label: 'Name', make: ro('name') },
+        { key: 'percent_complete', label: 'Percent complete', make: num('percent_complete') },
+        { key: 'actual_start', label: 'Actual start', make: () => input('actual_start', { type: 'date' }) },
+        { key: 'actual_finish', label: 'Actual finish', make: () => input('actual_finish', { type: 'date' }) },
+      ], acts.map((a) => ({ code: a.code, name: `${a.code} ${a.name}` })), false);
+      holder.replaceChildren(grid);
+    };
+    proj.addEventListener('change', () => load().catch(showError));
+    formPage('Report progress', 'Percent complete and actual dates at a status date, against the approved baseline. A project manager approves the report; earned value uses it.', [
+      h('div', { class: 'grid' }, field('Project', proj), field('Status date', at)), holder], 'Record progress', async () => {
+      const lines = (grid ? grid.rows() : []).filter((r) => r.percent_complete !== '').map((r) => ({ activity_code: r.activity_code, percent_complete: r.percent_complete,
+        actual_start: r.actual_start || undefined, actual_finish: r.actual_finish || undefined }));
+      if (!lines.length) throw new Error('Enter progress for at least one activity.');
+      const res = await api('POST', `/v1/projects/${proj.value}/progress`, { status_date: at.value, lines });
+      created('schedule_progress', res, 'Progress report');
+    });
+    await load();
+  },
+
   async stockitem() {
     const ent = select('legal_entity_id', entityOpts(), { required: true });
     const code = input('code', { type: 'text', required: true });
@@ -1471,6 +1570,37 @@ async function renderCost() {
   };
   proj.addEventListener('change', () => load().catch(showError));
   page('Project cost report', 'Approved BOQ budget against commitments (approved POs), receipts, invoices and posted actuals.', h('div', { class: 'toolbar' }, field('Project', proj)), out);
+  await load();
+}
+
+// ---------- earned value ----------
+async function renderEVM() {
+  const proj = select('project_id', projectOpts());
+  const at = input('status_date', { type: 'date', value: today() });
+  const out = h('div');
+  let seq = 0;
+  const load = async () => {
+    const mine = ++seq;
+    out.textContent = '';
+    if (!proj.value || !at.value) return;
+    let r;
+    try { r = await api('GET', `/v1/projects/${proj.value}/evm?status_date=${at.value}`); } catch (e) {
+      if (mine !== seq) return;
+      if (e.status === 404) { out.replaceChildren(h('p', { class: 'empty' }, 'The project has no baseline schedule.')); return; }
+      throw e;
+    }
+    if (mine !== seq) return;
+    out.textContent = '';
+    const ratio = (x) => (x == null ? 'not defined' : Number(x).toFixed(4));
+    out.append(table(`Earned value at ${at.value}${r.progress_date ? ' (progress reported ' + r.progress_date.slice(0, 10) + ')' : ' (no approved progress)'}`, [
+      { label: 'Measure', cell: (x) => x[0] }, { label: 'Value', num: true, cell: (x) => x[1] }], [
+      ['Budget at completion (BAC)', money(r.bac)], ['Planned value (PV)', money(r.pv)], ['Earned value (EV)', money(r.ev)],
+      ['Actual cost (AC, posted)', money(r.ac)], ['Schedule variance (EV - PV)', money(r.sv)], ['Cost variance (EV - AC)', money(r.cv)],
+      ['Schedule performance index (EV / PV)', ratio(r.spi)], ['Cost performance index (EV / AC)', ratio(r.cpi)]]));
+  };
+  for (const el of [proj, at]) el.addEventListener('change', () => load().catch(showError));
+  page('Earned value', 'From the approved baseline (PV spread over each activity\'s working days), the latest approved progress (EV) and the posted ledger cost on the project (AC).',
+    h('div', { class: 'toolbar' }, field('Project', proj), field('Status date', at)), out);
   await load();
 }
 
