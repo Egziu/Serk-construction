@@ -47,13 +47,14 @@ type Config struct {
 
 // serverMetrics are the API's own instruments (GATEA-11).
 type serverMetrics struct {
-	requests   *obs.CounterVec
-	latency    *obs.HistogramVec
-	authFail   *obs.CounterVec
-	revoked    *obs.CounterVec
-	sessionErr *obs.CounterVec
-	refusals   *obs.CounterVec
-	internal   *obs.CounterVec
+	requests      *obs.CounterVec
+	latency       *obs.HistogramVec
+	authFail      *obs.CounterVec
+	revoked       *obs.CounterVec
+	sessionErr    *obs.CounterVec
+	refusals      *obs.CounterVec
+	internal      *obs.CounterVec
+	abuseStoreErr *obs.CounterVec
 }
 
 func newServerMetrics(r *obs.Registry) serverMetrics {
@@ -66,6 +67,8 @@ func newServerMetrics(r *obs.Registry) serverMetrics {
 		refusals: r.Counter("serk_db_authority_refusals_total",
 			"Changes the database refused for lack of verified approval evidence or privilege, by kind.", "kind"),
 		internal: r.Counter("serk_internal_errors_total", "Requests that ended in an unclassified internal error."),
+		abuseStoreErr: r.Counter("serk_abuse_store_errors_total",
+			"Shared abuse-limit calls that failed or timed out; the replica fell back to its local limits.", "scope"),
 	}
 }
 
@@ -73,9 +76,9 @@ func newServerMetrics(r *obs.Registry) serverMetrics {
 type Server struct {
 	cfg       Config
 	mux       *http.ServeMux
-	principal *windowLimiter // per authenticated principal
-	preauth   *windowLimiter // per client IP, before any token work
-	authFail  *windowLimiter // invalid credentials per client IP, with lockout
+	principal limiter // per authenticated principal
+	preauth   limiter // per client IP, before any token work
+	authFail  limiter // invalid credentials per client IP, with lockout
 	inflight  chan struct{}
 	m         serverMetrics
 }
@@ -96,10 +99,21 @@ func New(cfg Config) *Server {
 		cfg.Metrics = obs.NewRegistry()
 	}
 	s := &Server{cfg: cfg, mux: http.NewServeMux(), m: newServerMetrics(cfg.Metrics),
-		principal: newWindowLimiter(cfg.RatePerMinute, time.Minute, 0),
-		preauth:   newWindowLimiter(cfg.Abuse.PreAuthPerMinute, time.Minute, 0),
-		authFail:  newWindowLimiter(cfg.Abuse.AuthFailuresPerMinute, time.Minute, cfg.Abuse.AuthFailureBlock),
-		inflight:  make(chan struct{}, cfg.Abuse.MaxInFlight)}
+		inflight: make(chan struct{}, cfg.Abuse.MaxInFlight)}
+	if cfg.Abuse.Shared != nil && len(cfg.Abuse.KeySecret) < 32 {
+		panic("httpapi: AbuseConfig.Shared needs a KeySecret of at least 32 bytes")
+	}
+	mk := func(scope string, limit int, block time.Duration) limiter {
+		if cfg.Abuse.Shared == nil {
+			return newWindowLimiter(limit, time.Minute, block)
+		}
+		return newSharedLimiter(cfg.Abuse.Shared, cfg.Abuse.KeySecret, scope, limit, time.Minute, block, func(scope string) {
+			s.m.abuseStoreErr.Inc(scope)
+		})
+	}
+	s.principal = mk("principal", cfg.RatePerMinute, 0)
+	s.preauth = mk("preauth", cfg.Abuse.PreAuthPerMinute, 0)
+	s.authFail = mk("auth_failure", cfg.Abuse.AuthFailuresPerMinute, cfg.Abuse.AuthFailureBlock)
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 	s.mux.HandleFunc("GET /readyz", s.readyz)
 	s.mux.Handle("POST /v1/journals", s.authed(s.createJournal))

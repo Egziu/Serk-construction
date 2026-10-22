@@ -61,6 +61,12 @@ type Config struct {
 	// member of serk_monitor only (EXECUTE ops_health_metrics()).
 	MetricsListen string
 	MonitorDSN    string
+
+	// Distributed abuse limits (migration 0029). AbuseDSN is a login that is
+	// a member of serk_abuse only; AbuseKey keys the HMAC under which client
+	// addresses and principals are counted. Both are required in production.
+	AbuseDSN string
+	AbuseKey []byte
 }
 
 // ErrInvalid wraps every validation failure.
@@ -151,6 +157,14 @@ func Load(src Source) (Config, error) {
 		return Config{}, err
 	}
 	c.MonitorDSN = string(mon)
+	abuse, err := src.secret("SERK_ABUSE_DSN")
+	if err != nil {
+		return Config{}, err
+	}
+	c.AbuseDSN = string(abuse)
+	if c.AbuseKey, err = src.secret("SERK_ABUSE_KEY"); err != nil {
+		return Config{}, err
+	}
 	if c.WorkflowTimerInterval, err = src.num("SERK_WORKFLOW_TIMER_INTERVAL_SECONDS", 30); err != nil {
 		return Config{}, err
 	}
@@ -234,6 +248,23 @@ func (c Config) Validate() error {
 	}
 	if c.MonitorDSN != "" && prod {
 		checkDSN(c.MonitorDSN, "SERK_MONITOR_DSN", bad)
+	}
+	switch {
+	case c.AbuseDSN == "" && len(c.AbuseKey) == 0:
+		if prod {
+			bad("production requires SERK_ABUSE_DSN and SERK_ABUSE_KEY: per-replica abuse limits multiply with the replica count")
+		}
+	case c.AbuseDSN == "" || len(c.AbuseKey) == 0:
+		bad("SERK_ABUSE_DSN and SERK_ABUSE_KEY are set together")
+	default:
+		if prod {
+			checkDSN(c.AbuseDSN, "SERK_ABUSE_DSN", bad)
+		}
+		if err := checkSecret(c.AbuseKey, prod); err != "" {
+			bad("SERK_ABUSE_KEY %s", err)
+		} else if string(c.AbuseKey) == string(c.TenantDBSecret) || string(c.AbuseKey) == string(c.ApprovalSecret) {
+			bad("SERK_ABUSE_KEY must differ from SERK_TENANT_DB_SECRET and SERK_APPROVAL_SIGNING_KEY")
+		}
 	}
 	for tenant, dsn := range c.DedicatedDSNs {
 		if prod {

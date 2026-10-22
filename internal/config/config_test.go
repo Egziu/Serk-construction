@@ -23,6 +23,8 @@ const (
 	goodSecret  = "3f9a1c7e5b2d8f4a6c0e9b1d7f3a5c8e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a"
 	goodSecret2 = "a8c2e4f6b1d3f5a7c9e0b2d4f6a8c1e3b5d7f9a0c2e4b6d8f1a3c5e7b9d2f4a6"
 	goodSecret3 = "71c4e9a2f6b08d3e5a7c1f9b2d4e6a8c0f3b5d7e9a1c4f6b8d0e2a5c7f9b1d3e"
+	goodSecret4 = "e8c51ac2eb0d174014c6a05b17e1cff9d7c2f7aa9c3bb74afe9a4854b24a4752"
+	goodSecret5 = "e5e59115f58846dcdc3885e32b052bebf8dc1f0befff56a1bf3f382a296c436e"
 )
 
 func prodEnv() map[string]string {
@@ -34,6 +36,8 @@ func prodEnv() map[string]string {
 		"SERK_OIDC_ISSUER":          "https://id.serk.example/realms/serk",
 		"SERK_OIDC_JWKS_URL":        "https://id.serk.example/realms/serk/protocol/openid-connect/certs",
 		"SERK_OIDC_AUDIENCE":        "serk-construction",
+		"SERK_ABUSE_DSN":            "postgres://serk_ratelimit:" + goodSecret4 + "@db.internal:5432/serk?sslmode=verify-full",
+		"SERK_ABUSE_KEY":            goodSecret5,
 	}
 }
 
@@ -136,7 +140,7 @@ func TestProductionManifestHasNoDemoDefaults(t *testing.T) {
 			t.Errorf("docker-compose.prod.yml contains %q", bad)
 		}
 	}
-	for _, need := range []string{"SERK_ENV: production", "no-new-privileges", "read_only: true", "internal: true", "_FILE"} {
+	for _, need := range []string{"SERK_ENV: production", "no-new-privileges", "read_only: true", "internal: true", "_FILE", "SERK_ABUSE_DSN_FILE", "SERK_ABUSE_KEY_FILE"} {
 		if !strings.Contains(s, need) {
 			t.Errorf("docker-compose.prod.yml lacks %q", need)
 		}
@@ -184,5 +188,36 @@ func TestObservabilityConfig(t *testing.T) {
 		if _, err := Load(src(e, nil)); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s accepted: %v", name, err)
 		}
+	}
+}
+
+// Distributed abuse limits (migration 0029): required in production, set
+// together, with a distinct key and a non-administrative TLS login.
+func TestProductionRequiresSharedAbuseLimits(t *testing.T) {
+	cases := map[string]func(m map[string]string){
+		"both missing": func(m map[string]string) { delete(m, "SERK_ABUSE_DSN"); delete(m, "SERK_ABUSE_KEY") },
+		"key missing":  func(m map[string]string) { delete(m, "SERK_ABUSE_KEY") },
+		"DSN missing":  func(m map[string]string) { delete(m, "SERK_ABUSE_DSN") },
+		"key reused":   func(m map[string]string) { m["SERK_ABUSE_KEY"] = goodSecret },
+		"weak key":     func(m map[string]string) { m["SERK_ABUSE_KEY"] = "short" },
+		"superuser login": func(m map[string]string) {
+			m["SERK_ABUSE_DSN"] = "postgres://postgres:" + goodSecret4 + "@db.internal:5432/serk?sslmode=verify-full"
+		},
+		"no TLS verification": func(m map[string]string) {
+			m["SERK_ABUSE_DSN"] = "postgres://serk_ratelimit:" + goodSecret4 + "@db.internal:5432/serk?sslmode=require"
+		},
+	}
+	for name, mutate := range cases {
+		env := prodEnv()
+		mutate(env)
+		if _, err := Load(src(env, nil)); err == nil {
+			t.Errorf("%s: production configuration accepted", name)
+		}
+	}
+	dev := map[string]string{"SERK_ENV": "development", "SERK_DB_BASE_DSN": "postgres://localhost:5432/serk?sslmode=disable",
+		"SERK_TENANT_DB_SECRET": goodSecret, "SERK_APPROVAL_SIGNING_KEY": goodSecret3, "SERK_TOKEN_SECRET": goodSecret2,
+		"SERK_HEALTH_DSN": "postgres://serk_health@localhost:5432/serk?sslmode=disable"}
+	if _, err := Load(src(dev, nil)); err != nil {
+		t.Errorf("development without shared abuse limits refused: %v", err)
 	}
 }

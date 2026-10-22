@@ -24,7 +24,7 @@ Nothing is assumed PASS. Production deployment, tax and financial treatment, cus
 | GATEA-07 | Session revocation and role removal | **BLOCKED**: server-side revocation PASS across replicas; IdP integration unavailable |
 | GATEA-08 | Staging with TLS and vault | **BLOCKED**: no infrastructure |
 | GATEA-09 | Backup/PITR drill | **PASS**: local disposable cluster; RTO and RPO measured |
-| GATEA-10 | Distributed abuse controls | **BLOCKED**: no edge or multi-replica load environment |
+| GATEA-10 | Distributed abuse controls | **PARTIAL**: shared limits across replicas PASS (0029, `TestSharedAbuse_*`); edge throttling and multi-host load test BLOCKED (no staging) |
 | GATEA-11 | OTel, SLOs, alerts | **BLOCKED**: rule-level alert drill PASS; no Prometheus or OTel collector |
 | GATEA-12 | Supply chain | **BLOCKED**: offline checks PASS; sumdb, govulncheck and CI unavailable |
 | GATEA-13 | Legacy data validation | **NOT TESTED**: no data set |

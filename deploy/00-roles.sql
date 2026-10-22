@@ -40,3 +40,15 @@ BEGIN
     CREATE ROLE serk_metrics LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT IN ROLE serk_monitor;
   END IF;
 END$$;
+-- Abuse-limit login (migration 0029): EXECUTE abuse_hit/abuse_blocked only;
+-- no table privileges, no tenant data. Used by every API replica so limits
+-- and lockouts are shared (SERK_ABUSE_DSN).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_abuse') THEN
+    CREATE ROLE serk_abuse NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'serk_ratelimit') THEN
+    CREATE ROLE serk_ratelimit LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT IN ROLE serk_abuse;
+  END IF;
+END$$;

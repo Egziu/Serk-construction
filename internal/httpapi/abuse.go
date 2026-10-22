@@ -13,8 +13,9 @@ import (
 // parsing or signature verification, so floods of junk tokens cost almost
 // nothing and cannot consume database connections.
 //
-// In multi-replica deployments these in-process limits complement, and do
-// not replace, edge limits (reverse proxy / WAF) documented in deploy/.
+// With AbuseConfig.Shared the limits are counted across replicas
+// (abuse_shared.go); they complement, and do not replace, edge limits
+// (reverse proxy / WAF) documented in deploy/.
 
 // AbuseConfig tunes the controls. Zero values take safe defaults.
 type AbuseConfig struct {
@@ -25,6 +26,11 @@ type AbuseConfig struct {
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For is
 	// honoured. A header from any other peer is ignored (no spoofing).
 	TrustedProxies []netip.Prefix
+	// Shared, when set, counts every limit across all replicas (migration
+	// 0029); KeySecret (at least 32 bytes) keys the HMAC under which client
+	// keys are stored. Nil keeps the per-process limits (development).
+	Shared    AbuseStore
+	KeySecret []byte
 }
 
 func (c *AbuseConfig) defaults() {

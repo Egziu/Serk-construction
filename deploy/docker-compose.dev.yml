@@ -32,6 +32,8 @@ services:
       SERK_TOKEN_SECRET: dev-only-hs256-token-secret-0123456789abcdefABCDEF
       SERK_APPROVAL_SIGNING_KEY: dev-only-approval-signing-key-0123456789abcdefABCDEF
       SERK_SCHEDULER_DSN: postgres://serk_timer:dev-only-timer-password@db:5432/serk_construction?sslmode=disable
+      SERK_ABUSE_DSN: postgres://serk_ratelimit:dev-only-ratelimit-password@db:5432/serk_construction?sslmode=disable
+      SERK_ABUSE_KEY: dev-only-abuse-hmac-key-0123456789abcdefABCDEF
       SERK_LISTEN: ":8080"
     ports: ["127.0.0.1:8080:8080"]
     depends_on: { migrate: { condition: service_completed_successfully } }

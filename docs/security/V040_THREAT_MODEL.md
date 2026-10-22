@@ -90,7 +90,7 @@ New:
 | R-MFA-SOURCE | Step-up evidence (`amr`, `auth_time`) comes from token claims | High until a real IdP is integrated | An OIDC provider with step-up (GATEA-02) |
 | R-BANK-AT-REST | Bank numbers are readable by the runtime credential | Medium | Column encryption or a vault-held bank-detail service |
 | R-DBA | The schema owner or superuser can disable triggers; detected after the fact by the integrity scan | Medium | Separation of DBA duties, managed database audit |
-| GATEA-10 | Rate limits and abuse protection are per process | Medium | A shared store or the edge (staging not available) |
+| GATEA-10 | Application limits and lockouts are shared across replicas since migration 0029 (HMAC-keyed counters in PostgreSQL; local fallback with an alert if the store fails). No edge throttling is configured or load-tested; volumetric DoS is out of the application's reach | Low (application), Medium (edge) | Edge proxy/WAF limits and a multi-host load test in staging |
 | R5-F3 | Duplicate company account number oracle | Low, accepted | A named human risk owner must accept it (see `REMEDIATION_REGISTER.yaml`) |
 | — | Collusion (T-12), careless checkers approving AI drafts (T-10) | Inherent | Detective controls and training; not a code defect |
 | — | No external penetration test, load or chaos test, or legal, tax or data-policy sign-off | — | Gate P; requires independent humans |

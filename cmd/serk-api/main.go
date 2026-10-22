@@ -97,8 +97,24 @@ func main() {
 	} else {
 		log.Warn("metrics disabled (SERK_METRICS_LISTEN not set): no SLO or alert signals will be available")
 	}
+	abuse := httpapi.AbuseConfig{PreAuthPerMinute: cfg.PreAuthPerMinute, AuthFailuresPerMinute: cfg.AuthFailuresPerMin, TrustedProxies: cfg.TrustedProxies}
+	if cfg.AbuseDSN != "" {
+		ab, err := pgxpool.New(ctx, cfg.AbuseDSN)
+		if err != nil {
+			log.Error("abuse-limit database", "err", err)
+			os.Exit(1)
+		}
+		defer ab.Close()
+		if err := ab.Ping(ctx); err != nil {
+			log.Error("abuse-limit database unreachable at startup", "err", err)
+			os.Exit(1)
+		}
+		abuse.Shared, abuse.KeySecret = postgres.AbuseStore{Pool: ab}, cfg.AbuseKey
+	} else {
+		log.Warn("abuse limits are per replica (SERK_ABUSE_DSN not set): refused in production")
+	}
 	h := httpapi.New(httpapi.Config{Verifier: verifier, Kernel: svc, Store: router, Logger: log, RatePerMinute: cfg.RatePerMinute, Metrics: metrics,
-		Abuse: httpapi.AbuseConfig{PreAuthPerMinute: cfg.PreAuthPerMinute, AuthFailuresPerMinute: cfg.AuthFailuresPerMin, TrustedProxies: cfg.TrustedProxies}})
+		Abuse: abuse})
 	if cfg.SchedulerDSN != "" {
 		sched, err := pgxpool.New(ctx, cfg.SchedulerDSN)
 		if err != nil {

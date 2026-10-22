@@ -46,7 +46,7 @@ func TestPrivileges_CatalogInvariants(t *testing.T) {
 			  AND NOT COALESCE(array_to_string(p.proconfig, ',') LIKE 'search_path=pg_catalog, public%', false)`,
 		"table writable by PUBLIC or deletable by an app role": `
 			SELECT c.relname || ':' || r FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
-			  unnest(ARRAY['serk_app','serk_publisher','serk_scheduler','serk_health','serk_monitor']) r
+			  unnest(ARRAY['serk_app','serk_publisher','serk_scheduler','serk_health','serk_monitor','serk_abuse']) r
 			WHERE n.nspname = 'public' AND c.relkind = 'r'
 			  AND (has_table_privilege(r, c.oid, 'DELETE') OR has_table_privilege(r, c.oid, 'TRUNCATE')
 			       OR has_table_privilege(r, c.oid, 'TRIGGER') OR has_table_privilege(r, c.oid, 'REFERENCES'))`,
@@ -61,6 +61,11 @@ func TestPrivileges_CatalogInvariants(t *testing.T) {
 			   OR has_function_privilege(r, 'approval_key_install(uuid,text,bytea)', 'EXECUTE')
 			   OR has_table_privilege(r, 'approval_attestations', 'INSERT')
 			   OR has_table_privilege(r, 'approval_attestations', 'UPDATE')`,
+		"abuse-limit role can read or write any table (it must use abuse_hit/abuse_blocked only)": `
+			SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'public' AND c.relkind = 'r'
+			  AND (has_table_privilege('serk_abuse', c.oid, 'SELECT') OR has_table_privilege('serk_abuse', c.oid, 'INSERT')
+			       OR has_table_privilege('serk_abuse', c.oid, 'UPDATE'))`,
 		"monitoring role can read any table (it must see aggregates only)": `
 			SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 			WHERE n.nspname = 'public' AND c.relkind = 'r' AND has_table_privilege('serk_monitor', c.oid, 'SELECT')`,
@@ -75,7 +80,7 @@ func TestPrivileges_CatalogInvariants(t *testing.T) {
 			   OR has_table_privilege(r, 'journals', 'INSERT')`,
 		"runtime role with cluster-level power": `
 			SELECT rolname FROM pg_roles
-			WHERE (rolname IN ('serk_app','serk_publisher','serk_scheduler','serk_health','serk_relay','serk_monitor') OR rolname LIKE 'serk\_t\_%')
+			WHERE (rolname IN ('serk_app','serk_publisher','serk_scheduler','serk_health','serk_relay','serk_monitor','serk_abuse') OR rolname LIKE 'serk\_t\_%')
 			  AND (rolsuper OR rolcreaterole OR rolcreatedb OR rolbypassrls OR rolreplication)`,
 	} {
 		if bad := catalogRows(t, f, q); len(bad) > 0 {

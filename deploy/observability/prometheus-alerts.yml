@@ -93,6 +93,12 @@ groups:
         labels: {severity: critical, page: "true"}
         annotations:
           summary: "session revocation checks failing: requests are refused (fail closed)"
+      - alert: SerkAbuseLimitsDegraded             # drill: evaluated (non-firing only; the failing-store case is TestSharedAbuse_StoreFailureFallsBackToLocalLimits)
+        expr: increase(serk_abuse_store_errors_total[5m]) > 0
+        for: 2m
+        labels: {severity: warning, team: security}
+        annotations:
+          summary: "shared abuse-limit store failing: each replica enforces only its own limits (N replicas allow N times the limit)"
 
   - name: serk-slo
     rules:

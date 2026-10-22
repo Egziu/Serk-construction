@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-22T08:00:59Z",
- "source_commit": "5b3663c",
+ "generated_at": "2026-10-22T08:06:42Z",
+ "source_commit": "cab78c3",
  "release_decision": "NO-GO",
  "release_decision_reason": "Gate A not passed (BLOCKED items); Gate B/C partly evidenced (Journeys A and B), other items not tested or partial; Gate P requires independent human sign-off",
  "deployment_authorization": "NONE. Production deployment and live financial operations require explicit authorization and independent human sign-off.",
@@ -298,23 +298,28 @@
    "owner": "SERK engineering (this delivery); human owner UNASSIGNED",
    "scope": "edge + API",
    "repo_paths": [
-    "internal/httpapi/abuse.go"
+    "internal/httpapi/abuse.go",
+    "internal/httpapi/abuse_shared.go",
+    "internal/store/postgres/abuse_store.go",
+    "internal/store/postgres/migrations/0029_distributed_abuse_limits.sql"
    ],
-   "state": "BLOCKED",
+   "state": "PARTIAL",
    "threat_or_requirement": "Credential stuffing / DoS across replicas",
    "root_cause": "in-process per-replica limiters",
-   "remediation_commit": "",
-   "migration": "",
-   "negative_test": "",
-   "positive_test": "",
-   "executed_command": "",
-   "environment": "",
-   "actual_result": "not executed",
-   "evidence_path": [],
-   "residual_risk": "rate limits are per replica (in memory); no edge throttle",
+   "remediation_commit": "this checkpoint",
+   "migration": "0029",
+   "negative_test": "TestSharedAbuse_RolePrivileges, TestSharedAbuse_StoresDigestsOnly, TestPrivileges_CatalogInvariants, TestProductionRequiresSharedAbuseLimits",
+   "positive_test": "TestSharedAbuse_LockoutAndBudgetsSpanReplicas (2-3 API replicas in one process over one PostgreSQL; per-process control case), TestSharedAbuse_StoreFailureFallsBackToLocalLimits",
+   "executed_command": "go test ./internal/httpapi -run SharedAbuse -v",
+   "environment": "Go 1.26.10 (built from the official source tag), PostgreSQL 16.15 (local disposable cluster), linux/amd64 sandbox, no network to Go proxy/sumdb/vulndb",
+   "actual_result": "shared lockout, pre-auth and per-principal budgets enforced across replicas; HMAC digests only; store outage falls back to local limits with an alert",
+   "evidence_path": [
+    "docs/testing/evidence/full-suite-abuse-fresh-db.txt"
+   ],
+   "residual_risk": "no edge (proxy/WAF) throttling configured or load-tested; replicas tested as separate servers in one process, not separate hosts; volumetric DoS is out of scope for an application limiter",
    "independent_reviewer": "",
-   "blocker": "No edge proxy / multi-replica load environment",
-   "next_action": "Edge rate limiting (proxy) + shared limiter",
+   "blocker": "No edge proxy / multi-host load environment",
+   "next_action": "Edge rate limiting (proxy) + multi-host load test in staging",
    "signoff_required": true
   },
   {

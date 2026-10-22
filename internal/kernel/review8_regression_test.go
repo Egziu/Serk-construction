@@ -687,7 +687,9 @@ func TestR8_PostureCheck(t *testing.T) {
 	issues3, err := f.app.Posture(f.ctx)
 	must(t, "posture 3", err)
 	var got bool
-	errLock := w.raw(func(ctx context.Context, tx pgx.Tx) error { return tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(727002)`).Scan(&got) })
+	errLock := w.raw(func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(727002)`).Scan(&got)
+	})
 	t.Logf("with %s executable by PUBLIC: posture %q; tenant login takes it: %v %v", fn, issues3, got, errLock)
 	if errLock == nil && got && len(issues3) == len(issues) {
 		r8open(t, "(conditional) a tenant login takes advisory lock 727002 (the relay leader lock) through %s and the posture check reports nothing new", fn)

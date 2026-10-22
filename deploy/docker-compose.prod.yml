@@ -48,12 +48,16 @@ services:
       SERK_TENANT_DB_SECRET_FILE: /run/secrets/tenant_db_secret
       SERK_APPROVAL_SIGNING_KEY_FILE: /run/secrets/approval_signing_key
       SERK_SCHEDULER_DSN_FILE: /run/secrets/scheduler_dsn
+      # Shared abuse limits across replicas (migration 0029): a login in
+      # role serk_abuse only, and a distinct random HMAC key.
+      SERK_ABUSE_DSN_FILE: /run/secrets/abuse_dsn
+      SERK_ABUSE_KEY_FILE: /run/secrets/abuse_key
       SERK_OIDC_ISSUER: ${SERK_OIDC_ISSUER:?}
       SERK_OIDC_JWKS_URL: ${SERK_OIDC_JWKS_URL:?}
       SERK_OIDC_AUDIENCE: ${SERK_OIDC_AUDIENCE:?}
       SERK_TRUSTED_PROXIES: 172.30.0.0/24
       PGSSLROOTCERT: /run/secrets/db_ca
-    secrets: [health_dsn, tenant_db_secret, approval_signing_key, scheduler_dsn, db_ca]
+    secrets: [health_dsn, tenant_db_secret, approval_signing_key, scheduler_dsn, abuse_dsn, abuse_key, db_ca]
     networks: [backend, edge]
     read_only: true
     security_opt: ["no-new-privileges:true"]
@@ -78,6 +82,8 @@ secrets:
   health_dsn: { file: ./secrets/health_dsn }
   scheduler_dsn: { file: ./secrets/scheduler_dsn }
   approval_signing_key: { file: ./secrets/approval_signing_key }
+  abuse_dsn: { file: ./secrets/abuse_dsn }
+  abuse_key: { file: ./secrets/abuse_key }
   db_tls_cert: { file: ./secrets/db_tls_cert }
   db_tls_key: { file: ./secrets/db_tls_key }
   db_ca: { file: ./secrets/db_ca }
