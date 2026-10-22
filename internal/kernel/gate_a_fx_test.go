@@ -150,7 +150,7 @@ func TestSC03_FXMakerChecker(t *testing.T) {
 	if err := f.svc.RegisterFXSource(f.ctx, f.treasury, postgres.FXSource{SourceID: "NBE", SourceType: "CENTRAL_BANK", Description: "NBE", RequiresDocumentHash: true}); err != nil {
 		t.Fatal(err)
 	}
-	both := auth.Principal{UserID: f.treasury.UserID, TenantID: f.tenant, Roles: []string{"treasury_officer", "finance_manager"}}
+	both := auth.Principal{Kind: auth.KindHuman, UserID: f.treasury.UserID, TenantID: f.tenant, Roles: []string{"treasury_officer", "finance_manager"}}
 	if err := f.svc.ApproveFXSource(f.ctx, both, "NBE"); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("source maker approved own source: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestSC07_FXCommandsEmitAtomicOutboxEvents(t *testing.T) {
 	ok := f.snapshot(t, "USD", "ETB", "57.25", day(10, 1), true)
 	rej := f.snapshot(t, "USD", "ETB", "57.30", day(10, 2), false)
 	_ = f.svc.RejectFXSnapshot(f.ctx, f.appr, rej, "wrong publication")
-	both := auth.Principal{UserID: f.treasury.UserID, TenantID: f.tenant, Roles: []string{"treasury_officer", "finance_manager"}}
+	both := auth.Principal{Kind: auth.KindHuman, UserID: f.treasury.UserID, TenantID: f.tenant, Roles: []string{"treasury_officer", "finance_manager"}}
 	failed := f.snapshot(t, "USD", "ETB", "57.35", day(10, 3), false)
 	if _, err := f.svc.ApproveFXSnapshot(f.ctx, both, failed, ""); err == nil {
 		t.Fatal("self approval succeeded")
@@ -313,7 +313,7 @@ func TestSC05_ScopedPrincipalsCannotReachUnassignedJournals(t *testing.T) {
 	unassigned := f.balanced(key("unassigned"))
 	unassigned.ProjectID = ""
 	tenantWide := f.lifecycle(t, unassigned)
-	scopedAcct := auth.Principal{UserID: "u-scoped", TenantID: f.tenant, Roles: []string{"accountant"}, ProjectIDs: []string{f.project}}
+	scopedAcct := auth.Principal{Kind: auth.KindHuman, UserID: "u-scoped", TenantID: f.tenant, Roles: []string{"accountant"}, ProjectIDs: []string{f.project}}
 	if _, err := f.svc.GetJournal(f.ctx, scopedAcct, tenantWide); !errors.Is(err, ErrNotFound) /* out of scope reads as absent (review 5, F5) */ {
 		t.Fatalf("scoped principal read an unassigned journal: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestSC05_ScopedPrincipalsCannotReachUnassignedJournals(t *testing.T) {
 	if _, err := f.svc.CreateJournal(f.ctx, scopedAcct, f.balanced(key("scoped-ok"))); err != nil {
 		t.Fatalf("scoped principal refused on own project: %v", err)
 	}
-	projAcct := auth.Principal{UserID: "u-pa", TenantID: f.tenant, Roles: []string{"project_accountant"}}
+	projAcct := auth.Principal{Kind: auth.KindHuman, UserID: "u-pa", TenantID: f.tenant, Roles: []string{"project_accountant"}}
 	if _, err := f.svc.CreateJournal(f.ctx, projAcct, f.balanced(key("pa-none"))); !errors.Is(err, auth.ErrForbidden) {
 		t.Fatalf("project accountant with no projects created a journal: %v", err)
 	}

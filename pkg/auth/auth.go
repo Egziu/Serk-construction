@@ -92,6 +92,23 @@ const (
 	// PermBankDetailsReveal shows a full bank account number (with fresh MFA,
 	// a stated purpose and an audit record). Everyone else sees it masked.
 	PermBankDetailsReveal Permission = "bank.details.reveal"
+
+	// Contract to cash (Journey B). Maker/checker pairs are held by
+	// different seed roles (TestDefaultRolesSeparateDuties).
+	PermCustomerManage        Permission = "customer.manage"
+	PermCustomerApprove       Permission = "customer.approve"
+	PermContractPolicyManage  Permission = "contract.policy.manage"
+	PermContractPolicyApprove Permission = "contract.policy.approve"
+	PermContractManage        Permission = "contract.manage"
+	PermContractApprove       Permission = "contract.approve"
+	PermMeasureCreate         Permission = "measure.create"
+	PermMeasureVerify         Permission = "measure.verify"
+	PermIPCPrepare            Permission = "ipc.prepare"
+	PermIPCCertify            Permission = "ipc.certify"
+	PermARInvoiceCreate       Permission = "ar.invoice.create"
+	PermARInvoiceApprove      Permission = "ar.invoice.approve"
+	PermARReceiptCreate       Permission = "ar.receipt.create"
+	PermARReceiptConfirm      Permission = "ar.receipt.confirm"
 )
 
 // Role is a named permission bundle. Roles are tenant-scoped data in
@@ -116,12 +133,12 @@ var DefaultRoles = map[string]Role{
 	"bank_statement_officer": {Name: "bank_statement_officer", Permissions: []Permission{PermBankImport, PermScopeTenantWide, PermP2PRead}},
 	"finance_manager": {Name: "finance_manager", Permissions: []Permission{PermJournalApprove, PermJournalRead, PermFXRead, PermFXApprove,
 		PermFXPolicyApprove, PermWBSApprove, PermScopeTenantWide, PermWorkflowRead, PermAPApproveException, PermPaymentApprove,
-		PermSupplierBankApprove, PermBankDetailsReveal, PermP2PRead}},
+		PermSupplierBankApprove, PermBankDetailsReveal, PermCustomerApprove, PermP2PRead}},
 	"controller": {Name: "controller", Permissions: []Permission{PermJournalPost, PermJournalReverse, PermJournalRead, PermPeriodClose,
-		PermAccountManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PPolicyManage, PermP2PRead}},
+		PermAccountManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PPolicyManage, PermContractPolicyManage, PermP2PRead}},
 	"cfo": {Name: "cfo", Permissions: []Permission{PermJournalRead, PermFXRead, PermFXApprove, PermFXApproveExcept, PermFXPolicyApprove,
 		PermPeriodReopen, PermAuditRead, PermScopeTenantWide, PermWorkflowRead, PermWorkflowPublish, PermApprovalHighValue,
-		PermPaymentApprove, PermP2PPolicyApprove, PermBudgetOverride, PermBankAcctApprove, PermBankDetailsReveal, PermP2PRead}},
+		PermPaymentApprove, PermP2PPolicyApprove, PermBudgetOverride, PermBankAcctApprove, PermBankDetailsReveal, PermContractApprove, PermContractPolicyApprove, PermP2PRead}},
 	"auditor":            {Name: "auditor", Permissions: []Permission{PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PRead}},
 	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermP2PRead}},
 	"project_accountant": {Name: "project_accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermWorkflowRead}},
@@ -131,13 +148,18 @@ var DefaultRoles = map[string]Role{
 	"security_admin": {Name: "security_admin", Permissions: []Permission{PermIdentityRevoke, PermAuditRead}},
 	// Journey A operational roles.
 	"estimator":           {Name: "estimator", Permissions: []Permission{PermBOQManage, PermP2PRead}},
-	"commercial_manager":  {Name: "commercial_manager", Permissions: []Permission{PermBOQApprove, PermP2PRead}},
-	"site_engineer":       {Name: "site_engineer", Permissions: []Permission{PermPRCreate, PermGRNConfirm, PermRFQEvaluate, PermP2PRead}},
+	"commercial_manager":  {Name: "commercial_manager", Permissions: []Permission{PermBOQApprove, PermContractManage, PermIPCCertify, PermP2PRead}},
+	"site_engineer":       {Name: "site_engineer", Permissions: []Permission{PermPRCreate, PermGRNConfirm, PermRFQEvaluate, PermMeasureVerify, PermP2PRead}},
 	"storekeeper":         {Name: "storekeeper", Permissions: []Permission{PermGRNCreate, PermP2PRead}},
 	"procurement_officer": {Name: "procurement_officer", Permissions: []Permission{PermSupplierManage, PermRFQManage, PermPOManage, PermP2PRead}},
 	"procurement_manager": {Name: "procurement_manager", Permissions: []Permission{PermSupplierApprove, PermRFQAward, PermPOApprove, PermP2PRead}},
 	"ap_clerk":            {Name: "ap_clerk", Permissions: []Permission{PermAPEnter, PermP2PRead}},
 	"ap_supervisor":       {Name: "ap_supervisor", Permissions: []Permission{PermAPApprove, PermP2PRead}},
+	// Journey B operational roles.
+	"quantity_surveyor": {Name: "quantity_surveyor", Permissions: []Permission{PermMeasureCreate, PermIPCPrepare, PermP2PRead}},
+	"ar_clerk": {Name: "ar_clerk", Permissions: []Permission{PermCustomerManage, PermARInvoiceCreate, PermARReceiptCreate, PermScopeTenantWide,
+		PermP2PRead}},
+	"ar_supervisor": {Name: "ar_supervisor", Permissions: []Permission{PermARInvoiceApprove, PermARReceiptConfirm, PermScopeTenantWide, PermP2PRead}},
 }
 
 // Principal kinds, as asserted by the identity provider (token claim
@@ -148,6 +170,22 @@ const (
 	KindService = "service"
 	KindAI      = "ai"
 )
+
+// DraftActions are the attested actions a principal that is not asserted
+// human (an AI assistant, an integration service, or an unknown kind) may
+// perform: preparing and submitting drafts, recording received quotes,
+// importing bank statements and starting workflows. Every other action
+// approves, certifies, verifies, confirms, posts, releases, closes or
+// configures something and is reserved to people; new actions are therefore
+// human-only by default. The database applies the same rule to every
+// attestation (migration 0019, approval_is_draft_action).
+func IsDraftAction(action string) bool {
+	switch action {
+	case "rfq.quote.record", "bank.import", "workflow.start":
+		return true
+	}
+	return strings.HasSuffix(action, ".create") || strings.HasSuffix(action, ".submit")
+}
 
 // ReservedPermissionPrefix marks permissions that only the platform derives
 // from verified identity attributes (e.g. "principal.human"); a role can never

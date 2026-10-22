@@ -178,7 +178,7 @@ func TestApprovalProvenance_PeriodsAndWBS(t *testing.T) {
 	}
 	denied(t, "reopen a period as an invented CFO", f.attempt(
 		`UPDATE fiscal_periods SET status='OPEN', reopened_by='invented-cfo', reopen_reason='forged reopening' WHERE id='`+per+`'`))
-	pm := auth.Principal{UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
+	pm := auth.Principal{Kind: auth.KindHuman, UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
 	ver, _, err := f.svc.ProposeWBSVersion(f.ctx, pm, f.project, "tender WBS", []postgres.WBSNode{{Code: "01", Name: "Substructure"}},
 		[]postgres.CostCode{{NodeCode: "01", Code: "01-MAT", Name: "m", CostType: "MATERIAL", ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}})
 	if err != nil {

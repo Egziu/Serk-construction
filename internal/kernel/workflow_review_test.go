@@ -151,7 +151,7 @@ func TestReview_R4_ApprovedJournalIsNeverStranded(t *testing.T) {
 	if err != nil || len(w3.Route) != 2 || w3.Route[0].ID != "executive" || w3.Route[1].ID != "post" {
 		t.Fatalf("resume of an approved journal: %+v %v", w3.Route, err)
 	}
-	both := auth.Principal{UserID: f.appr.UserID, TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()}
+	both := auth.Principal{Kind: auth.KindHuman, UserID: f.appr.UserID, TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()}
 	if _, err := f.svc.DecideWorkflow(f.ctx, both, w3.ID, true, ""); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("earlier approver signed off after resume: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestReview_R11_ConsoleLeaksNothing(t *testing.T) {
 	if d.Instance.LastError == "" || strings.Contains(d.Instance.LastError, "SQLSTATE") || uuidPattern.MatchString(d.Instance.LastError) {
 		t.Fatalf("console error %q", d.Instance.LastError)
 	}
-	scoped := auth.Principal{UserID: "u-scoped", TenantID: f.tenant, Roles: []string{"controller"}, ProjectIDs: []string{"00000000-0000-0000-0000-000000000001"}}
+	scoped := auth.Principal{Kind: auth.KindHuman, UserID: "u-scoped", TenantID: f.tenant, Roles: []string{"controller"}, ProjectIDs: []string{"00000000-0000-0000-0000-000000000001"}}
 	if _, err := f.svc.DecideWorkflow(f.ctx, scoped, w.ID, true, ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("out-of-scope decision: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestReview_R11_ConsoleLeaksNothing(t *testing.T) {
 	_ = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `SELECT definition_id::text FROM workflow_instances WHERE id=$1::uuid`, w.ID).Scan(&def)
 	})
-	reader := auth.Principal{UserID: "u-reader", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{"00000000-0000-0000-0000-000000000001"}}
+	reader := auth.Principal{Kind: auth.KindHuman, UserID: "u-reader", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{"00000000-0000-0000-0000-000000000001"}}
 	if _, err := f.svc.SimulateWorkflow(f.ctx, reader, def, per); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("out-of-scope simulation: %v", err)
 	}

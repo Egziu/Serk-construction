@@ -153,7 +153,7 @@ func TestReversedLinkCannotBeForged(t *testing.T) {
 	}
 	// The untampered reversal posts and links correctly.
 	_ = f.svc.ApproveJournal(f.ctx, f.appr, res.JournalID)
-	if err := f.svc.PostJournal(f.ctx, auth.Principal{UserID: "u-poster-2", TenantID: f.tenant, Roles: []string{"controller"}}, res.JournalID); err != nil {
+	if err := f.svc.PostJournal(f.ctx, auth.Principal{Kind: auth.KindHuman, UserID: "u-poster-2", TenantID: f.tenant, Roles: []string{"controller"}}, res.JournalID); err != nil {
 		t.Fatalf("valid reversal refused: %v", err)
 	}
 }
@@ -205,7 +205,7 @@ func TestConcurrentIdenticalCreatesAreIdempotent(t *testing.T) {
 		t.Fatalf("expected one journal, got %d", len(seen))
 	}
 	// Another user replaying the same key is not handed this journal.
-	other := auth.Principal{UserID: "u-other", TenantID: f.tenant, Roles: []string{"accountant"}}
+	other := auth.Principal{Kind: auth.KindHuman, UserID: "u-other", TenantID: f.tenant, Roles: []string{"accountant"}}
 	if _, err := f.svc.CreateJournal(f.ctx, other, j); !errors.Is(err, postgres.ErrIdempotencyConflict) {
 		t.Fatalf("cross-user replay accepted: %v", err)
 	}

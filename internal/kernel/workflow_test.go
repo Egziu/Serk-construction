@@ -52,10 +52,10 @@ type wfActors struct {
 
 func (f *fixture) wfActors() wfActors {
 	return wfActors{
-		owner: auth.Principal{UserID: "u-process-owner", TenantID: f.tenant, Roles: []string{"process_owner"}},
-		cfo2:  auth.Principal{UserID: "u-cfo-2", TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()},
-		admin: auth.Principal{UserID: "u-wf-admin", TenantID: f.tenant, Roles: []string{"workflow_admin"}},
-		ctrl2: auth.Principal{UserID: "u-controller-2", TenantID: f.tenant, Roles: []string{"controller"}},
+		owner: auth.Principal{Kind: auth.KindHuman, UserID: "u-process-owner", TenantID: f.tenant, Roles: []string{"process_owner"}},
+		cfo2:  auth.Principal{Kind: auth.KindHuman, UserID: "u-cfo-2", TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()},
+		admin: auth.Principal{Kind: auth.KindHuman, UserID: "u-wf-admin", TenantID: f.tenant, Roles: []string{"workflow_admin"}},
+		ctrl2: auth.Principal{Kind: auth.KindHuman, UserID: "u-controller-2", TenantID: f.tenant, Roles: []string{"controller"}},
 	}
 }
 
@@ -202,7 +202,7 @@ func TestWorkflow_HighValueNeedsQuorumOfDistinctExecutivesWithMFA(t *testing.T) 
 		t.Fatal(err)
 	}
 	// The review approver may not also sign off as executive.
-	both := auth.Principal{UserID: f.appr.UserID, TenantID: f.tenant, Roles: []string{"finance_manager", "cfo"}, MFA: true, AuthTime: time.Now()}
+	both := auth.Principal{Kind: auth.KindHuman, UserID: f.appr.UserID, TenantID: f.tenant, Roles: []string{"finance_manager", "cfo"}, MFA: true, AuthTime: time.Now()}
 	if _, err := f.svc.DecideWorkflow(f.ctx, both, w.ID, true, ""); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("review approver signed off as executive: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestWorkflow_HighValueNeedsQuorumOfDistinctExecutivesWithMFA(t *testing.T) 
 	}
 	// Neither executive may post (step:executive exclusion) — and the
 	// database computes the same exclusion independently.
-	cfoPoster := auth.Principal{UserID: a.cfo2.UserID, TenantID: f.tenant, Roles: []string{"controller"}}
+	cfoPoster := auth.Principal{Kind: auth.KindHuman, UserID: a.cfo2.UserID, TenantID: f.tenant, Roles: []string{"controller"}}
 	if _, err := f.svc.DecideWorkflow(f.ctx, cfoPoster, w.ID, true, ""); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("executive posted: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestWorkflow_DatabaseRefusesForgedTrail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepApprover := auth.Principal{UserID: f.prep.UserID, TenantID: f.tenant, Roles: []string{"accountant", "finance_manager"}}
+	prepApprover := auth.Principal{Kind: auth.KindHuman, UserID: f.prep.UserID, TenantID: f.tenant, Roles: []string{"accountant", "finance_manager"}}
 	attacks := map[string]struct {
 		sql  string
 		args []any
@@ -548,7 +548,7 @@ func TestWorkflow_DefinitionGovernance(t *testing.T) {
 	if err := f.svc.DecideWorkflowDefinition(f.ctx, noMFA, v1.ID, true, ""); !errors.Is(err, auth.ErrStepUpRequired) {
 		t.Fatalf("publish without MFA: %v", err)
 	}
-	selfPublisher := auth.Principal{UserID: a.owner.UserID, TenantID: f.tenant, Roles: []string{"process_owner", "cfo"}, MFA: true, AuthTime: time.Now()}
+	selfPublisher := auth.Principal{Kind: auth.KindHuman, UserID: a.owner.UserID, TenantID: f.tenant, Roles: []string{"process_owner", "cfo"}, MFA: true, AuthTime: time.Now()}
 	if err := f.svc.DecideWorkflowDefinition(f.ctx, selfPublisher, v1.ID, true, ""); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("author published own definition: %v", err)
 	}

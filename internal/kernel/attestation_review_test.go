@@ -64,7 +64,7 @@ func TestIndependentReview_Q1_AuthorityColumnsWithoutStatusChange(t *testing.T) 
 		           VALUES ($1::uuid,$2::uuid,$3::uuid,'REOPEN','u-cfo','forged evidence',0,0,0,'x')`, f.tenant, f.entity, per))
 
 	// WBS: approver identity of an APPROVED version.
-	pm := auth.Principal{UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
+	pm := auth.Principal{Kind: auth.KindHuman, UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
 	v1, _, err := f.svc.ProposeWBSVersion(f.ctx, pm, f.project, "tender WBS", []postgres.WBSNode{{Code: "01", Name: "Substructure"}},
 		[]postgres.CostCode{{NodeCode: "01", Code: "01-MAT", Name: "m", CostType: "MATERIAL", ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}})
 	if err != nil {
@@ -110,7 +110,7 @@ func TestIndependentReview_Q2_InTransactionBinding(t *testing.T) {
 
 	// WBS: a decision on v2 (here: a REJECT) is accepted as the successor
 	// approval that supersedes v1.
-	pm := auth.Principal{UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
+	pm := auth.Principal{Kind: auth.KindHuman, UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
 	mk := func(desc string) string {
 		v, _, err := f.svc.ProposeWBSVersion(f.ctx, pm, f.project, desc, []postgres.WBSNode{{Code: "01", Name: "Substructure"}},
 			[]postgres.CostCode{{NodeCode: "01", Code: "01-MAT", Name: "m", CostType: "MATERIAL", ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}})
@@ -329,7 +329,7 @@ func TestIndependentReview_HardeningControls(t *testing.T) {
 // v2 really is APPROVED when the transaction commits.
 func TestIndependentReview_SupersedeNeedsApprovedSuccessorAtCommit(t *testing.T) {
 	f := newFixture(t)
-	pm := auth.Principal{UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
+	pm := auth.Principal{Kind: auth.KindHuman, UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
 	mk := func(desc string) string {
 		v, _, err := f.svc.ProposeWBSVersion(f.ctx, pm, f.project, desc, []postgres.WBSNode{{Code: "01", Name: "Substructure"}},
 			[]postgres.CostCode{{NodeCode: "01", Code: "01-MAT", Name: "m", CostType: "MATERIAL", ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}})

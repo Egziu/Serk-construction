@@ -62,13 +62,13 @@ func newP2PAPI(t *testing.T) *p2pAPI {
 		t.Fatal(err)
 	}
 	// Approved WBS (the WBS API is outside Journey A's scope).
-	pm := auth.Principal{UserID: "u-wbs", TenantID: e.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{a.project}}
+	pm := auth.Principal{Kind: auth.KindHuman, UserID: "u-wbs", TenantID: e.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{a.project}}
 	v, _, err := e.svc.ProposeWBSVersion(e.db.Ctx, pm, a.project, "Tender WBS", []postgres.WBSNode{{Code: "01", Name: "Superstructure"}},
 		[]postgres.CostCode{{NodeCode: "01", Code: "01-MAT", Name: "Structural materials", CostType: "MATERIAL", ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	fm := auth.Principal{UserID: "u-wbs-approver", TenantID: e.tenant, Roles: []string{"finance_manager"}}
+	fm := auth.Principal{Kind: auth.KindHuman, UserID: "u-wbs-approver", TenantID: e.tenant, Roles: []string{"finance_manager"}}
 	if err := e.svc.DecideWBSVersion(e.db.Ctx, fm, v.ID, true, "approved"); err != nil {
 		t.Fatal(err)
 	}

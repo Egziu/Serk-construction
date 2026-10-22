@@ -84,9 +84,9 @@ func newWorld(t *testing.T) *world {
 		t.Fatal(err)
 	}
 	w.svc = kernel.New(db.Router, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: testdb.ApprovalMaster})
-	w.prep = auth.Principal{UserID: "prep", TenantID: w.tenant, Roles: []string{"accountant"}}
-	w.appr = auth.Principal{UserID: "appr", TenantID: w.tenant, Roles: []string{"finance_manager"}}
-	w.post = auth.Principal{UserID: "post", TenantID: w.tenant, Roles: []string{"controller"}}
+	w.prep = auth.Principal{Kind: auth.KindHuman, UserID: "prep", TenantID: w.tenant, Roles: []string{"accountant"}}
+	w.appr = auth.Principal{Kind: auth.KindHuman, UserID: "appr", TenantID: w.tenant, Roles: []string{"finance_manager"}}
+	w.post = auth.Principal{Kind: auth.KindHuman, UserID: "post", TenantID: w.tenant, Roles: []string{"controller"}}
 	// A dedicated relay login, member of serk_publisher only.
 	role := "serk_relay_t" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
 	if _, err := db.Admin.Exec(db.Ctx, `CREATE ROLE `+role+` LOGIN INHERIT IN ROLE serk_publisher`); err != nil {

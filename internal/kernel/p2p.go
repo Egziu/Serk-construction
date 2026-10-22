@@ -61,6 +61,14 @@ func docProject(ctx context.Context, tx pgx.Tx, docType, id string) (string, err
 		q = `SELECT r.project_id::text FROM rfq_quotes x JOIN rfqs q ON q.id = x.rfq_id JOIN purchase_requisitions r ON r.id = q.pr_id WHERE x.id = $1::uuid`
 	case "grn":
 		q = `SELECT o.project_id::text FROM grns g JOIN purchase_orders o ON o.id = g.po_id WHERE g.id = $1::uuid`
+	case "contract":
+		q = `SELECT project_id::text FROM contracts WHERE id = $1::uuid`
+	case "measurement":
+		q = `SELECT c.project_id::text FROM measurements m JOIN contracts c ON c.id = m.contract_id WHERE m.id = $1::uuid`
+	case "ipc":
+		q = `SELECT c.project_id::text FROM ipcs i JOIN contracts c ON c.id = i.contract_id WHERE i.id = $1::uuid`
+	case "customer_invoice":
+		q = `SELECT project_id::text FROM customer_invoices WHERE id = $1::uuid`
 	case "supplier_invoice":
 		q = `SELECT o.project_id::text FROM supplier_invoices i JOIN purchase_orders o ON o.id = i.po_id WHERE i.id = $1::uuid`
 	default:

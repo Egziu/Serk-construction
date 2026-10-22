@@ -19,12 +19,13 @@ import (
 //
 //   - project documents (BOQ, requisition, RFQ, quote, PO, GRN, invoice):
 //     the principal's effective scope must include the document's project;
-//   - supplier master (code, name, tax id): any p2p.read holder, because
-//     every project role must recognise the suppliers it works with;
+//   - supplier and customer master (code, name, tax id): any p2p.read
+//     holder, because every project role must recognise its counterparties;
 //   - supplier bank accounts: tenant-wide scope, or supplier.manage (the
 //     procurement officers who enter them); always masked;
-//   - entity-level finance documents (payment instructions, P2P policies,
-//     company bank accounts) and anything not listed: tenant-wide scope only.
+//   - entity-level finance documents (payment instructions, P2P and contract
+//     policies, company bank accounts, customer receipts, money-in statement
+//     lines) and anything not listed: tenant-wide scope only.
 //
 // "Tenant-wide" is auth.ScopeOf: the scope.tenant_wide entitlement AND no
 // project restriction on the principal (SC-05). Out-of-scope documents are
@@ -39,7 +40,7 @@ func (s *Service) canSee(p auth.Principal, docType, project string) bool {
 		return true
 	}
 	switch docType {
-	case "supplier":
+	case "supplier", "customer":
 		return true
 	case "supplier_bank_account":
 		return s.authz.Has(p, auth.PermSupplierManage)

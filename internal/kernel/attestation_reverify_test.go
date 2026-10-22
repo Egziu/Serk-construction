@@ -31,7 +31,7 @@ func rv(t *testing.T, name string, err error) {
 
 func (f *fixture) wbsDraft(t *testing.T, desc string) string {
 	t.Helper()
-	pm := auth.Principal{UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
+	pm := auth.Principal{Kind: auth.KindHuman, UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
 	v, _, err := f.svc.ProposeWBSVersion(f.ctx, pm, f.project, desc, []postgres.WBSNode{{Code: "01", Name: "Substructure"}},
 		[]postgres.CostCode{{NodeCode: "01", Code: "01-MAT", Name: "m", CostType: "MATERIAL", ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}})
 	if err != nil {
@@ -361,7 +361,7 @@ func TestIndependentReverify_Q1_LockRewritesClosedBy(t *testing.T) {
 	if _, err := f.svc.ClosePeriod(f.ctx, f.post, per, false); err != nil {
 		t.Fatal(err)
 	}
-	other := auth.Principal{UserID: "u-controller-2", TenantID: f.tenant, Roles: []string{"controller"}}
+	other := auth.Principal{Kind: auth.KindHuman, UserID: "u-controller-2", TenantID: f.tenant, Roles: []string{"controller"}}
 	_, err := f.svc.ClosePeriod(f.ctx, other, per, true)
 	t.Logf("lock by second person: err=%v; period: %s; records: %s", err,
 		f.scalar(t, `SELECT status||' closed_by='||closed_by FROM fiscal_periods WHERE id=$1::uuid`, per),

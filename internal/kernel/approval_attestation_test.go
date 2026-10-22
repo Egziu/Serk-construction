@@ -3,6 +3,7 @@ package kernel
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,11 @@ import (
 func (f *fixture) sign(t *testing.T, tenant string, c attest.Claims, now time.Time) attest.Attestation {
 	t.Helper()
 	c.Tenant = tenant
+	// Models the platform signer for a person: the identity provider asserted
+	// a human principal, so the signed perms carry the human marker (0019).
+	if !slices.Contains(c.Perms, "principal.human") {
+		c.Perms = append(append([]string{}, c.Perms...), "principal.human")
+	}
 	a, err := attest.Signer{Master: testdb.ApprovalMaster, Now: func() time.Time { return now }}.Sign(c)
 	if err != nil {
 		t.Fatal(err)

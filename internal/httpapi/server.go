@@ -135,6 +135,7 @@ func New(cfg Config) *Server {
 	s.mux.Handle("POST /v1/identity/sessions/revoke", s.authed(s.revokeSessions))
 	s.mux.Handle("POST /v1/identity/logout", s.authed(s.logout))
 	s.registerP2P()
+	s.registerAR()
 	// Operations console: static assets only; it has no authority of its own.
 	s.mux.Handle("GET /console/", webui.Handler())
 	s.mux.Handle("GET /{$}", http.RedirectHandler("/console/", http.StatusFound))
@@ -369,7 +370,7 @@ func (s *Server) createJournal(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getJournal(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "journal not found")
 		return
 	}
@@ -391,7 +392,7 @@ func (s *Server) postJournal(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) transition(w http.ResponseWriter, r *http.Request, fn func(context.Context, auth.Principal, string) error) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "journal not found")
 		return
 	}
@@ -409,7 +410,7 @@ func (s *Server) transition(w http.ResponseWriter, r *http.Request, fn func(cont
 
 func (s *Server) reverseJournal(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "journal not found")
 		return
 	}

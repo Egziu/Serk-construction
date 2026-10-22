@@ -17,7 +17,7 @@ import (
 
 func TestSessions_RevocationKillsOldTokensIncludingInFlightApprovals(t *testing.T) {
 	f := newFixture(t)
-	admin := auth.Principal{UserID: "u-secadmin", TenantID: f.tenant, Roles: []string{"security_admin"}, IssuedAt: time.Now().Add(-time.Minute)}
+	admin := auth.Principal{Kind: auth.KindHuman, UserID: "u-secadmin", TenantID: f.tenant, Roles: []string{"security_admin"}, IssuedAt: time.Now().Add(-time.Minute)}
 	old := f.appr
 	old.IssuedAt, old.SessionID = time.Now().Add(-10*time.Minute), "sess-old"
 
@@ -114,7 +114,7 @@ func TestSessions_WhoMayRevokeAndLogout(t *testing.T) {
 
 func TestSessions_TenantLoginCannotUndoOrBackdateRevocations(t *testing.T) {
 	f := newFixture(t)
-	admin := auth.Principal{UserID: "u-secadmin", TenantID: f.tenant, Roles: []string{"security_admin"}}
+	admin := auth.Principal{Kind: auth.KindHuman, UserID: "u-secadmin", TenantID: f.tenant, Roles: []string{"security_admin"}}
 	if _, err := f.svc.RevokeSessions(f.ctx, admin, "u-terminated", "employment ended"); err != nil {
 		t.Fatal(err)
 	}

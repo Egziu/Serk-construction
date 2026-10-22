@@ -230,7 +230,11 @@ func (s *Server) addSupplierBank(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
-	id, err := s.cfg.Kernel.AddSupplierBankAccount(r.Context(), principalFrom(r.Context()), r.PathValue("id"), b.BankName, b.AccountName, b.AccountNumber, b.Currency)
+	sup, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	id, err := s.cfg.Kernel.AddSupplierBankAccount(r.Context(), principalFrom(r.Context()), sup, b.BankName, b.AccountName, b.AccountNumber, b.Currency)
 	s.created(w, id, err)
 }
 
@@ -306,7 +310,11 @@ func (s *Server) recordQuote(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
-	id, err := s.cfg.Kernel.RecordQuote(r.Context(), principalFrom(r.Context()), r.PathValue("id"), b.SupplierID, b.ValidUntil.Time, b.SupplierReference, b.Lines)
+	rfq, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	id, err := s.cfg.Kernel.RecordQuote(r.Context(), principalFrom(r.Context()), rfq, b.SupplierID, b.ValidUntil.Time, b.SupplierReference, b.Lines)
 	s.created(w, id, err)
 }
 
@@ -468,7 +476,11 @@ func (s *Server) getP2P(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) costReport(w http.ResponseWriter, r *http.Request) {
-	out, err := s.cfg.Kernel.ProjectCostReport(r.Context(), principalFrom(r.Context()), r.PathValue("id"))
+	project, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	out, err := s.cfg.Kernel.ProjectCostReport(r.Context(), principalFrom(r.Context()), project)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -477,7 +489,11 @@ func (s *Server) costReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) p2pRecon(w http.ResponseWriter, r *http.Request) {
-	out, err := s.cfg.Kernel.GLReconciliation(r.Context(), principalFrom(r.Context()), r.PathValue("id"))
+	entity, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	out, err := s.cfg.Kernel.GLReconciliation(r.Context(), principalFrom(r.Context()), entity)
 	if err != nil {
 		s.fail(w, err)
 		return

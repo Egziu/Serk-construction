@@ -138,7 +138,7 @@ func TestJourneyA_ProcurementRules(t *testing.T) {
 
 func (f *fixture) p2pRawCancelRFQ(t *testing.T, rfq string) error {
 	t.Helper()
-	return f.rawAs(auth.Principal{UserID: "u-buyer", TenantID: f.tenant, Roles: []string{"procurement_officer"}, ProjectIDs: []string{f.project}},
+	return f.rawAs(auth.Principal{Kind: auth.KindHuman, UserID: "u-buyer", TenantID: f.tenant, Roles: []string{"procurement_officer"}, ProjectIDs: []string{f.project}},
 		"rfq.cancel", "rfq", rfq, "", `UPDATE rfqs SET status='CANCELLED' WHERE id=$1::uuid`, rfq)
 }
 
@@ -255,7 +255,7 @@ func TestJourneyA_PaymentControls(t *testing.T) {
 	noMFA.MFA = false
 	_, err = f.svc.ApprovePayment(f.ctx, noMFA, p1)
 	wantErr(t, "payment approval without MFA", err, "multi-factor")
-	ai := auth.Principal{UserID: "ai:payments-copilot", TenantID: f.tenant, Roles: []string{"finance_manager"}, MFA: true, AuthTime: time.Now(), IssuedAt: time.Now().Add(-time.Minute)}
+	ai := auth.Principal{Kind: auth.KindHuman, UserID: "ai:payments-copilot", TenantID: f.tenant, Roles: []string{"finance_manager"}, MFA: true, AuthTime: time.Now(), IssuedAt: time.Now().Add(-time.Minute)}
 	_, err = f.svc.ApprovePayment(f.ctx, ai, p1)
 	wantErr(t, "payment approval by an AI principal", err, "human principals")
 	// A plausible-looking user id is not enough: the identity provider did
@@ -380,7 +380,7 @@ func TestJourneyA_OverBudgetHighValuePOEscalation(t *testing.T) {
 	if err := f.svc.ApprovePO(f.ctx, c.procMgr, po, "Steel price escalation; budget transfer to follow"); !errors.Is(err, ErrBudgetExceeded) {
 		t.Fatalf("over-budget PO by an approver without budget.override: %v", err)
 	}
-	senior := auth.Principal{UserID: "u-commercial-director", TenantID: f.tenant, Roles: []string{"procurement_manager", "cfo"}, ProjectIDs: []string{f.project}, IssuedAt: time.Now().Add(-time.Minute)}
+	senior := auth.Principal{Kind: auth.KindHuman, UserID: "u-commercial-director", TenantID: f.tenant, Roles: []string{"procurement_manager", "cfo"}, ProjectIDs: []string{f.project}, IssuedAt: time.Now().Add(-time.Minute)}
 	wantErr(t, "override without MFA", f.svc.ApprovePO(f.ctx, senior, po, "Steel price escalation; budget transfer to follow"), "multi-factor")
 	// Raw: a plain APPROVED attestation cannot approve an over-budget PO.
 	wantErr(t, "raw approval of an over-budget PO with a plain APPROVED attestation", f.rawAs(c.procMgr, "po.approve", "purchase_order", po, "APPROVED",

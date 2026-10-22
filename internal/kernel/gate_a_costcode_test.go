@@ -21,7 +21,7 @@ func ptrTime(t time.Time) *time.Time { return &t }
 // must be active and in date; accounts can require them.
 func TestSC10_CostCodesAreValidatedAgainstApprovedWBS(t *testing.T) {
 	f := newFixture(t)
-	pm := auth.Principal{UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
+	pm := auth.Principal{Kind: auth.KindHuman, UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{f.project}}
 	nodes := []postgres.WBSNode{{Code: "01", Name: "Substructure"}, {Code: "01.01", Name: "Excavation", ParentCode: "01"}}
 	codes := []postgres.CostCode{
 		{NodeCode: "01.01", Code: "01.01-MAT", Name: "Excavation materials", CostType: "MATERIAL", ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
@@ -46,7 +46,7 @@ func TestSC10_CostCodesAreValidatedAgainstApprovedWBS(t *testing.T) {
 	if err := f.svc.DecideWBSVersion(f.ctx, pm, v1.ID, true, "approve own"); !errors.Is(err, auth.ErrForbidden) {
 		t.Fatalf("PM approved own WBS: %v", err)
 	}
-	both := auth.Principal{UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager", "finance_manager"}}
+	both := auth.Principal{Kind: auth.KindHuman, UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager", "finance_manager"}}
 	if err := f.svc.DecideWBSVersion(f.ctx, both, v1.ID, true, "approve own"); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("maker approved own WBS: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestSC10_CostCodesAreValidatedAgainstApprovedWBS(t *testing.T) {
 		p2, err = postgres.CreateProject(ctx, tx, f.tenant, f.entity, "P-002", "Adigrat Road", "ETB")
 		return err
 	})
-	pm2 := auth.Principal{UserID: "u-pm2", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{p2}}
+	pm2 := auth.Principal{Kind: auth.KindHuman, UserID: "u-pm2", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{p2}}
 	v2p, ids2, err := f.svc.ProposeWBSVersion(f.ctx, pm2, p2, "Adigrat WBS", nodes[:1], []postgres.CostCode{{NodeCode: "01", Code: "01-MAT", Name: "m", CostType: "MATERIAL", ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}})
 	if err != nil {
 		t.Fatal(err)

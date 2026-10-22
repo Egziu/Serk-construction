@@ -91,13 +91,13 @@ func newFixture(t *testing.T) *fixture {
 			t.Fatalf("bootstrap tenant: %v", err)
 		}
 	}
-	f.prep = auth.Principal{UserID: "u-preparer", TenantID: f.tenant, Roles: []string{"accountant"}}
-	f.appr = auth.Principal{UserID: "u-approver", TenantID: f.tenant, Roles: []string{"finance_manager"}}
-	f.post = auth.Principal{UserID: "u-poster", TenantID: f.tenant, Roles: []string{"controller"}}
+	f.prep = auth.Principal{Kind: auth.KindHuman, UserID: "u-preparer", TenantID: f.tenant, Roles: []string{"accountant"}}
+	f.appr = auth.Principal{Kind: auth.KindHuman, UserID: "u-approver", TenantID: f.tenant, Roles: []string{"finance_manager"}}
+	f.post = auth.Principal{Kind: auth.KindHuman, UserID: "u-poster", TenantID: f.tenant, Roles: []string{"controller"}}
 	f.ctrl = f.post
-	f.treasury = auth.Principal{UserID: "u-treasury", TenantID: f.tenant, Roles: []string{"treasury_officer"}}
-	f.cfo = auth.Principal{UserID: "u-cfo", TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()}
-	f.outsider = auth.Principal{UserID: "u-outsider", TenantID: f.tenant2, Roles: []string{"accountant", "finance_manager", "controller", "auditor", "cfo", "treasury_officer"}}
+	f.treasury = auth.Principal{Kind: auth.KindHuman, UserID: "u-treasury", TenantID: f.tenant, Roles: []string{"treasury_officer"}}
+	f.cfo = auth.Principal{Kind: auth.KindHuman, UserID: "u-cfo", TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()}
+	f.outsider = auth.Principal{Kind: auth.KindHuman, UserID: "u-outsider", TenantID: f.tenant2, Roles: []string{"accountant", "finance_manager", "controller", "auditor", "cfo", "treasury_officer"}}
 	return f
 }
 

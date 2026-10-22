@@ -47,6 +47,11 @@ func (s *Service) authorize(ctx context.Context, tx pgx.Tx, p auth.Principal, ac
 	if s.signer == nil {
 		return fmt.Errorf("%w: no signer configured", ErrApprovalSigning)
 	}
+	// Decisions are made by people. AI and service principals may prepare
+	// and submit drafts only (governed AI; enforced again in SQL by 0019).
+	if p.Kind != auth.KindHuman && !auth.IsDraftAction(action) {
+		return fmt.Errorf("%w: %s is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts", auth.ErrForbidden, action)
+	}
 	// A revoked session signs nothing, even if the request passed the API
 	// middleware before the revocation committed.
 	if err := checkSessionTx(ctx, tx, p); err != nil {

@@ -27,6 +27,7 @@ func main() {
 	projects := flag.String("projects", "", "comma-separated project ids (empty = none)")
 	mfa := flag.Bool("mfa", false, "assert a fresh multi-factor login (amr=pwd,otp)")
 	ttl := flag.Duration("ttl", time.Hour, "token lifetime")
+	kind := flag.String("kind", "human", "principal kind asserted by the identity provider: human, service or ai")
 	flag.Parse()
 	if *sub == "" || *tenant == "" {
 		fmt.Fprintln(os.Stderr, "--sub and --tenant are required")
@@ -35,7 +36,7 @@ func main() {
 	v := httpapi.HS256Verifier{Secret: []byte(os.Getenv("SERK_TOKEN_SECRET")), Issuer: envOr("SERK_TOKEN_ISSUER", "serk-id"), Audience: envOr("SERK_TOKEN_AUDIENCE", "serk-construction")}
 	now := time.Now()
 	c := httpapi.Claims{Subject: *sub, TenantID: *tenant, Roles: strings.Split(*roles, ","), IssuedAt: now.Unix(), ExpiresAt: now.Add(*ttl).Unix(),
-		Issuer: v.Issuer, Audience: v.Audience}
+		Issuer: v.Issuer, Audience: v.Audience, Kind: *kind}
 	if *projects != "" {
 		c.Projects = strings.Split(*projects, ",")
 	}

@@ -61,6 +61,14 @@ var p2pTables = map[string]struct{ table, creator, children string }{
 	"grn":                   {"grns", "created_by", ""},
 	"supplier_invoice":      {"supplier_invoices", "entered_by", ""},
 	"payment_instruction":   {"payment_instructions", "created_by", ""},
+	// Journey B (0017).
+	"customer":         {"customers", "created_by", ""},
+	"contract_policy":  {"contract_policies", "created_by", ""},
+	"contract":         {"contracts", "created_by", ""},
+	"measurement":      {"measurements", "created_by", ""},
+	"ipc":              {"ipcs", "created_by", ""},
+	"customer_invoice": {"customer_invoices", "created_by", ""},
+	"customer_receipt": {"customer_receipts", "created_by", ""},
 }
 
 // DocTypes reports whether a document type is known (for callers that must
@@ -142,7 +150,7 @@ type ExpectedLine struct {
 // ExpectedLines returns the accounting the database requires for a document.
 func ExpectedLines(ctx context.Context, tx pgx.Tx, doc, id string) ([]ExpectedLine, error) {
 	rows, err := tx.Query(ctx, `SELECT account_id::text, side, amount, COALESCE(project_id::text, ''), COALESCE(cost_code_id::text, '')
-		FROM p2p_expected_lines($1, $2::uuid) ORDER BY side DESC, account_id, project_id, cost_code_id`, doc, id)
+		FROM subledger_expected_lines($1, $2::uuid) ORDER BY side DESC, account_id, project_id, cost_code_id`, doc, id)
 	if err != nil {
 		return nil, err
 	}
@@ -271,6 +279,16 @@ var listSQL = map[string]string{
 	"grn":                   `SELECT g.id::text, g.number, g.status, g.created_by, g.created_at, o.project_id::text, 0::numeric, o.number || ' / ' || g.delivery_note_ref FROM grns g JOIN purchase_orders o ON o.id = g.po_id`,
 	"supplier_invoice":      `SELECT i.id::text, i.invoice_number, i.status || CASE WHEN i.status = 'SUBMITTED' THEN '/' || i.match_status ELSE '' END, i.entered_by, i.created_at, o.project_id::text, i.total, s.name FROM supplier_invoices i JOIN purchase_orders o ON o.id = i.po_id JOIN suppliers s ON s.id = i.supplier_id`,
 	"payment_instruction":   `SELECT p.id::text, p.number, p.status, p.created_by, p.created_at, '', p.amount, s.name FROM payment_instructions p JOIN suppliers s ON s.id = p.supplier_id`,
+	"customer":              `SELECT id::text, code, status, created_by, created_at, '', 0::numeric, name FROM customers`,
+	"contract_policy":       `SELECT id::text, 'v' || version, status, created_by, created_at, '', 0::numeric, 'Contract policy' FROM contract_policies`,
+	"contract":              `SELECT c.id::text, c.number, c.status, c.created_by, c.created_at, c.project_id::text, c.contract_value, c.title || ' — ' || u.name FROM contracts c JOIN customers u ON u.id = c.customer_id`,
+	"measurement":           `SELECT m.id::text, m.number, m.status, m.created_by, m.created_at, c.project_id::text, 0::numeric, c.number || ' to ' || m.period_end FROM measurements m JOIN contracts c ON c.id = m.contract_id`,
+	"ipc":                   `SELECT i.id::text, i.number, i.status, i.created_by, i.created_at, c.project_id::text, i.amount_due, c.number || ' IPC ' || i.seq || ' to ' || i.period_end FROM ipcs i JOIN contracts c ON c.id = i.contract_id`,
+	"customer_invoice":      `SELECT i.id::text, i.number, i.status, i.created_by, i.created_at, i.project_id::text, i.total, u.name FROM customer_invoices i JOIN customers u ON u.id = i.customer_id`,
+	"customer_receipt":      `SELECT r.id::text, r.number, r.status, r.created_by, r.created_at, '', r.amount, l.reference FROM customer_receipts r JOIN bank_statement_lines l ON l.id = r.statement_line_id`,
+	// Money-in statement lines not yet recorded as a receipt (AR worklist).
+	"money_in": `SELECT l.id::text, s.statement_no || '/' || l.line_no, CASE WHEN EXISTS (SELECT 1 FROM customer_receipts r WHERE r.statement_line_id = l.id AND r.status <> 'CANCELLED') THEN 'RECORDED' ELSE 'UNAPPLIED' END,
+	       s.imported_by, s.imported_at, '', l.amount, l.reference || ' — ' || l.counterparty FROM bank_statement_lines l JOIN bank_statements s ON s.id = l.statement_id WHERE l.amount > 0`,
 	"bank_statement": `SELECT s.id::text, s.statement_no, CASE WHEN EXISTS (SELECT 1 FROM bank_statement_lines l WHERE l.statement_id = s.id AND l.status = 'UNMATCHED') THEN 'OPEN' ELSE 'RECONCILED' END,
 	       s.imported_by, s.imported_at, '', s.closing_balance, b.name FROM bank_statements s JOIN company_bank_accounts b ON b.id = s.company_bank_id`,
 }
@@ -396,4 +414,64 @@ func ProjectCostCodes(ctx context.Context, tx pgx.Tx, projectID string) ([]RefIt
 		 WHERE c.project_id = $1::uuid AND v.status = 'APPROVED' AND c.status = 'ACTIVE'
 		   AND c.valid_from <= current_date AND (c.valid_to IS NULL OR c.valid_to >= current_date)
 		 ORDER BY c.code`, projectID)
+}
+
+// ContractPosition is the commercial position of a contract (0017).
+type ContractPosition struct {
+	ContractValue    decimal.Decimal `json:"contract_value"`
+	MeasuredValue    decimal.Decimal `json:"measured_value"`
+	CertifiedGross   decimal.Decimal `json:"certified_gross"`
+	RetentionHeld    decimal.Decimal `json:"retention_held"`
+	AdvanceAmount    decimal.Decimal `json:"advance_amount"`
+	AdvanceReceived  decimal.Decimal `json:"advance_received"`
+	AdvanceRecovered decimal.Decimal `json:"advance_recovered"`
+	InvoicedTotal    decimal.Decimal `json:"invoiced_total"`
+	Received         decimal.Decimal `json:"received"`
+	ReceivableOpen   decimal.Decimal `json:"receivable_open"`
+}
+
+// GetContractPosition reads ar_contract_position.
+func GetContractPosition(ctx context.Context, tx pgx.Tx, contractID string) (ContractPosition, error) {
+	var c ContractPosition
+	err := tx.QueryRow(ctx, `SELECT contract_value, measured_value, certified_gross, retention_held, advance_amount, advance_received,
+		advance_recovered, invoiced_total, received, receivable_open FROM ar_contract_position($1::uuid)`, contractID).Scan(
+		&c.ContractValue, &c.MeasuredValue, &c.CertifiedGross, &c.RetentionHeld, &c.AdvanceAmount, &c.AdvanceReceived,
+		&c.AdvanceRecovered, &c.InvoicedTotal, &c.Received, &c.ReceivableOpen)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return c, ErrNotFound
+	}
+	return c, err
+}
+
+// ARReconciliation reads ar_gl_reconciliation (GL may be null for
+// information-only rows).
+func ARReconciliation(ctx context.Context, tx pgx.Tx, entity string) ([]ReconCheck, error) {
+	rows, err := tx.Query(ctx, `SELECT check_name, subledger, COALESCE(gl, subledger), COALESCE(difference, 0), unposted_documents FROM ar_gl_reconciliation($1::uuid)`, entity)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ReconCheck{}
+	for rows.Next() {
+		var c ReconCheck
+		if err := rows.Scan(&c.Check, &c.Subledger, &c.GL, &c.Difference, &c.Unposted); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// Profitability is posted revenue and cost of a project.
+type Profitability struct {
+	RevenuePosted decimal.Decimal `json:"revenue_posted"`
+	CostPosted    decimal.Decimal `json:"cost_posted"`
+	Margin        decimal.Decimal `json:"margin"`
+}
+
+// ProjectProfitability reads project_profitability.
+func ProjectProfitability(ctx context.Context, tx pgx.Tx, project string) (Profitability, error) {
+	var p Profitability
+	err := tx.QueryRow(ctx, `SELECT revenue_posted, cost_posted, margin FROM project_profitability($1::uuid)`, project).Scan(&p.RevenuePosted, &p.CostPosted, &p.Margin)
+	return p, err
 }

@@ -103,7 +103,7 @@ func TestSegregationOfDuties(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Preparer with an approver role still cannot approve their own work.
-	selfApprover := auth.Principal{UserID: "u-preparer", TenantID: f.tenant, Roles: []string{"accountant", "finance_manager"}}
+	selfApprover := auth.Principal{Kind: auth.KindHuman, UserID: "u-preparer", TenantID: f.tenant, Roles: []string{"accountant", "finance_manager"}}
 	if err := f.svc.ApproveJournal(f.ctx, selfApprover, res.JournalID); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("self-approval allowed: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestSegregationOfDuties(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Approver who also holds the controller role may not post under strict SoD.
-	approverPoster := auth.Principal{UserID: "u-approver", TenantID: f.tenant, Roles: []string{"finance_manager", "controller"}}
+	approverPoster := auth.Principal{Kind: auth.KindHuman, UserID: "u-approver", TenantID: f.tenant, Roles: []string{"finance_manager", "controller"}}
 	if err := f.svc.PostJournal(f.ctx, approverPoster, res.JournalID); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("approver posting allowed: %v", err)
 	}
@@ -253,14 +253,14 @@ func TestReversalFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The reversal is a normal draft: the controller who created it cannot approve it.
-	ctrlApprover := auth.Principal{UserID: "u-poster", TenantID: f.tenant, Roles: []string{"controller", "finance_manager"}}
+	ctrlApprover := auth.Principal{Kind: auth.KindHuman, UserID: "u-poster", TenantID: f.tenant, Roles: []string{"controller", "finance_manager"}}
 	if err := f.svc.ApproveJournal(f.ctx, ctrlApprover, res.JournalID); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("reversal self-approval allowed: %v", err)
 	}
 	if err := f.svc.ApproveJournal(f.ctx, f.appr, res.JournalID); err != nil {
 		t.Fatal(err)
 	}
-	poster2 := auth.Principal{UserID: "u-poster-2", TenantID: f.tenant, Roles: []string{"controller"}}
+	poster2 := auth.Principal{Kind: auth.KindHuman, UserID: "u-poster-2", TenantID: f.tenant, Roles: []string{"controller"}}
 	if err := f.svc.PostJournal(f.ctx, poster2, res.JournalID); err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestClosedPeriodBlocksPosting(t *testing.T) {
 	if err := f.svc.ReopenPeriod(f.ctx, f.cfo, period, "x"); !errors.Is(err, ErrReasonRequired) {
 		t.Fatalf("reopen without reason: %v", err)
 	}
-	closerAsCFO := auth.Principal{UserID: f.ctrl.UserID, TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()}
+	closerAsCFO := auth.Principal{Kind: auth.KindHuman, UserID: f.ctrl.UserID, TenantID: f.tenant, Roles: []string{"cfo"}, MFA: true, AuthTime: time.Now()}
 	if err := f.svc.ReopenPeriod(f.ctx, closerAsCFO, period, "late supplier invoice"); !errors.Is(err, auth.ErrSoD) {
 		t.Fatalf("closer reopened own period: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestClosedPeriodBlocksPosting(t *testing.T) {
 func TestProjectAttributeRestriction(t *testing.T) {
 	f := newFixture(t)
 	id := f.lifecycle(t, f.balanced(key("abac")))
-	pm := auth.Principal{UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{"00000000-0000-0000-0000-000000000000"}}
+	pm := auth.Principal{Kind: auth.KindHuman, UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{"00000000-0000-0000-0000-000000000000"}}
 	if _, err := f.svc.GetJournal(f.ctx, pm, id); !errors.Is(err, ErrNotFound) /* out of scope reads as absent (review 5, F5) */ {
 		t.Fatalf("project restriction bypassed: %v", err)
 	}

@@ -88,7 +88,7 @@ func newP2PWorld(t *testing.T) *p2pWorld {
 		w.acct[k] = v
 	}
 	// Approved WBS with one material cost code.
-	wbsPM := auth.Principal{UserID: "u-wbs-planner", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: proj}
+	wbsPM := auth.Principal{Kind: auth.KindHuman, UserID: "u-wbs-planner", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: proj}
 	v, _, err := f.svc.ProposeWBSVersion(f.ctx, wbsPM, f.project, "Tender WBS", []postgres.WBSNode{{Code: "01", Name: "Superstructure"}},
 		[]postgres.CostCode{{NodeCode: "01", Code: "01-MAT", Name: "Structural materials", CostType: "MATERIAL", ValidFrom: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}})
 	must(t, "wbs", err)

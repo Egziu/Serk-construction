@@ -304,7 +304,7 @@ func TestR3_08_HumanOnlyByNamingConvention(t *testing.T) {
 	_, _, inv, _ := w.r3invoice(t, po, "5", "R3-08")
 	for _, id := range []string{"ai.payments-copilot", "svc/payments-bot"} {
 		pay := w.r3payment(t, inv, "1")
-		ai := auth.Principal{UserID: id, TenantID: f.tenant, Roles: []string{"finance_manager"}, MFA: true, AuthTime: time.Now(), IssuedAt: time.Now().Add(-time.Minute)}
+		ai := auth.Principal{Kind: auth.KindHuman, UserID: id, TenantID: f.tenant, Roles: []string{"finance_manager"}, MFA: true, AuthTime: time.Now(), IssuedAt: time.Now().Add(-time.Minute)}
 		_, err := f.svc.ApprovePayment(f.ctx, ai, pay)
 		r3held(t, "payment approved by non-human principal "+id, err)
 		_ = c

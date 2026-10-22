@@ -831,7 +831,7 @@ func (s *Service) RunWorkflowTimers(ctx context.Context, tenantID string, limit 
 	if limit <= 0 {
 		limit = 100
 	}
-	sys := auth.Principal{UserID: SystemTimerActor, TenantID: tenantID}
+	sys := auth.Principal{UserID: SystemTimerActor, TenantID: tenantID, Kind: auth.KindService} // records only; never signs a decision
 	var res TimerResult
 	var first error
 	err := s.store.WithTenant(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {

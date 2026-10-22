@@ -1,0 +1,64 @@
+=== RUN   TestAPIJourneyB_ContractToCash
+    journey_b_api_test.go:177: AR recon Accounts receivable: subledger 1663000 gl 1663000 difference 0
+    journey_b_api_test.go:177: AR recon Retention receivable: subledger 432000 gl 432000 difference 0
+    journey_b_api_test.go:177: AR recon Advances received: subledger 0 gl 0 difference 0
+    journey_b_api_test.go:177: AR recon Unapplied money in (statement lines without a confirmed receipt): subledger 0 gl 0 difference 0
+--- PASS: TestAPIJourneyB_ContractToCash (0.50s)
+=== RUN   TestGovernedAI_DraftOnly
+    governed_ai_test.go:33: held: AI principal drafted customer invoice 1583c0d3
+    governed_ai_test.go:46: refused: customer invoice approval by kind ai                           auth: forbidden: ar.invoice.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:49: refused: customer approval by kind ai                                   auth: forbidden: customer.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:52: refused: contract approval by kind ai                                   auth: forbidden: contract.decide is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:46: refused: customer invoice approval by kind service                      auth: forbidden: ar.invoice.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:49: refused: customer approval by kind service                              auth: forbidden: customer.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:52: refused: contract approval by kind service                              auth: forbidden: contract.decide is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:46: refused: customer invoice approval by kind                              auth: forbidden: ar.invoice.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:49: refused: customer approval by kind                                      auth: forbidden: customer.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:52: refused: contract approval by kind                                      auth: forbidden: contract.decide is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    governed_ai_test.go:73: refused: SQL: signed journal.approve attestation without principal.human store: database invariant violated: privilege: journal.approve is a decision reserved to principals the identity provider asserts are human (actor u-approver)
+--- PASS: TestGovernedAI_DraftOnly (0.29s)
+=== RUN   TestJourneyB_ContractToCashToGL
+    journey_b_test.go:216: IPC e29d8c5a: cumulative 5310000 previous 0 this 5310000 retention 265500 recovery 1000000 VAT 646500 due 4691000
+    journey_b_test.go:223: IPC 7a04c6d6: cumulative 8640000 previous 5310000 this 3330000 retention 166500 recovery 0 VAT 499500 due 3663000
+    journey_b_test.go:245: contract position: {ContractValue:23060000 MeasuredValue:8640000 CertifiedGross:8640000 RetentionHeld:432000 AdvanceAmount:1000000 AdvanceReceived:1000000 AdvanceRecovered:1000000 InvoicedTotal:8354000 Received:6691000 ReceivableOpen:1663000}
+    journey_b_test.go:252: GL 1100 = 1663000
+    journey_b_test.go:252: GL 1150 = 432000
+    journey_b_test.go:252: GL 2200 = 0
+    journey_b_test.go:252: GL 2300 = -1146000
+    journey_b_test.go:252: GL 4000 = -8640000
+    journey_b_test.go:252: GL 1000 = 7691000
+    journey_b_test.go:263: AR recon Accounts receivable                                                subledger        1663000 gl        1663000 diff 0 open 0
+    journey_b_test.go:263: AR recon Retention receivable                                               subledger         432000 gl         432000 diff 0 open 0
+    journey_b_test.go:263: AR recon Advances received                                                  subledger              0 gl              0 diff 0 open 0
+    journey_b_test.go:263: AR recon Unapplied money in (statement lines without a confirmed receipt)   subledger              0 gl              0 diff 0 open 0
+    journey_b_test.go:279: P2P recon Bank (reconciled movements): CBE Operating: subledger 7691000 gl 7691000 diff 0 unmatched 0
+    journey_b_test.go:291: project profitability: revenue 8640000 cost 0 margin 8640000
+--- PASS: TestJourneyB_ContractToCashToGL (0.45s)
+=== RUN   TestJourneyB_Controls
+    journey_b_test.go:320: refused: contract with an advance above the contract value              store: database invariant violated: the advance (23060001.000000) exceeds the contract value (23060000.000000)
+    journey_b_test.go:327: refused: contract approval with stale MFA                               auth: recent multi-factor authentication required (within 10m0s)
+    journey_b_test.go:329: refused: contract approved by its own author                            auth: segregation of duties violation: the creator of a contract cannot approve or reject it
+    journey_b_test.go:337: refused: measurement above the contract quantity                        store: database invariant violated: contract line 1: cumulative measured 10000.0010 exceeds the contract quantity 10000.0000 (a variation is required)
+    journey_b_test.go:339: refused: measurement of a nonexistent contract line                     store: database invariant violated: measurement line refers to contract line 9 which does not exist
+    journey_b_test.go:342: refused: second measurement for the same period                         store: database invariant violated: measurements_one_per_period
+    journey_b_test.go:347: refused: measurement verified by its own author                         auth: segregation of duties violation: the creator of a measurement cannot approve or reject it
+    journey_b_test.go:354: refused: measurement by a QS of another project                         store: not found
+    journey_b_test.go:362: refused: IPC certified by its preparer                                  auth: segregation of duties violation: the creator of a IPC cannot approve or reject it
+    journey_b_test.go:363: refused: IPC certification without fresh MFA                            auth: recent multi-factor authentication required (within 10m0s)
+    journey_b_test.go:364: refused: IPC certification without the certificate hash                 kernel: invalid input: certification needs the client's certificate reference and the SHA-256 of the signed certificate
+    journey_b_test.go:366: refused: certification of a stale IPC                                   store: database invariant violated: IPC IPC-2026-000001 is stale: measurements, certificates or advance receipts changed since it was prepared; cancel and prepare it again
+    journey_b_test.go:369: IPC 022898cf: cumulative 5345000 previous 0 this 5345000 retention 267250 recovery 0 VAT 801750 due 5879500
+    journey_b_test.go:377: refused: AI principal approves a customer invoice                       auth: forbidden: ar.invoice.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    journey_b_test.go:379: refused: invoice approved without ar.invoice.approve                    auth: forbidden: ar.invoice.approve
+    journey_b_test.go:388: refused: editing the lines of a generated AR journal                    store: database invariant violated: privilege: permission denied for table journal_lines
+    journey_b_test.go:397: refused: receipt confirmed by the person who imported the statement     store: database invariant violated: a receipt is allocated and confirmed by people independent of the statement import
+    journey_b_test.go:406: refused: advance receipt above the agreed advance                       store: database invariant violated: contract CTR-2026-000001 cannot take this advance (agreed advance 1000000.000000)
+    journey_b_test.go:414: refused: allocation that over-allocates an invoice already part paid    store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 5879500.000000): it would be over-allocated or is not payable
+    journey_b_test.go:419: refused: allocations short of the amount received                       kernel: invalid input: allocations (1000000) must equal the amount received (1500000)
+    journey_b_test.go:432: refused: confirming a receipt whose allocations were altered directly   must equal the amount received (refused by the journal builder: ledger: journal does not balance: debits 1500000.00 ETB credits 1500001.00 ETB)
+    journey_b_test.go:441: refused: closing a period with an approved journal awaiting posting     store: database invariant violated: period FY2026-Q4 has 1 approved journal(s) awaiting posting; post or cancel them before closing
+    journey_b_test.go:446: refused: a second invoice for the same IPC                              store: database invariant violated: customer invoices are issued DRAFT from a CERTIFIED IPC
+    journey_b_test.go:462: refused: approving and posting an AR journal into a closed period       fiscal period is CLOSED — posting refused
+--- PASS: TestJourneyB_Controls (0.49s)
+=== RUN   TestJourneyB_CertificateHashConstant
+--- PASS: TestJourneyB_CertificateHashConstant (0.00s)

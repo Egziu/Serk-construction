@@ -18,7 +18,7 @@ import (
 // as for every other resource.
 func pathID(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) { // canonical form only (review 5, F9)
 		writeErr(w, http.StatusNotFound, "not_found", "not found")
 		return "", false
 	}

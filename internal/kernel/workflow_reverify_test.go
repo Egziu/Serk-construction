@@ -32,7 +32,7 @@ const quorumDef = `{
 func TestReverify_RV1_ResumeKeepsWholeQuorumExcluded(t *testing.T) {
 	f := newFixture(t)
 	f.publish(t, quorumDef)
-	dual := auth.Principal{UserID: "u-dual", TenantID: f.tenant, Roles: []string{"finance_manager", "controller"}}
+	dual := auth.Principal{Kind: auth.KindHuman, UserID: "u-dual", TenantID: f.tenant, Roles: []string{"finance_manager", "controller"}}
 	jid := f.draftJournal(t, f.balanced(key("rv1")))
 	w, _ := f.svc.StartWorkflow(f.ctx, f.prep, "journal.quorum", jid)
 	if _, err := f.svc.DecideWorkflow(f.ctx, dual, w.ID, true, ""); err != nil {
@@ -123,7 +123,7 @@ func TestReverify_RV4_CancelHonoursScope(t *testing.T) {
 	f.publish(t, journalPostingDef)
 	jid := f.draftJournal(t, f.balanced(key("rv4")))
 	w, _ := f.svc.StartWorkflow(f.ctx, f.prep, "journal.posting", jid)
-	scoped := auth.Principal{UserID: "u-scoped-admin", TenantID: f.tenant, Roles: []string{"workflow_admin"}, ProjectIDs: []string{"00000000-0000-0000-0000-000000000001"}}
+	scoped := auth.Principal{Kind: auth.KindHuman, UserID: "u-scoped-admin", TenantID: f.tenant, Roles: []string{"workflow_admin"}, ProjectIDs: []string{"00000000-0000-0000-0000-000000000001"}}
 	if err := f.svc.CancelWorkflow(f.ctx, scoped, w.ID, "probing other projects"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("out-of-scope cancel: %v", err)
 	}

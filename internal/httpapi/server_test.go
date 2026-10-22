@@ -71,7 +71,7 @@ func newEnv(t *testing.T) *env {
 
 func (e *env) token(user string, roles ...string) string {
 	now := time.Now()
-	tok, err := testVerifier.Sign(Claims{Subject: user, TenantID: e.tenant, Roles: roles, IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), Issuer: "serk-id", Audience: "serk-construction"})
+	tok, err := testVerifier.Sign(Claims{Subject: user, TenantID: e.tenant, Roles: roles, IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), Issuer: "serk-id", Audience: "serk-construction", Kind: "human"})
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestAPIFXMakerCheckerFlow(t *testing.T) {
 func (e *env) mfaToken(user string, roles ...string) string {
 	now := time.Now()
 	tok, err := testVerifier.Sign(Claims{Subject: user, TenantID: e.tenant, Roles: roles, IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(),
-		Issuer: "serk-id", Audience: "serk-construction", AMR: []string{"pwd", "otp"}, AuthTime: now.Unix()})
+		Issuer: "serk-id", Audience: "serk-construction", AMR: []string{"pwd", "otp"}, AuthTime: now.Unix(), Kind: "human"})
 	if err != nil {
 		e.t.Fatal(err)
 	}

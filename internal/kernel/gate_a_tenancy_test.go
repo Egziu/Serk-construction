@@ -25,7 +25,7 @@ import (
 func TestSC04_CompromisedTenantCredentialCannotReachOtherTenant(t *testing.T) {
 	f := newFixture(t)
 	// Give tenant B (f.tenant2) data in every tenant-scoped table we probe.
-	outsiderPost := auth.Principal{UserID: "u-b-post", TenantID: f.tenant2, Roles: []string{"controller"}}
+	outsiderPost := auth.Principal{Kind: auth.KindHuman, UserID: "u-b-post", TenantID: f.tenant2, Roles: []string{"controller"}}
 	var bEntity string
 	var bAccts []string
 	_ = f.app.WithTenant(f.ctx, f.tenant2, func(ctx context.Context, tx pgx.Tx) error {
@@ -43,8 +43,8 @@ func TestSC04_CompromisedTenantCredentialCannotReachOtherTenant(t *testing.T) {
 		Description: "tenant B secret", SourceType: "MANUAL", IdempotencyKey: key("b"), Lines: []ledger.Line{
 			{LineNo: 1, AccountID: bAccts[0], Side: ledger.Debit, Amount: money.MustNew("999.00", "ETB")},
 			{LineNo: 2, AccountID: bAccts[1], Side: ledger.Credit, Amount: money.MustNew("999.00", "ETB")}}}
-	bPrep := auth.Principal{UserID: "u-b-prep", TenantID: f.tenant2, Roles: []string{"accountant"}}
-	bAppr := auth.Principal{UserID: "u-b-appr", TenantID: f.tenant2, Roles: []string{"finance_manager"}}
+	bPrep := auth.Principal{Kind: auth.KindHuman, UserID: "u-b-prep", TenantID: f.tenant2, Roles: []string{"accountant"}}
+	bAppr := auth.Principal{Kind: auth.KindHuman, UserID: "u-b-appr", TenantID: f.tenant2, Roles: []string{"finance_manager"}}
 	res, err := f.svc.CreateJournal(f.ctx, bPrep, bj)
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +223,7 @@ func TestSC04_DedicatedDatabaseTier(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := New(router, auth.NewAuthorizer(nil, true))
-	prep := auth.Principal{UserID: "d-prep", TenantID: tenant, Roles: []string{"accountant"}}
+	prep := auth.Principal{Kind: auth.KindHuman, UserID: "d-prep", TenantID: tenant, Roles: []string{"accountant"}}
 	_, err = svc.CreateJournal(shared.Ctx, prep, ledger.Journal{LegalEntityID: le, FunctionalCurrency: "ETB", BusinessEventAt: time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC),
 		Description: "dedicated tier", SourceType: "MANUAL", IdempotencyKey: "ded-1", Lines: []ledger.Line{
 			{LineNo: 1, AccountID: a1, Side: ledger.Debit, Amount: money.MustNew("10.00", "ETB")},
