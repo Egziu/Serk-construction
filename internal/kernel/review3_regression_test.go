@@ -466,6 +466,20 @@ func TestR3_11_CrossTenant(t *testing.T) {
 	var defs string
 	_ = f.admin.QueryRow(f.ctx, `SELECT COALESCE(string_agg(p.proname, ','), '') FROM pg_proc p WHERE p.prosecdef AND (p.proname LIKE 'p2p%' OR p.proname IN ('round_half_even'))
 		OR (p.prosecdef AND p.oid IN (SELECT tgfoid FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relname IN ('suppliers','grns','supplier_invoices','payment_instructions','bank_statements','bank_statement_lines','purchase_orders')))`).Scan(&defs)
+	// p2p_account_digest (0017) is a deliberate definer: it keys bank-account
+	// digests with the owner-only approval key. It is accepted only with a
+	// pinned search_path, no PUBLIC EXECUTE and a read-only body.
+	if defs == "p2p_account_digest" {
+		var pinned, public, writes bool
+		_ = f.admin.QueryRow(f.ctx, `SELECT array_to_string(proconfig, ',') LIKE '%search_path=pg_catalog, public%',
+			has_function_privilege('public', oid, 'EXECUTE'), prosrc ~* '(insert|update|delete)\s' FROM pg_proc WHERE proname = 'p2p_account_digest'`).Scan(&pinned, &public, &writes)
+		if !pinned || public || writes {
+			t.Errorf("OPEN: p2p_account_digest definer properties: pinned=%v public=%v writes=%v", pinned, public, writes)
+		} else {
+			t.Logf("held: the only P2P definer is p2p_account_digest (pinned search_path, no PUBLIC execute, read-only)")
+		}
+		defs = ""
+	}
 	if defs != "" {
 		t.Errorf("OPEN: SECURITY DEFINER functions among the new ones: %s", defs)
 	} else {

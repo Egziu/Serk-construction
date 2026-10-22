@@ -57,3 +57,24 @@ All of this was reproduced against PostgreSQL in `docs/security/evidence/ia-040-
 - **HTTP** (`internal/httpapi/ia04001_api_test.go`): the same at the API boundary, including 404 parity, an error body that does not echo the number, and a server log free of numbers and tokens.
 - **Browser** (`TestConsoleBrowserJourneyA`): a site engineer opening a payment by ID sees "Not found"; the finance manager sees `****6789` and performs an audited reveal.
 - Evidence: `docs/security/evidence/ia-040-01-before.txt` (19 EXPOSED results) and `ia-040-01-after.txt` (0).
+
+## Addendum: independent review 5 (2026-10-22)
+
+The review (`docs/security/INDEPENDENT_REVIEW_5_2026-10-22.md`) found that the policy was not yet applied everywhere. Changes made in response:
+
+- **Tenant-wide is decided in one place** (`Service.tenantWide`, which is `auth.ScopeOf(p).TenantWide`). Payment preparation, statement import, auto-reconciliation, the GL reconciliation, the journal worklist and `whoami` used `Has(scope.tenant_wide)` and now use it (F1).
+- **Visibility before locks.** `visibleDoc` checks the type, resolves the project and applies `canSee` before `SELECT … FOR UPDATE`, so an out-of-scope caller never waits on a lock (F2).
+- **Journals** read, approved or posted out of scope return not-found, like documents (F5).
+- **Keyed digests instead of numbers in hashes (migration 0017).**
+  - `p2p_account_digest` is an HMAC keyed with the tenant's approval key. It replaces the account number in `p2p_subject_text` (approval subject hashes) and `p2p_bank_snapshot` (payee fingerprints), so neither confirms a guessed number offline (F4).
+  - It is the only `SECURITY DEFINER` function in the P2P schema. It is needed to read the owner-only key, has a pinned `search_path`, no `PUBLIC` execute and a read-only body; TestR3_11 asserts all three.
+- **Reveal hardening.**
+  - Requires `p2p.read` and tenant-wide scope (F6).
+  - The purpose is 20–500 characters, counted as runes.
+  - Refused attempts are audited as `bank.details.reveal_refused` (F7).
+- **Masking.** `MaskAccount` shows at most four characters and never more than a third of the number, behind a fixed `****`. The supplier-bank audit uses it (F8).
+- **Ids.** HTTP path ids must be canonical lowercase UUIDs; any other spelling is 404 before the kernel (F9).
+- **Accepted residual (F3).**
+  - A duplicate company account number is still refused, so a `bankacct.manage` holder can tell a right guess from a wrong one by registering it.
+  - The refusal now returns the same generic invalid-input error as any other bad input and is audited as `bankacct.register_refused`. Each wrong guess leaves a PENDING account that a second person must approve.
+  - Removing the oracle completely (uniqueness on a keyed digest, numbers out of the runtime credential's reach) belongs to R-BANK-AT-REST.

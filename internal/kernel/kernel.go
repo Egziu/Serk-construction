@@ -150,7 +150,10 @@ func (s *Service) GetJournal(ctx context.Context, p auth.Principal, id string) (
 		if err != nil {
 			return err
 		}
-		return s.authz.RequireProject(p, auth.PermJournalRead, rec.TenantID, rec.ProjectID)
+		if s.authz.RequireProject(p, auth.PermJournalRead, rec.TenantID, rec.ProjectID) != nil {
+			return ErrNotFound // out of scope looks like absence (review 5, F5)
+		}
+		return nil
 	})
 	return rec, err
 }
@@ -179,7 +182,7 @@ func (s *Service) approveJournalTx(ctx context.Context, tx pgx.Tx, p auth.Princi
 		return err
 	}
 	if err := s.authz.RequireProject(p, auth.PermJournalApprove, rec.TenantID, rec.ProjectID); err != nil {
-		return err
+		return ErrNotFound // permission was checked first; this is scope (review 5, F5)
 	}
 	if !ledger.CanTransition(rec.Status, ledger.StatusApproved) {
 		return fmt.Errorf("%w: %s -> APPROVED", ledger.ErrBadTransition, rec.Status)
@@ -227,7 +230,7 @@ func (s *Service) postJournalTx(ctx context.Context, tx pgx.Tx, p auth.Principal
 		return err
 	}
 	if err := s.authz.RequireProject(p, auth.PermJournalPost, rec.TenantID, rec.ProjectID); err != nil {
-		return err
+		return ErrNotFound // permission was checked first; this is scope (review 5, F5)
 	}
 	if !ledger.CanTransition(rec.Status, ledger.StatusPosted) {
 		return fmt.Errorf("%w: %s -> POSTED", ledger.ErrBadTransition, rec.Status)

@@ -63,6 +63,16 @@ var p2pTables = map[string]struct{ table, creator, children string }{
 	"payment_instruction":   {"payment_instructions", "created_by", ""},
 }
 
+// DocTypes reports whether a document type is known (for callers that must
+// validate a type before touching data).
+func DocTypes() map[string]bool {
+	out := make(map[string]bool, len(p2pTables))
+	for k := range p2pTables {
+		out[k] = true
+	}
+	return out
+}
+
 // ErrUnknownDocType is returned for an unsupported document type.
 var ErrUnknownDocType = errors.New("p2p: unknown document type")
 

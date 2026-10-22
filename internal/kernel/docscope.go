@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -56,20 +57,42 @@ func (s *Service) listScope(p auth.Principal, docType string) postgres.ListScope
 	return ls
 }
 
-// visibleDoc loads a document only if the principal may see it.
+// tenantWide is the tenant-wide test of the visibility policy: the
+// scope.tenant_wide entitlement AND no project restriction (auth.ScopeOf).
+// Every entity-level operation uses it; Has(scope.tenant_wide) alone is
+// never sufficient (review 5, F1).
+var docTypes = postgres.DocTypes()
+
+func (s *Service) tenantWide(p auth.Principal) bool { return s.authz.ScopeOf(p).TenantWide }
+
+// visibleDoc loads a document only if the principal may see it. Visibility
+// is decided BEFORE any row lock is taken, so an out-of-scope caller can
+// never wait on (and so detect) a locked document (review 5, F2).
 func (s *Service) visibleDoc(ctx context.Context, tx pgx.Tx, p auth.Principal, docType, id string, lock bool) (postgres.Doc, error) {
-	d, err := postgres.GetDoc(ctx, tx, docType, id, lock)
-	if err != nil {
-		return postgres.Doc{}, err
+	if _, ok := docTypes[docType]; !ok {
+		return postgres.Doc{}, postgres.ErrUnknownDocType
 	}
 	proj, err := docProject(ctx, tx, docType, id)
 	if err != nil {
-		return postgres.Doc{}, err
+		return postgres.Doc{}, ErrNotFound
 	}
 	if !s.canSee(p, docType, proj) {
 		return postgres.Doc{}, ErrNotFound // indistinguishable from absence
 	}
-	return d, nil
+	return postgres.GetDoc(ctx, tx, docType, id, lock)
+}
+
+// auditRefusal records a refused sensitive operation in its own transaction
+// (the refused one rolls back). Best effort: a failure to audit is logged by
+// the caller's error path, never turned into success.
+func (s *Service) auditRefusal(ctx context.Context, p auth.Principal, action, docType, id string, payload map[string]any) {
+	_ = s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
+		if id == "" {
+			id = "-"
+		}
+		return postgres.Audit(ctx, tx, postgres.AuditEntry{TenantID: p.TenantID, ActorID: p.UserID, Action: action,
+			AggregateType: docType, AggregateID: id, RequestID: requestID(ctx), Payload: payload})
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -87,13 +110,15 @@ var paymentFields = []string{"id", "number", "legal_entity_id", "supplier_id", "
 	"policy_id", "status", "created_by", "created_at", "submitted_at", "approved_by", "approved_at", "second_approved_by", "second_approved_at",
 	"released_by", "released_at", "settled_at", "cancel_reason"}
 
-// MaskAccount keeps the last four characters.
+// MaskAccount shows at most the last four characters and never more than a
+// third of the number, behind a fixed-width prefix that hides the length.
 func MaskAccount(n string) string {
 	n = strings.ReplaceAll(n, " ", "")
-	if len(n) <= 4 {
-		return "****"
+	k := len(n) / 3
+	if k > 4 {
+		k = 4
 	}
-	return "****" + n[len(n)-4:]
+	return "****" + n[len(n)-k:]
 }
 
 func pick(src map[string]any, fields []string) map[string]any {
@@ -102,9 +127,6 @@ func pick(src map[string]any, fields []string) map[string]any {
 		if v, ok := src[f]; ok {
 			out[f] = v
 		}
-	}
-	if n, ok := src["account_number"].(string); ok {
-		out["account_number_masked"] = MaskAccount(n)
 	}
 	return out
 }
@@ -137,8 +159,30 @@ func scrub(v any) any {
 	return v
 }
 
-// projectDoc returns the reader-safe detail of a document.
-func projectDoc(docType string, raw json.RawMessage) (json.RawMessage, error) {
+// maskedAccountOf returns the masked number of the bank account a document
+// carries (the subject text holds only a keyed digest since 0017).
+func maskedAccountOf(ctx context.Context, tx pgx.Tx, docType, id string) (string, error) {
+	var q string
+	switch docType {
+	case "supplier_bank_account":
+		q = `SELECT account_number FROM supplier_bank_accounts WHERE id = $1::uuid`
+	case "company_bank_account":
+		q = `SELECT account_number FROM company_bank_accounts WHERE id = $1::uuid`
+	case "payment_instruction":
+		q = `SELECT b.account_number FROM payment_instructions p JOIN supplier_bank_accounts b ON b.id = p.supplier_bank_id WHERE p.id = $1::uuid`
+	default:
+		return "", nil
+	}
+	var n string
+	if err := tx.QueryRow(ctx, q, id).Scan(&n); err != nil {
+		return "", err
+	}
+	return MaskAccount(n), nil
+}
+
+// projectDoc returns the reader-safe detail of a document; masked is the
+// masked account number for documents that carry one.
+func projectDoc(docType string, raw json.RawMessage, masked string) (json.RawMessage, error) {
 	if len(raw) == 0 {
 		return raw, nil
 	}
@@ -149,13 +193,17 @@ func projectDoc(docType string, raw json.RawMessage) (json.RawMessage, error) {
 	m, _ := v.(map[string]any)
 	switch {
 	case bankAccountFields[docType] != nil && m != nil:
-		v = pick(m, bankAccountFields[docType])
+		out := pick(m, bankAccountFields[docType])
+		out["account_number_masked"] = masked
+		v = out
 	case docType == "payment_instruction" && m != nil:
 		h, _ := m["h"].(map[string]any)
 		payee, _ := m["payee"].(map[string]any)
 		out := map[string]any{"h": pick(h, paymentFields), "alloc": m["alloc"]}
 		if payee != nil {
-			out["payee"] = pick(payee, bankAccountFields["supplier_bank_account"])
+			pe := pick(payee, bankAccountFields["supplier_bank_account"])
+			pe["account_number_masked"] = masked
+			out["payee"] = pe
 		}
 		v = out
 	default:
@@ -178,23 +226,35 @@ type BankAccountReveal struct {
 }
 
 // RevealBankAccount returns a full account number to a principal holding
-// bank.details.reveal, with fresh MFA and a stated purpose, under the same
-// visibility policy as every other read. Each reveal is audited (without the
+// bank.details.reveal and p2p.read, tenant-wide scope, fresh MFA and a
+// stated purpose, under the same visibility policy as every other read. Each reveal is audited (without the
 // number itself).
 func (s *Service) RevealBankAccount(ctx context.Context, p auth.Principal, docType, id, purpose string) (BankAccountReveal, error) {
 	var out BankAccountReveal
 	if docType != "supplier_bank_account" && docType != "company_bank_account" {
 		return out, ErrNotFound
 	}
+	refused := func(err error) (BankAccountReveal, error) {
+		s.auditRefusal(ctx, p, "bank.details.reveal_refused", docType, id, map[string]any{"reason": err.Error()})
+		return BankAccountReveal{}, err
+	}
 	if err := s.authz.Require(p, auth.PermBankDetailsReveal, p.TenantID); err != nil {
-		return out, err
+		return refused(err)
+	}
+	if err := s.authz.Require(p, auth.PermP2PRead, p.TenantID); err != nil {
+		return refused(err)
+	}
+	if !s.tenantWide(p) {
+		// Supplier bank accounts are visible (masked) to project-restricted
+		// supplier.manage holders; the full number is not (review 5, F6).
+		return refused(ErrNotFound)
 	}
 	if err := s.authz.RequireStepUp(p); err != nil {
-		return out, err
+		return refused(err)
 	}
 	purpose = strings.TrimSpace(purpose)
-	if len(purpose) < 20 {
-		return out, fmt.Errorf("%w: state the purpose of the reveal (20+ characters)", ErrInvalidInput)
+	if n := utf8.RuneCountInString(purpose); n < 20 || n > 500 {
+		return refused(fmt.Errorf("%w: state the purpose of the reveal (20 to 500 characters)", ErrInvalidInput))
 	}
 	err := s.store.WithTenant(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
 		if err := checkSessionTx(ctx, tx, p); err != nil {
@@ -214,7 +274,7 @@ func (s *Service) RevealBankAccount(ctx context.Context, p auth.Principal, docTy
 			map[string]any{"document_type": docType, "account": MaskAccount(out.AccountNumber), "purpose": purpose, "mfa_auth_time": p.AuthTime.UTC()})
 	})
 	if err != nil {
-		return BankAccountReveal{}, err
+		return refused(err)
 	}
 	return out, nil
 }

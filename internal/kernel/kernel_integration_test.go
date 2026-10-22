@@ -357,7 +357,7 @@ func TestProjectAttributeRestriction(t *testing.T) {
 	f := newFixture(t)
 	id := f.lifecycle(t, f.balanced(key("abac")))
 	pm := auth.Principal{UserID: "u-pm", TenantID: f.tenant, Roles: []string{"project_manager"}, ProjectIDs: []string{"00000000-0000-0000-0000-000000000000"}}
-	if _, err := f.svc.GetJournal(f.ctx, pm, id); !errors.Is(err, auth.ErrForbidden) {
+	if _, err := f.svc.GetJournal(f.ctx, pm, id); !errors.Is(err, ErrNotFound) /* out of scope reads as absent (review 5, F5) */ {
 		t.Fatalf("project restriction bypassed: %v", err)
 	}
 	pm.ProjectIDs = []string{f.project}

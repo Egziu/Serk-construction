@@ -92,7 +92,7 @@ func (s *Server) proposePolicy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) decidePolicy(approve bool) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		if _, err := uuid.Parse(id); err != nil {
+		if !canonicalUUID(id) {
 			writeErr(w, http.StatusNotFound, "not_found", "not found")
 			return
 		}
@@ -147,7 +147,7 @@ func (s *Server) recordSnapshot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) snapshotID(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "not found")
 		return "", false
 	}
@@ -242,7 +242,7 @@ func (s *Server) convert(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) closePeriod(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
@@ -263,7 +263,7 @@ func (s *Server) closePeriod(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) reopenPeriod(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}

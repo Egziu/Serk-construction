@@ -169,7 +169,7 @@ type decisionBody struct {
 func (s *Server) p2pDecision(fn func(context.Context, auth.Principal, string, decisionBody) (any, error)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		if _, err := uuid.Parse(id); err != nil {
+		if !canonicalUUID(id) {
 			writeErr(w, http.StatusNotFound, "not_found", "not found")
 			return
 		}
@@ -444,9 +444,18 @@ func (s *Server) listP2P(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
+// canonicalUUID accepts a path id only in the canonical lowercase,
+// hyphenated form. Other spellings that uuid.Parse accepts (urn:uuid:,
+// braces, upper case, no hyphens) are answered 404 before the kernel
+// (review 5, F9).
+func canonicalUUID(s string) bool {
+	u, err := uuid.Parse(s)
+	return err == nil && u.String() == s
+}
+
 func (s *Server) getP2P(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
@@ -491,7 +500,7 @@ func (s *Server) p2pReference(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) costCodes(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
@@ -507,7 +516,7 @@ func (s *Server) costCodes(w http.ResponseWriter, r *http.Request) {
 // caller who states a purpose (IA-040-01). The response is never cached.
 func (s *Server) revealBank(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := uuid.Parse(id); err != nil {
+	if !canonicalUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}

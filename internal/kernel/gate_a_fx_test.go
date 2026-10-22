@@ -314,7 +314,7 @@ func TestSC05_ScopedPrincipalsCannotReachUnassignedJournals(t *testing.T) {
 	unassigned.ProjectID = ""
 	tenantWide := f.lifecycle(t, unassigned)
 	scopedAcct := auth.Principal{UserID: "u-scoped", TenantID: f.tenant, Roles: []string{"accountant"}, ProjectIDs: []string{f.project}}
-	if _, err := f.svc.GetJournal(f.ctx, scopedAcct, tenantWide); !errors.Is(err, auth.ErrForbidden) {
+	if _, err := f.svc.GetJournal(f.ctx, scopedAcct, tenantWide); !errors.Is(err, ErrNotFound) /* out of scope reads as absent (review 5, F5) */ {
 		t.Fatalf("scoped principal read an unassigned journal: %v", err)
 	}
 	j := f.balanced(key("scoped-create"))

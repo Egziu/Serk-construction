@@ -98,7 +98,11 @@ func (s *Service) GetP2PDoc(ctx context.Context, p auth.Principal, docType, id s
 		if d, err = s.visibleDoc(ctx, tx, p, docType, id, false); err != nil {
 			return err
 		}
-		d.Detail, err = projectDoc(docType, d.Detail)
+		masked, err := maskedAccountOf(ctx, tx, docType, id)
+		if err != nil {
+			return err
+		}
+		d.Detail, err = projectDoc(docType, d.Detail, masked)
 		return err
 	})
 	return d, err
@@ -298,7 +302,7 @@ func (s *Service) AddSupplierBankAccount(ctx context.Context, p auth.Principal, 
 			return err
 		}
 		return s.record(ctx, tx, p, "supplier.bank.add", "supplier_bank_account", id, "supplier.bank_account.added",
-			map[string]any{"supplier_id": supplierID, "bank_account_id": id, "account_last4": last4(accountNumber)})
+			map[string]any{"supplier_id": supplierID, "bank_account_id": id, "account": MaskAccount(accountNumber)})
 	})
 	return id, err
 }
@@ -339,6 +343,17 @@ func (s *Service) ApproveSupplierBankAccount(ctx context.Context, p auth.Princip
 
 // RegisterCompanyBankAccount records one of the entity's own bank accounts.
 func (s *Service) RegisterCompanyBankAccount(ctx context.Context, p auth.Principal, entity, name, number, ccy, glAccount, clearingAccount string) (string, error) {
+	id, err := s.registerCompanyBankAccount(ctx, p, entity, name, number, ccy, glAccount, clearingAccount)
+	if err != nil && strings.Contains(err.Error(), "company_bank_accounts_tenant_id_account_number_key") {
+		// Review 5 F3: do not confirm that a guessed full number exists; the
+		// refused attempt is itself audited (with the masked number only).
+		s.auditRefusal(ctx, p, "bankacct.register_refused", "company_bank_account", "", map[string]any{"account": MaskAccount(number), "reason": "duplicate"})
+		return "", fmt.Errorf("%w: this bank account cannot be registered; contact treasury administration", ErrInvalidInput)
+	}
+	return id, err
+}
+
+func (s *Service) registerCompanyBankAccount(ctx context.Context, p auth.Principal, entity, name, number, ccy, glAccount, clearingAccount string) (string, error) {
 	var id string
 	err := s.p2pTx(ctx, p, auth.PermBankAcctManage, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
@@ -1083,7 +1098,7 @@ func (s *Service) PreparePayment(ctx context.Context, p auth.Principal, entity, 
 	}
 	var id string
 	err := s.p2pTx(ctx, p, auth.PermPaymentPrepare, func(ctx context.Context, tx pgx.Tx) error {
-		if !s.authz.Has(p, auth.PermScopeTenantWide) {
+		if !s.tenantWide(p) {
 			return fmt.Errorf("%w: payments are entity-level and need tenant-wide scope", auth.ErrForbidden)
 		}
 		num, err := postgres.NextNumber(ctx, tx, "PAY")
@@ -1437,7 +1452,7 @@ func (s *Service) ImportBankStatement(ctx context.Context, p auth.Principal, raw
 	}
 	var id string
 	err = s.p2pTx(ctx, p, auth.PermBankImport, func(ctx context.Context, tx pgx.Tx) error {
-		if !s.authz.Has(p, auth.PermScopeTenantWide) {
+		if !s.tenantWide(p) {
 			return fmt.Errorf("%w: bank statements need tenant-wide scope", auth.ErrForbidden)
 		}
 		if err := s.authorize(ctx, tx, p, "bank.import", "bank_statement_source", in.SourceSHA256, in.CompanyBankID+"|"+in.ContentDigest()); err != nil {
@@ -1492,7 +1507,7 @@ func (s *Service) AutoReconcile(ctx context.Context, p auth.Principal, statement
 	if err := s.authz.Require(p, auth.PermBankReconcile, p.TenantID); err != nil {
 		return res, err
 	}
-	if !s.authz.Has(p, auth.PermScopeTenantWide) {
+	if !s.tenantWide(p) {
 		return res, fmt.Errorf("%w: reconciliation needs tenant-wide scope", auth.ErrForbidden)
 	}
 	type line struct {
@@ -1615,7 +1630,7 @@ func (s *Service) GLReconciliation(ctx context.Context, p auth.Principal, entity
 	if err := s.authz.Require(p, auth.PermJournalRead, p.TenantID); err != nil {
 		return nil, err
 	}
-	if !s.authz.Has(p, auth.PermScopeTenantWide) {
+	if !s.tenantWide(p) {
 		return nil, fmt.Errorf("%w: reconciliation needs tenant-wide scope", auth.ErrForbidden)
 	}
 	var out []postgres.ReconCheck
@@ -1676,7 +1691,7 @@ func (s *Service) ListJournals(ctx context.Context, p auth.Principal, status, so
 	if err := s.authz.Require(p, auth.PermJournalRead, p.TenantID); err != nil {
 		return nil, err
 	}
-	if !s.authz.Has(p, auth.PermScopeTenantWide) {
+	if !s.tenantWide(p) {
 		return nil, fmt.Errorf("%w: journal worklists need tenant-wide scope", auth.ErrForbidden)
 	}
 	var out []postgres.JournalSummary
@@ -1703,7 +1718,7 @@ type Identity struct {
 // Whoami returns the caller's identity and effective permissions.
 func (s *Service) Whoami(p auth.Principal) Identity {
 	id := Identity{UserID: p.UserID, TenantID: p.TenantID, Roles: p.Roles, ProjectIDs: p.ProjectIDs,
-		TenantWide: s.authz.Has(p, auth.PermScopeTenantWide), MFA: p.MFA, Permissions: s.authz.Permissions(p)}
+		TenantWide: s.tenantWide(p), MFA: p.MFA, Permissions: s.authz.Permissions(p)}
 	if id.Roles == nil {
 		id.Roles = []string{}
 	}

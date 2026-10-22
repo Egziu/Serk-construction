@@ -1,0 +1,116 @@
+=== RUN   TestR5_01_TenantWideCheckIsNotTheVisibilityPolicy
+    zz_review5_test.go:69: OPEN: project-restricted treasury officer PREPARED payment instruction 8c7ff701 (entity-level); reading it back: store: not found
+    zz_review5_test.go:82: OPEN: project-restricted statement officer learns the company account balance from the error: "store: database invariant violated: statement opening balance 1.000000 does not continue the previous closing balance 902825.000000"
+    zz_review5_test.go:87: OPEN: project-restricted statement officer IMPORTED a statement on an entity-level company account it cannot see
+    zz_review5_test.go:92:       (the same officer gets not-found reading that company account: store: not found)
+    zz_review5_test.go:107: OPEN: project-restricted accountant ran AutoReconcile: {"matched":[{"line_no":1,"payment_id":"c00f82af-8989-4330-9d77-eb30e19b3cb7","payment_number":"PAY-2026-000001","journal_id":"e932575b-b688-4518-971e-f45d47095ecf"}],"unmatched":null}; payment now SETTLED; same principal reading the payment: store: not found
+    zz_review5_test.go:128: OPEN: project-restricted accountant lists 6 P2P journals (2 payment/settlement, e.g. P2P_PAYMENT "Payment PAY-2026-000001" source_ref=c00f82af debits=97175); GetJournal of the first: auth: forbidden: tenant-wide (unassigned) records require scope.tenant_wide
+    zz_review5_test.go:130: OPEN (low): journal detail distinguishes out-of-scope (auth: forbidden: tenant-wide (unassigned) records require scope.tenant_wide) from nonexistent (store: not found)
+    zz_review5_test.go:140: OPEN: project-restricted controller reads entity-level GL reconciliation (4 checks): [{"check":"GRNI (goods received not invoiced)","subledger":"0","gl":"0","difference":"0","unposted_or_unmatched":2},{"check":"Accounts payable","subledger":"-97175","gl":"-97175","difference":"0","unposted_or_unmatched":2},{"check":"Payments in transit: CBE Operating","subledger":"97175","gl":"97175
+    zz_review5_test.go:147: info: Whoami(project-restricted accountant).TenantWide = true (console shows tenant-wide; ScopeOf says restricted)
+--- FAIL: TestR5_01_TenantWideCheckIsNotTheVisibilityPolicy (0.76s)
+=== RUN   TestR5_02_MaskingAcrossAllDetailTypesAndStores
+    zz_review5_test.go:228: held: 117 successful detail reads across 12 types and 8 principals (+ lists): no full account number, no bank_snapshot
+    zz_review5_test.go:233: info: bank_statement list for accountant: [{"id":"05db8d97-c21f-4726-b12b-b1299a59c2f0","number":"R5-M-1","status":"RECONCILED","created_by":"u-bank-officer","created_at":"2026-10-22T08:46:16.272235+03:00","amount":"902825","label":"CBE Opera
+    zz_review5_test.go:256: held: full number 10...77 stored in company_bank_accounts (2 rows) (expected master table)
+    zz_review5_test.go:256: held: full number 10...89 stored in supplier_bank_accounts (2 rows) (expected master table)
+    zz_review5_test.go:274: info: audit supplier.bank.add    {"supplier_id": "586b8f2a-2487-421e-a88c-1a69d7e99455", "account_last4": "*********6789", "bank_account_id": "5eafb6a4-7b0e-4b85-bf8f-44bce581c49f"}
+    zz_review5_test.go:274: info: audit bank.details.reveal  {"account": "****6789", "purpose": "Independent review 5: verify payee details before release", "document_type": "supplier_bank_account", "mfa_auth_time": "2026-10-22T05:46:15.979346235Z"}
+    zz_review5_test.go:274: info: audit bank.details.reveal  {"account": "****8777", "purpose": "Independent review 5: verify payee details before release", "document_type": "company_bank_account", "mfa_auth_time": "2026-10-22T05:46:15.979346235Z"}
+--- PASS: TestR5_02_MaskingAcrossAllDetailTypesAndStores (0.58s)
+=== RUN   TestR5_03_CompanyAccountNumberGuessOracle
+    zz_review5_test.go:289: wrong guess -> <nil>
+    zz_review5_test.go:290: right guess -> store: database invariant violated: company_bank_accounts_tenant_id_account_number_key
+    zz_review5_test.go:292: OPEN (oracle): registering a guessed company account number distinguishes right ("company_bank_accounts_tenant_id_account_number_key") from wrong (success) guesses
+    zz_review5_test.go:299: supplier duplicate -> <nil> (no uniqueness: no oracle, but duplicates allowed)
+    zz_review5_test.go:305: held: invalid supplier account rejected without echo: store: database invariant violated: new row for relation "supplier_bank_accounts" violates check constraint "supplier_bank_accounts_account_number_check"
+--- FAIL: TestR5_03_CompanyAccountNumberGuessOracle (0.12s)
+=== RUN   TestR5_04_Reveal
+    zz_review5_test.go:328: held: reveal type "payment_instruction"    -> not found
+    zz_review5_test.go:328: held: reveal type "supplier"               -> not found
+    zz_review5_test.go:328: held: reveal type "Supplier_Bank_Account"  -> not found
+    zz_review5_test.go:328: held: reveal type "supplier_bank_account " -> not found
+    zz_review5_test.go:328: held: reveal type "SUPPLIER_BANK_ACCOUNT"  -> not found
+    zz_review5_test.go:335: held: whitespace-padded purpose refused
+    zz_review5_test.go:341: info: purpose "aaaaaaaaaaaaaaaaaaaa" (20 runes) accepted
+    zz_review5_test.go:341: info: purpose "ሰላምሰላምሰላም" (9 runes) accepted
+    zz_review5_test.go:349: MFA age 9m0s -> <nil>
+    zz_review5_test.go:349: MFA age 11m0s -> auth: recent multi-factor authentication required (within 10m0s)
+    zz_review5_test.go:368: held: 2 identical reveals -> 2 audit records
+    zz_review5_test.go:379: held: reveal out-of-scope == nonexistent: store: not found
+    zz_review5_test.go:381: info: audit records for 3 refused reveal attempts: 0 (failed attempts leave no audit trail)
+    zz_review5_test.go:386: held: cross-tenant reveal -> not found
+    zz_review5_test.go:396: held: reveal with a revoked session -> kernel: session revoked
+    zz_review5_test.go:402: info: GetP2PDoc does not re-check revocation in the kernel (the HTTP layer does, on every request)
+    zz_review5_test.go:418: info: project-restricted (other project) holder of supplier.manage+bank.details.reveal revealed ****6789 (supplier bank accounts are not project-scoped for supplier.manage)
+    zz_review5_test.go:427: info: reveal by a principal without p2p.read -> <nil>
+--- PASS: TestR5_04_Reveal (0.32s)
+=== RUN   TestR5_05_MutationExistenceDisclosure
+    zz_review5_test.go:475: held: ApprovePayment(scoped FM)            real == random: store: not found
+    zz_review5_test.go:475: held: ReleasePayment(scoped treasury2)     real == random: store: not found
+    zz_review5_test.go:475: held: CancelPayment(scoped treasury)       real == random: store: not found
+    zz_review5_test.go:475: held: SubmitPayment(scoped treasury)       real == random: store: not found
+    zz_review5_test.go:475: held: DecideP2PPolicy(scoped cfo)          real == random: store: not found
+    zz_review5_test.go:475: held: ApproveCompanyBank(scoped cfo)       real == random: store: not found
+    zz_review5_test.go:475: held: ApproveSupplierBank(scoped FM)       real == random: store: not found
+    zz_review5_test.go:475: held: DecidePR(other-project PM)           real == random: store: not found
+    zz_review5_test.go:475: held: GetP2PDoc payment(pm)                real == random: store: not found
+    zz_review5_test.go:475: held: GetP2PDoc PR(other PM)               real == random: store: not found
+    zz_review5_test.go:497: locked out-of-scope payment: timeout: context deadline exceeded after 1.501s; nonexistent: store: not found after 5ms
+    zz_review5_test.go:499: OPEN (low): out-of-scope mutation takes FOR UPDATE before canSee: blocks 1.501s on an existing locked document vs 5ms for a nonexistent id
+--- FAIL: TestR5_05_MutationExistenceDisclosure (1.83s)
+=== RUN   TestR5_06_ScopeSemantics
+    zz_review5_test.go:516: held: no roles -> forbidden for real and random ids and lists (auth: forbidden: p2p.read)
+    zz_review5_test.go:523: held: p2p.read with empty project list and no tenant_wide -> not found
+    zz_review5_test.go:537: held: tenant_wide role + project list confined to its projects
+    zz_review5_test.go:542: project list ["", UPPER(project)] reading purchase_order -> store: not found
+    zz_review5_test.go:542: project list ["", UPPER(project)] reading payment_instruction -> store: not found
+    zz_review5_test.go:542: project list ["", UPPER(project)] reading p2p_policy -> store: not found
+    zz_review5_test.go:553: held: cross-tenant ids -> not found
+    zz_review5_test.go:558: type "Payment_Instruction"    real -> p2p: unknown document type | random -> p2p: unknown document type
+    zz_review5_test.go:558: type "PAYMENT_INSTRUCTION"    real -> p2p: unknown document type | random -> p2p: unknown document type
+    zz_review5_test.go:558: type "payment_instruction "   real -> p2p: unknown document type | random -> p2p: unknown document type
+    zz_review5_test.go:558: type "bank_statement"         real -> p2p: unknown document type | random -> p2p: unknown document type
+    zz_review5_test.go:558: type "bank_statement_line"    real -> p2p: unknown document type | random -> p2p: unknown document type
+    zz_review5_test.go:558: type "journal"                real -> p2p: unknown document type | random -> p2p: unknown document type
+    zz_review5_test.go:558: type ""                       real -> p2p: unknown document type | random -> p2p: unknown document type
+    zz_review5_test.go:567: id "D8B4C4F7-19EB-46C9-BA7E-86E204EB7E63"         pm -> store: not found | cfo -> err=<nil> detail=0B
+    zz_review5_test.go:567: id "{d8b4c4f7-19eb-46c9-ba7e-86e204eb7e63}"       pm -> store: not found | cfo -> err=<nil> detail=0B
+    zz_review5_test.go:567: id "d8b4c4f719eb46c9ba7e86e204eb7e63"             pm -> store: not found | cfo -> err=<nil> detail=0B
+    zz_review5_test.go:567: id "urn:uuid:d8b4c4f7-19eb-46c9-ba7e-86e204eb7e63" pm -> ERROR: invalid input syntax for type uuid: "urn:uuid:d8b4c4f7-19eb-46c9-ba7e-86e204eb7e63" (SQLSTATE 22P02) | cfo -> err=ERROR: invalid input syntax for type uuid: "urn:uuid:d8b4c4f7-19eb-46c9-ba7e-86e204eb7e63" (SQLSTATE 22P02) detail=0B
+    zz_review5_test.go:567: id "x' OR '1'='1"                                 pm -> ERROR: invalid input syntax for type uuid: "x' OR '1'='1" (SQLSTATE 22P02) | cfo -> err=ERROR: invalid input syntax for type uuid: "x' OR '1'='1" (SQLSTATE 22P02) detail=0B
+    zz_review5_test.go:576: info: storekeeper (p2p.read only) reads RFQ with all quotes/prices: 3253B
+    zz_review5_test.go:579: info: storekeeper reads supplier master (tax id) by design: {"approved_at":"2026-10-22T08:46:18.859923+03:00","approved_by":"u-proc-manager","blocked_reason":null,"code":"ABC-STEEL","created_at":"2026-10-22T08:46:18.8553
+--- PASS: TestR5_06_ScopeSemantics (0.48s)
+=== RUN   TestR5_07_AttestationHashConfirmsGuessedAccountNumber
+    zz_review5_test.go:611: OPEN (info/low): the stored approval subject hash confirms the account number ****6789 (full match) from the masked projection after 100000 guesses
+--- FAIL: TestR5_07_AttestationHashConfirmsGuessedAccountNumber (0.19s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	4.294s
+=== RUN   TestR5_H1_ExistenceVariantsAndTenantWideRoutes
+    zz_review5_test.go:66: held: GET policy (pm)                              out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:67: held: GET company bank (scoped cfo)                out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:68: held: GET supplier bank (pm)                       out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:69: held: reveal company bank (scoped fm)              out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:71: held: reveal supplier bank (scoped fm)             out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:73: held: approve pending company bank (scoped cfo)    out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:74: held: approve policy (scoped cfo)                  out-of-scope == nonexistent: 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:90: uppercase id         tenant-wide cfo -> 200 {"created_by":"u-treasury","detail":null,"id":"0e65e1d3-6597-4264-b25d-cf52be855210","status":"ACTIVE"} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:90: braced id            tenant-wide cfo -> 200 {"created_by":"u-treasury","detail":null,"id":"0e65e1d3-6597-4264-b25d-cf52be855210","status":"ACTIVE"} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:90: no-hyphen id         tenant-wide cfo -> 200 {"created_by":"u-treasury","detail":null,"id":"0e65e1d3-6597-4264-b25d-cf52be855210","status":"ACTIVE"} | scoped cfo -> 404 {"error":{"code":"not_found","message":"not found"}}
+    zz_review5_test.go:90: urn id               tenant-wide cfo -> 500 {"error":{"code":"internal","message":"internal error"}} | scoped cfo -> 500 {"error":{"code":"internal","message":"internal error"}}
+    zz_review5_test.go:90: type upper           tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}}
+    zz_review5_test.go:90: type bank_statement  tenant-wide cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}} | scoped cfo -> 404 {"error":{"code":"not_found","message":"unknown document type"}}
+    zz_review5_test.go:109: held: reveal 200 with Cache-Control: no-store
+    zz_review5_test.go:115: info: reveal with a 70 kB purpose -> 200 map[account_name:CBE Operating account_number:3000999888777 currency:ETB id:0e65e1d3-6597-4264-b25d-cf52be855210]
+    zz_review5_test.go:122: scoped accountant GET /v1/journals -> 200 (0 journals)
+    zz_review5_test.go:124: OPEN: project-restricted accountant gets the tenant-wide journal worklist (200)
+    zz_review5_test.go:128: OPEN: project-restricted controller gets entity P2P reconciliation (200): map[checks:[map[check:GRNI (goods received not invoiced) difference:0 gl:0 subledger:0 unposted_or_unmatched:0] map[check:Accounts payable difference:0 gl:0 subledger:0 unposted_or_unmatched:0] map[check:Payments in transit: CBE Operating difference:0 gl:0 subledger:0 unposted_or_unmatched:0] map[check:Bank (reconciled movements): CBE Operating difference:0 gl:0 subledger:0 unposted_or_unmatched:0] map[check:Payments in transit: CBE Payroll difference:0 gl:0 subledger:0 unposted_or_unmatched:0] map[check:Bank (reconciled movements): CBE Payroll difference:0 gl:0 subledger:0 unposted_or_unmatched:0]]]
+    zz_review5_test.go:136: OPEN: project-restricted statement officer imports a statement on an entity-level account it cannot read (201)
+    zz_review5_test.go:141:       same officer reading that account -> 404
+    zz_review5_test.go:143: info: /v1/identity/me for scoped accountant: tenant_wide=true project_ids=[7a368d63-51bd-4507-9c6c-5cec1e4b6ad4]
+    zz_review5_test.go:152: server log: 11530 bytes, 45 lines; no full account numbers found unless reported above
+--- FAIL: TestR5_H1_ExistenceVariantsAndTenantWideRoutes (0.27s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/httpapi	0.280s
+FAIL
