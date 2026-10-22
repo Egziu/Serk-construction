@@ -128,6 +128,14 @@ const (
 	PermStockTransferApprove Permission = "stock.transfer.approve"
 	PermScheduleManage       Permission = "schedule.manage"
 	PermScheduleApprove      Permission = "schedule.approve"
+
+	// Site operations and offline capture (GATED-01, migration 0036).
+	PermSiteDiaryManage    Permission = "site.diary.manage"
+	PermSiteDiaryApprove   Permission = "site.diary.approve"
+	PermSiteDeviceRegister Permission = "site.device.register"
+	// PermSiteDeviceManage revokes anyone's field device (identity
+	// administration); an owner revokes their own with PermSiteDeviceRegister.
+	PermSiteDeviceManage Permission = "site.device.manage"
 )
 
 // Role is a named permission bundle. Roles are tenant-scoped data in
@@ -159,16 +167,16 @@ var DefaultRoles = map[string]Role{
 		PermPeriodReopen, PermAuditRead, PermScopeTenantWide, PermWorkflowRead, PermWorkflowPublish, PermApprovalHighValue,
 		PermPaymentApprove, PermP2PPolicyApprove, PermBudgetOverride, PermBankAcctApprove, PermBankDetailsReveal, PermContractApprove, PermContractPolicyApprove, PermP2PRead}},
 	"auditor":            {Name: "auditor", Permissions: []Permission{PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PRead}},
-	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermStockIssueApprove, PermScheduleApprove, PermP2PRead}},
+	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermStockIssueApprove, PermScheduleApprove, PermSiteDiaryApprove, PermP2PRead}},
 	"project_accountant": {Name: "project_accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermWorkflowRead}},
 	"process_owner":      {Name: "process_owner", Permissions: []Permission{PermWorkflowDefine, PermWorkflowRead}},
 	"workflow_admin":     {Name: "workflow_admin", Permissions: []Permission{PermWorkflowAdmin, PermWorkflowRead, PermScopeTenantWide}},
 	// Identity administration holds no financial permission at all.
-	"security_admin": {Name: "security_admin", Permissions: []Permission{PermIdentityRevoke, PermAuditRead}},
+	"security_admin": {Name: "security_admin", Permissions: []Permission{PermIdentityRevoke, PermAuditRead, PermSiteDeviceManage}},
 	// Journey A operational roles.
 	"estimator":           {Name: "estimator", Permissions: []Permission{PermBOQManage, PermP2PRead}},
 	"commercial_manager":  {Name: "commercial_manager", Permissions: []Permission{PermBOQApprove, PermContractManage, PermIPCCertify, PermARCreditApprove, PermARRetentionApprove, PermP2PRead}},
-	"site_engineer":       {Name: "site_engineer", Permissions: []Permission{PermPRCreate, PermGRNConfirm, PermRFQEvaluate, PermMeasureVerify, PermStockIssueApprove, PermP2PRead}},
+	"site_engineer":       {Name: "site_engineer", Permissions: []Permission{PermPRCreate, PermGRNConfirm, PermRFQEvaluate, PermMeasureVerify, PermStockIssueApprove, PermSiteDiaryManage, PermSiteDeviceRegister, PermP2PRead}},
 	"storekeeper":         {Name: "storekeeper", Permissions: []Permission{PermGRNCreate, PermStockReceive, PermStockIssue, PermStockCount, PermStockTransfer, PermP2PRead}},
 	"procurement_officer": {Name: "procurement_officer", Permissions: []Permission{PermSupplierManage, PermRFQManage, PermPOManage, PermStockItemManage, PermP2PRead}},
 	"procurement_manager": {Name: "procurement_manager", Permissions: []Permission{PermSupplierApprove, PermRFQAward, PermPOApprove, PermWarehouseManage, PermP2PRead}},

@@ -1,0 +1,12 @@
+=== RUN   TestZZR12_DigestCanonicalisation
+    zz_review12_site_test.go:88: original: {OpID:a6576888-7059-42b4-ab8b-4d3fc9e73f0f Seq:1 Outcome:APPLIED Replayed:false DiaryID:4288e809-2779-4eab-97ea-962401c98be3 Number:SDY-2026-000001 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}
+    zz_review12_site_test.go:94: whitespace variant: {OpID:a6576888-7059-42b4-ab8b-4d3fc9e73f0f Seq:1 Outcome:APPLIED Replayed:true DiaryID:4288e809-2779-4eab-97ea-962401c98be3 Number:SDY-2026-000001 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}
+    zz_review12_site_test.go:113: key-reordered variant of the SAME command: {OpID:a6576888-7059-42b4-ab8b-4d3fc9e73f0f Seq:1 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:this op_id was already used with a different command}
+    zz_review12_site_test.go:119: unicode-escaped variant of the SAME command: {OpID:a6576888-7059-42b4-ab8b-4d3fc9e73f0f Seq:1 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:this op_id was already used with a different command}
+    zz_review12_site_test.go:125: same op id+payload, seq 999 and client_time -80d: {OpID:a6576888-7059-42b4-ab8b-4d3fc9e73f0f Seq:1 Outcome:APPLIED Replayed:true DiaryID:4288e809-2779-4eab-97ea-962401c98be3 Number:SDY-2026-000001 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}
+    zz_review12_site_test.go:127: device last_seq after that: 1
+    zz_review12_site_test.go:136: duplicate/case-variant key payload: {OpID:903bd3bd-3252-4a32-aa9b-268ab92b446c Seq:2 Outcome:APPLIED Replayed:false DiaryID:813d8f27-e214-4bce-8416-3bc191a76688 Number:SDY-2026-000002 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}
+    zz_review12_site_test.go:142: stored notes: "Formwork level 2"
+--- PASS: TestZZR12_DigestCanonicalisation (0.09s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/kernel	0.095s

@@ -111,3 +111,6 @@ pre { overflow-x: auto; max-width: 100%; background: var(--bg); padding: 10px; b
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 /* No colour transitions on navigation: text and background must change together (contrast). */
 @media (prefers-reduced-motion: no-preference) { .card { transition: border-color .12s; } }
+.secret { white-space: pre-wrap; word-break: break-all; user-select: all; }
+.inline { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inline input { min-width: 12ch; }

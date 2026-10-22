@@ -1,0 +1,58 @@
+=== RUN   TestZZR12_ForgedCommandLogBurnsDevice
+    zz_review12_site_test.go:42: ACCEPTED: forged APPLIED command (actor=owner) + last_seq=MaxInt64 + fake last_sync_at
+    zz_review12_site_test.go:55: owner's next sync: err=<nil> results=[{OpID:ca6c86c3-5d69-4d27-a73e-7b24168b5571 Seq:1 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:sequence 1 is not after the device's last sequence 9223372036854775807}]
+    zz_review12_site_test.go:57: owner's sync with seq=MaxInt64: err=<nil> results=[{OpID:0f2a94b3-2d8e-48ec-bb36-79f60a182a0c Seq:9223372036854775807 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:sequence 9223372036854775807 is not after the device's last sequence 9223372036854775807}]
+    zz_review12_site_test.go:60: device as listed: status=ACTIVE last_seq=9223372036854775807 last_sync_at=2001-01-01 00:00:00 +0300 EAT
+--- PASS: TestZZR12_ForgedCommandLogBurnsDevice (0.10s)
+=== RUN   TestZZR12_HugeSeqBurnsDevice
+    zz_review12_site_test.go:73: invalid command with seq=MaxInt64: err=<nil> [{OpID:ccbdf306-e264-46d0-a488-b497dd482aba Seq:9223372036854775807 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:kernel: invalid input: diary_date is YYYY-MM-DD}]
+    zz_review12_site_test.go:75: next legitimate command seq=2: err=<nil> [{OpID:00979f84-f0a6-4da3-b652-bfcd1447d35f Seq:2 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:sequence 2 is not after the device's last sequence 9223372036854775807}]
+--- PASS: TestZZR12_HugeSeqBurnsDevice (0.06s)
+=== RUN   TestZZR12_DigestCanonicalisation
+    zz_review12_site_test.go:88: original: {OpID:0d3831bb-1c17-4063-9640-34c1d44f6619 Seq:1 Outcome:APPLIED Replayed:false DiaryID:74b3c74f-bc33-48ae-b7aa-23282796b769 Number:SDY-2026-000001 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}
+    zz_review12_site_test.go:94: whitespace variant: {OpID:0d3831bb-1c17-4063-9640-34c1d44f6619 Seq:1 Outcome:APPLIED Replayed:true DiaryID:74b3c74f-bc33-48ae-b7aa-23282796b769 Number:SDY-2026-000001 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}
+    zz_review12_site_test.go:113: key-reordered variant of the SAME command: {OpID:0d3831bb-1c17-4063-9640-34c1d44f6619 Seq:1 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:this op_id was already used with a different command}
+    zz_review12_site_test.go:119: unicode-escaped variant of the SAME command: {OpID:0d3831bb-1c17-4063-9640-34c1d44f6619 Seq:1 Outcome:APPLIED Replayed:true DiaryID:74b3c74f-bc33-48ae-b7aa-23282796b769 Number:SDY-2026-000001 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}
+    zz_review12_site_test.go:125: same op id+payload, seq 999 and client_time -80d: {OpID:0d3831bb-1c17-4063-9640-34c1d44f6619 Seq:1 Outcome:APPLIED Replayed:true DiaryID:74b3c74f-bc33-48ae-b7aa-23282796b769 Number:SDY-2026-000001 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}
+    zz_review12_site_test.go:127: device last_seq after that: 1
+    zz_review12_site_test.go:136: duplicate/case-variant key payload: {OpID:ef0097eb-829a-44d0-b332-b79e3eb68106 Seq:2 Outcome:APPLIED Replayed:false DiaryID:ac496571-0fb6-4b24-9029-3df8235335c7 Number:SDY-2026-000002 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}
+    zz_review12_site_test.go:142: stored notes: "Formwork level 2"
+--- PASS: TestZZR12_DigestCanonicalisation (0.09s)
+=== RUN   TestZZR12_TransientFailureConsumesCommand
+    zz_review12_site_test.go:164: during signer outage: err=<nil> [{OpID:7447dc89-a88b-435d-8f33-8cfe359b0a60 Seq:1 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:refused}]
+    zz_review12_site_test.go:167: retry after recovery: err=<nil> [{OpID:7447dc89-a88b-435d-8f33-8cfe359b0a60 Seq:1 Outcome:REJECTED Replayed:true DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:refused} {OpID:675f6bdf-e6d8-4fcf-a538-973a751ea25a Seq:2 Outcome:APPLIED Replayed:false DiaryID:d69b3f02-0919-496a-a765-6ce361378352 Number:SDY-2026-000001 Version:1 Status:DRAFT ServerVersion:0 ServerStatus: Error:}]
+--- PASS: TestZZR12_TransientFailureConsumesCommand (0.08s)
+=== RUN   TestZZR12_DraftSquatting
+    zz_review12_site_test.go:184: empty DRAFT diaries created by one engineer for consecutive days: 61
+    zz_review12_site_test.go:186: colleague records today's diary: kernel: invalid input: the project already has diary SDY-2026-000001 for 2026-10-22
+    zz_review12_site_test.go:191: PM rejects the squatting DRAFT: ledger: illegal status transition: document is DRAFT
+    zz_review12_site_test.go:192: author submits the empty squatting DRAFT: store: database invariant violated: a submitted diary records labour, equipment or notes
+--- PASS: TestZZR12_DraftSquatting (0.33s)
+=== RUN   TestZZR12_DBRejectOwnDiary
+    zz_review12_site_test.go:205: kernel: author rejects own diary: auth: segregation of duties violation: the creator of a site diary cannot approve or reject it
+    zz_review12_site_test.go:206: kernel: author approves own diary: auth: segregation of duties violation: the creator of a site diary cannot approve or reject it
+    zz_review12_site_test.go:207: ACCEPTED: DB: author-attested REJECT of own diary
+    zz_review12_site_test.go:218: diary now: status=REJECTED reason="self-rejected" created_by=u-site-eng (no rejected_by column)
+--- PASS: TestZZR12_DBRejectOwnDiary (0.08s)
+=== RUN   TestZZR12_SetConstraintsImmediate
+    zz_review12_site_test.go:229: ACCEPTED: revision attested, constraint fired IMMEDIATE, then an extra line
+    zz_review12_site_test.go:262: attested hash=45aa876d854638e407a47b723fb160a96e4aa26c0c6199c34f52b021b9880caa committed hash=b7521917d90953542b9e7b471e166ccac0f4b0ec7c849bb303ebf1358321a753 lines(v2)=2
+--- PASS: TestZZR12_SetConstraintsImmediate (0.07s)
+=== RUN   TestZZR12_XminCorners
+    zz_review12_site_test.go:272: REFUSED:  lines after SELECT FOR UPDATE / FOR NO KEY UPDATE of the header: store: database invariant violated: privilege: diary lines are written only with an attested revision of the diary
+    zz_review12_site_test.go:279: REFUSED:  lines after INSERT .. ON CONFLICT DO UPDATE .. WHERE false (row locked, not written): store: database invariant violated: privilege: diary lines are written only with an attested revision of the diary
+    zz_review12_site_test.go:291:   header update: ERROR: a diary revision moves the version by exactly one (SQLSTATE 23514)
+    zz_review12_site_test.go:288: REFUSED:  lines after a refused header update caught by a savepoint: store: database invariant violated: privilege: diary lines are written only with an attested revision of the diary
+    zz_review12_site_test.go:300: row xmin=899432 current xid32=899439
+    zz_review12_site_test.go:302: REFUSED:  legit revision written inside a subtransaction (savepoint): store: database invariant violated: privilege: diary lines are written only with an attested revision of the diary
+--- PASS: TestZZR12_XminCorners (0.07s)
+=== RUN   TestZZR12_SyncCrossUserAndScope
+    zz_review12_site_test.go:335: peer revises/submits author's diary by client_ref: [{OpID:1f92bec0-2848-47de-8d85-4121f82897bb Seq:1 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:not permitted} {OpID:c3bde79b-0304-4afa-8a60-942f6a9d90dd Seq:2 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:not permitted}]
+    zz_review12_site_test.go:339: diary for an out-of-scope project: [{OpID:10c59b19-5faa-4c48-9b2d-8b0e3192cd61 Seq:3 Outcome:REJECTED Replayed:false DiaryID: Number: Version:0 Status: ServerVersion:0 ServerStatus: Error:not permitted}]
+    zz_review12_site_test.go:344: p2p detail contains client_ref=true origin_device_id key=true client_created_at key=true
+--- PASS: TestZZR12_SyncCrossUserAndScope (0.08s)
+=== RUN   TestZZR12_RegisterManyDevices
+    zz_review12_site_test.go:360: devices registered by one person in 212ms: 50 (listed ACTIVE: 50)
+--- PASS: TestZZR12_RegisterManyDevices (0.26s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/kernel	1.247s

@@ -1,0 +1,361 @@
+package kernel
+
+// Review 12 probes (independent reviewer). Synthetic data only.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/serk-group/serk-construction/pkg/attest"
+	"github.com/serk-group/serk-construction/pkg/auth"
+)
+
+func r12exec(t *testing.T, f *fixture, name string, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	t.Helper()
+	err := f.app.WithTenant(f.ctx, f.tenant, fn)
+	if err == nil {
+		t.Logf("ACCEPTED: %s", name)
+	} else {
+		t.Logf("REFUSED:  %s: %s", name, firstLine(err.Error()))
+	}
+	return err
+}
+
+// P1: a leaked tenant credential forges command-log rows (actor is a free
+// column) and moves any device's sequence to MaxInt64.
+func TestZZR12_ForgedCommandLogBurnsDevice(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	dev, err := f.svc.RegisterDevice(f.ctx, fresh(c.eng), "Victim tablet")
+	must(t, "register", err)
+	r, err := f.svc.SaveDiary(f.ctx, c.eng, diaryIn(f, uuid.NewString(), 0, "48"))
+	must(t, "diary", err)
+	err = r12exec(t, f, "forged APPLIED command (actor=owner) + last_seq=MaxInt64 + fake last_sync_at", func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `INSERT INTO site_sync_commands(device_id, client_op_id, seq, kind, actor, payload_sha256, client_time, outcome, diary_id, result)
+			VALUES ($1::uuid, $2::uuid, 9223372036854775807, 'site_diary.save', 'u-site-eng', repeat('0',64), now() - interval '80 days', 'APPLIED', $3::uuid, '{"outcome":"APPLIED","error":"forged"}')`,
+			dev.ID, uuid.NewString(), r.ID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE site_devices SET last_seq = 9223372036854775807, last_sync_at = '2001-01-01' WHERE id = $1::uuid`, dev.ID)
+		return err
+	})
+	if err != nil {
+		return
+	}
+	res, err := f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{syncOp(1, "site_diary.save", savePayload(f, uuid.NewString(), 0, "8"), time.Now())})
+	t.Logf("owner's next sync: err=%v results=%+v", err, res)
+	res, err = f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{syncOp(math.MaxInt64, "site_diary.save", savePayload(f, uuid.NewString(), 0, "8"), time.Now())})
+	t.Logf("owner's sync with seq=MaxInt64: err=%v results=%+v", err, res)
+	devs, _ := f.svc.ListDevices(f.ctx, c.eng)
+	for _, d := range devs {
+		t.Logf("device as listed: status=%s last_seq=%d last_sync_at=%v", d.Status, d.LastSeq, d.LastSyncAt)
+	}
+}
+
+// P2: the owner (or a thief holding token+key) burns the device with one
+// huge sequence number; even a REJECTED (invalid) command consumes it.
+func TestZZR12_HugeSeqBurnsDevice(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	dev, err := f.svc.RegisterDevice(f.ctx, fresh(c.eng), "Tablet huge seq")
+	must(t, "register", err)
+	bad := SyncOp{OpID: uuid.NewString(), Seq: math.MaxInt64, Kind: "site_diary.save", ClientTime: time.Now(), Payload: json.RawMessage(`{"client_ref":"x"}`)}
+	res, err := f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{bad})
+	t.Logf("invalid command with seq=MaxInt64: err=%v %+v", err, res)
+	res, err = f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{syncOp(2, "site_diary.save", savePayload(f, uuid.NewString(), 0, "8"), time.Now())})
+	t.Logf("next legitimate command seq=2: err=%v %+v", err, res)
+}
+
+// P3: payload digest canonicalisation.
+func TestZZR12_DigestCanonicalisation(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	dev, err := f.svc.RegisterDevice(f.ctx, fresh(c.eng), "Tablet digest")
+	must(t, "register", err)
+	ref := uuid.NewString()
+	op := syncOp(1, "site_diary.save", savePayload(f, ref, 0, "40"), time.Now())
+	res, err := f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{op})
+	must(t, "sync", err)
+	t.Logf("original: %+v", res[0])
+
+	// Same command, whitespace added: replay (digest uses json.Compact).
+	ws := op
+	ws.Payload = json.RawMessage("  " + strings.ReplaceAll(string(op.Payload), ",", " ,\n ") + " ")
+	res, _ = f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{ws})
+	t.Logf("whitespace variant: %+v", res[0])
+
+	// Same command, keys re-ordered (a client that re-serialises a map).
+	var m map[string]any
+	_ = json.Unmarshal(op.Payload, &m)
+	var sb strings.Builder
+	sb.WriteString("{")
+	keys := []string{"weather", "notes", "base_version", "labour", "equipment", "diary_date", "project_id", "client_ref"}
+	for i, k := range keys {
+		v, _ := json.Marshal(m[k])
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		fmt.Fprintf(&sb, "%q:%s", k, v)
+	}
+	sb.WriteString("}")
+	ro := op
+	ro.Payload = json.RawMessage(sb.String())
+	res, _ = f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{ro})
+	t.Logf("key-reordered variant of the SAME command: %+v", res[0])
+
+	// Same semantic content, "A"-style escape: different digest.
+	esc := op
+	esc.Payload = json.RawMessage(strings.Replace(string(op.Payload), `"Overcast"`, "\""+string(rune(92))+"u004fvercast\"", 1))
+	res, _ = f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{esc})
+	t.Logf("unicode-escaped variant of the SAME command: %+v", res[0])
+
+	// Different seq and client_time, same op id and payload: replay (not bound).
+	other := op
+	other.Seq, other.ClientTime = 999, time.Now().Add(-80*24*time.Hour)
+	res, _ = f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{other})
+	t.Logf("same op id+payload, seq 999 and client_time -80d: %+v", res[0])
+	devs, _ := f.svc.ListDevices(f.ctx, c.eng)
+	t.Logf("device last_seq after that: %d", devs[0].LastSeq)
+
+	// Duplicate keys: Go keeps the last; a JS/other parser may keep the first.
+	dup := syncOp(2, "site_diary.save", nil, time.Now())
+	p := savePayload(f, uuid.NewString(), 0, "8")
+	p["diary_date"] = time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	b, _ := json.Marshal(p)
+	dup.Payload = json.RawMessage(strings.Replace(string(b), `"notes":`, `"notes":"FIRST VALUE","Notes":`, 1))
+	res, _ = f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{dup})
+	t.Logf("duplicate/case-variant key payload: %+v", res[0])
+	if res[0].DiaryID != "" {
+		var notes string
+		_ = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT notes FROM site_diaries WHERE id = $1::uuid`, res[0].DiaryID).Scan(&notes)
+		})
+		t.Logf("stored notes: %q", notes)
+	}
+}
+
+type r12FailIssuer struct{}
+
+func (r12FailIssuer) Issue(context.Context, attest.Claims) (attest.Attestation, error) {
+	return attest.Attestation{}, errors.New("signer: connection reset by peer")
+}
+
+// P4: a transient signer failure permanently consumes the offline command.
+func TestZZR12_TransientFailureConsumesCommand(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	dev, err := f.svc.RegisterDevice(f.ctx, fresh(c.eng), "Tablet flaky")
+	must(t, "register", err)
+	flaky := New(f.app, auth.NewAuthorizer(nil, true)).UseApprovalSigner(r12FailIssuer{})
+	ref := uuid.NewString()
+	op := syncOp(1, "site_diary.save", savePayload(f, ref, 0, "40"), time.Now())
+	op2 := syncOp(2, "site_diary.save", savePayload(f, uuid.NewString(), 0, "40"), time.Now())
+	op2.Payload = json.RawMessage(strings.Replace(string(op2.Payload), time.Now().UTC().Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, -3).Format("2006-01-02"), 1))
+	res, err := flaky.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{op})
+	t.Logf("during signer outage: err=%v %+v", err, res)
+	// Signer recovers; the client retries the same command.
+	res, err = f.svc.Sync(f.ctx, c.eng, dev.ID, dev.Secret, []SyncOp{op, op2})
+	t.Logf("retry after recovery: err=%v %+v", err, res)
+}
+
+// P5: day squatting: a DRAFT diary blocks the project's day for everyone and
+// nobody but the author can remove it.
+func TestZZR12_DraftSquatting(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	n := 0
+	for d := 0; d <= 60; d++ {
+		in := diaryIn(f, uuid.NewString(), 0, "8")
+		in.DiaryDate = time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -d)
+		in.Labour, in.Equipment, in.Notes = nil, nil, ""
+		if _, err := f.svc.SaveDiary(f.ctx, c.eng, in); err == nil {
+			n++
+		}
+	}
+	t.Logf("empty DRAFT diaries created by one engineer for consecutive days: %d", n)
+	_, err := f.svc.SaveDiary(f.ctx, c.eng2, diaryIn(f, uuid.NewString(), 0, "48"))
+	t.Logf("colleague records today's diary: %v", err)
+	var id string
+	_ = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT id::text FROM site_diaries WHERE diary_date = current_date AND status = 'DRAFT'`).Scan(&id)
+	})
+	t.Logf("PM rejects the squatting DRAFT: %v", f.svc.DecideDiary(f.ctx, c.pm, id, false, "Blocking the day"))
+	t.Logf("author submits the empty squatting DRAFT: %v", f.svc.SubmitDiary(f.ctx, c.eng, id, 0))
+}
+
+// P6: database-level maker-checker for rejection (a compromised API path):
+// the author holding both roles rejects their own diary.
+func TestZZR12_DBRejectOwnDiary(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	both := c.eng
+	both.Roles = []string{"site_engineer", "project_manager"}
+	r, err := f.svc.SaveDiary(f.ctx, both, diaryIn(f, uuid.NewString(), 0, "48"))
+	must(t, "create", err)
+	must(t, "submit", f.svc.SubmitDiary(f.ctx, both, r.ID, 1))
+	t.Logf("kernel: author rejects own diary: %v", f.svc.DecideDiary(f.ctx, both, r.ID, false, "my own reject"))
+	t.Logf("kernel: author approves own diary: %v", f.svc.DecideDiary(f.ctx, both, r.ID, true, ""))
+	_ = r12exec(t, f, "DB: author-attested REJECT of own diary", func(ctx context.Context, tx pgx.Tx) error {
+		if err := f.svc.authorize(ctx, tx, both, "site.diary.reject", "site_diary", r.ID, "REJECTED"); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE site_diaries SET status = 'REJECTED', decision_reason = 'self-rejected' WHERE id = $1::uuid`, r.ID)
+		return err
+	})
+	var st, reason string
+	_ = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT status, COALESCE(decision_reason,'') FROM site_diaries WHERE id = $1::uuid`, r.ID).Scan(&st, &reason)
+	})
+	t.Logf("diary now: status=%s reason=%q created_by=%s (no rejected_by column)", st, reason, both.UserID)
+}
+
+// P7: SET CONSTRAINTS ... IMMEDIATE fires the revision attestation early;
+// lines inserted afterwards are not covered by it.
+func TestZZR12_SetConstraintsImmediate(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	r, err := f.svc.SaveDiary(f.ctx, c.eng, diaryIn(f, uuid.NewString(), 0, "48"))
+	must(t, "create", err)
+	var attested, final string
+	_ = r12exec(t, f, "revision attested, constraint fired IMMEDIATE, then an extra line", func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM site_diaries WHERE id = $1::uuid FOR UPDATE`, r.ID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE site_diaries SET version = 2, notes = 'rev 2' WHERE id = $1::uuid`, r.ID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO site_diary_labour(diary_id, version, line_no, trade, headcount, hours) VALUES ($1::uuid, 2, 1, 'Masons', 6, 48)`, r.ID); err != nil {
+			return err
+		}
+		if err := f.svc.authorize(ctx, tx, c.eng, "site.diary.revision.create", "site_diary", r.ID, ""); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `SET CONSTRAINTS site_diary_attested IMMEDIATE`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO site_diary_labour(diary_id, version, line_no, trade, headcount, hours) VALUES ($1::uuid, 2, 2, 'Ghost gang', 100, 2400)`, r.ID); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `SELECT subject_hash FROM approval_attestations WHERE subject_id = $1 AND action = 'site.diary.revision.create' ORDER BY recorded_at DESC LIMIT 1`, r.ID).Scan(&attested); err != nil {
+			t.Logf("read attestation: %v", err)
+		}
+		return nil
+	})
+	if err := f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT approval_subject_hash('site_diary', $1)`, r.ID).Scan(&final)
+	}); err != nil {
+		t.Logf("subject hash now: %v", err)
+	}
+	var lines int
+	_ = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT count(*) FROM site_diary_labour WHERE diary_id = $1::uuid AND version = 2`, r.ID).Scan(&lines)
+	})
+	t.Logf("attested hash=%s committed hash=%s lines(v2)=%d", attested, final, lines)
+}
+
+// P8: xmin check corner cases (held or not).
+func TestZZR12_XminCorners(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	r, err := f.svc.SaveDiary(f.ctx, c.eng, diaryIn(f, uuid.NewString(), 0, "48"))
+	must(t, "create", err)
+	ins := `INSERT INTO site_diary_labour(diary_id, version, line_no, trade, headcount, hours) VALUES ($1::uuid, 1, 9, 'Ghost gang', 10, 80)`
+	_ = r12exec(t, f, "lines after SELECT FOR UPDATE / FOR NO KEY UPDATE of the header", func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM site_diaries WHERE id = $1::uuid FOR NO KEY UPDATE`, r.ID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, ins, r.ID)
+		return err
+	})
+	_ = r12exec(t, f, "lines after INSERT .. ON CONFLICT DO UPDATE .. WHERE false (row locked, not written)", func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `INSERT INTO site_diaries(project_id, number, client_ref, diary_date, weather, created_by)
+			SELECT project_id, number, client_ref, diary_date, weather, created_by FROM site_diaries WHERE id = $1::uuid
+			ON CONFLICT (tenant_id, client_ref) DO UPDATE SET weather = EXCLUDED.weather WHERE false`, r.ID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, ins, r.ID)
+		return err
+	})
+	_ = r12exec(t, f, "lines after a refused header update caught by a savepoint", func(ctx context.Context, tx pgx.Tx) error {
+		_, _ = tx.Exec(ctx, `SAVEPOINT a`)
+		_, e := tx.Exec(ctx, `UPDATE site_diaries SET notes = 'x' WHERE id = $1::uuid`, r.ID)
+		t.Logf("  header update: %v", e)
+		_, _ = tx.Exec(ctx, `ROLLBACK TO SAVEPOINT a`)
+		_, err := tx.Exec(ctx, ins, r.ID)
+		return err
+	})
+	var xmin, cur string
+	_ = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT xmin::text, (txid_current() % 4294967296)::text FROM site_diaries WHERE id = $1::uuid`, r.ID).Scan(&xmin, &cur)
+	})
+	t.Logf("row xmin=%s current xid32=%s", xmin, cur)
+	// False negative: the kernel's own revision inside a savepoint (nested tx).
+	_ = r12exec(t, f, "legit revision written inside a subtransaction (savepoint)", func(ctx context.Context, tx pgx.Tx) error {
+		_, _ = tx.Exec(ctx, `SELECT txid_current()`)
+		sub, err := tx.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err := sub.Exec(ctx, `UPDATE site_diaries SET version = 2, notes = 'rev in savepoint' WHERE id = $1::uuid`, r.ID); err != nil {
+			return err
+		}
+		if err := sub.Commit(ctx); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO site_diary_labour(diary_id, version, line_no, trade, headcount, hours) VALUES ($1::uuid, 2, 1, 'Masons', 6, 48)`, r.ID)
+		return err
+	})
+}
+
+// P9: cross-user and cross-project via sync.
+func TestZZR12_SyncCrossUserAndScope(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	r, err := f.svc.SaveDiary(f.ctx, c.eng, diaryIn(f, uuid.NewString(), 0, "48"))
+	must(t, "create", err)
+	var ref string
+	_ = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT client_ref::text FROM site_diaries WHERE id = $1::uuid`, r.ID).Scan(&ref)
+	})
+	dev2, err := f.svc.RegisterDevice(f.ctx, fresh(c.eng2), "Peer tablet")
+	must(t, "register", err)
+	res, _ := f.svc.Sync(f.ctx, c.eng2, dev2.ID, dev2.Secret, []SyncOp{
+		syncOp(1, "site_diary.save", savePayload(f, ref, 1, "1"), time.Now()),
+		syncOp(2, "site_diary.submit", map[string]any{"client_ref": ref, "base_version": 1}, time.Now()),
+	})
+	t.Logf("peer revises/submits author's diary by client_ref: %+v", res)
+	other := savePayload(f, uuid.NewString(), 0, "8")
+	other["project_id"] = "11111111-1111-4111-8111-111111111111"
+	res, _ = f.svc.Sync(f.ctx, c.eng2, dev2.ID, dev2.Secret, []SyncOp{syncOp(3, "site_diary.save", other, time.Now())})
+	t.Logf("diary for an out-of-scope project: %+v", res)
+	// Generic p2p detail exposes client_ref/origin_device_id to project readers.
+	d, err := f.svc.GetP2PDoc(f.ctx, c.pm, "site_diary", r.ID)
+	if err == nil {
+		s := string(d.Detail)
+		t.Logf("p2p detail contains client_ref=%v origin_device_id key=%v client_created_at key=%v", strings.Contains(s, ref), strings.Contains(s, "origin_device_id"), strings.Contains(s, "client_created_at"))
+	}
+}
+
+// P10: registration volume.
+func TestZZR12_RegisterManyDevices(t *testing.T) {
+	f := newFixture(t)
+	c := newSiteCast(f)
+	ok := 0
+	start := time.Now()
+	for i := 0; i < 50; i++ {
+		if _, err := f.svc.RegisterDevice(f.ctx, fresh(c.eng), fmt.Sprintf("Tablet %02d", i)); err == nil {
+			ok++
+		}
+	}
+	devs, _ := f.svc.ListDevices(f.ctx, c.eng)
+	t.Logf("devices registered by one person in %v: %d (listed ACTIVE: %d)", time.Since(start).Round(time.Millisecond), ok, len(devs))
+}

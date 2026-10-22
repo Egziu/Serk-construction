@@ -81,6 +81,8 @@ var p2pTables = map[string]struct{ table, creator, children string }{
 	"stock_transfer":    {"stock_transfers", "created_by", ""},
 	"schedule_version":  {"schedule_versions", "created_by", ""},
 	"schedule_progress": {"schedule_progress", "created_by", ""},
+	// Site operations (0037).
+	"site_diary": {"site_diaries", "created_by", ""},
 }
 
 // DocTypes reports whether a document type is known (for callers that must
@@ -308,6 +310,7 @@ var listSQL = map[string]string{
 	"stock_count":           `SELECT c.id::text, c.number, c.status, c.created_by, c.created_at, COALESCE(c.project_id::text, ''), COALESCE(c.amount, 0), i.code || ' counted ' || c.counted_qty || ' (book ' || c.system_qty || ') in ' || w.code FROM stock_counts c JOIN stock_items i ON i.id = c.stock_item_id JOIN warehouses w ON w.id = c.warehouse_id`,
 	"schedule_version":      `SELECT s.id::text, 'v' || s.version, s.status, s.created_by, s.created_at, s.project_id::text, COALESCE((SELECT sum(budget) FROM schedule_activities a WHERE a.version_id = s.id), 0), s.description || COALESCE(' — finish ' || s.finish_date, '') FROM schedule_versions s`,
 	"schedule_progress":     `SELECT p.id::text, p.number, p.status, p.created_by, p.created_at, p.project_id::text, 0::numeric, 'Progress at ' || p.status_date || ' on v' || s.version FROM schedule_progress p JOIN schedule_versions s ON s.id = p.version_id`,
+	"site_diary":            `SELECT d.id::text, d.number, d.status, d.created_by, d.created_at, d.project_id::text, 0::numeric, 'Site diary ' || d.diary_date || ' v' || d.version FROM site_diaries d`,
 	"stock_transfer":        `SELECT t.id::text, t.number, t.status, t.created_by, t.created_at, COALESCE(wf.project_id::text, ''), COALESCE(t.amount, 0), i.code || ' ' || t.quantity || ' ' || i.unit || ' ' || wf.code || ' to ' || wt.code FROM stock_transfers t JOIN stock_items i ON i.id = t.stock_item_id JOIN warehouses wf ON wf.id = t.from_warehouse_id JOIN warehouses wt ON wt.id = t.to_warehouse_id`,
 	// Money-in statement lines not yet recorded as a receipt (AR worklist).
 	"money_in": `SELECT l.id::text, s.statement_no || '/' || l.line_no, CASE WHEN EXISTS (SELECT 1 FROM customer_receipts r WHERE r.statement_line_id = l.id AND r.status <> 'CANCELLED') THEN 'RECORDED' ELSE 'UNAPPLIED' END,

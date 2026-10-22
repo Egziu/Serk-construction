@@ -153,6 +153,7 @@ func New(cfg Config) *Server {
 	s.registerAR()
 	s.registerStock()
 	s.registerSchedule()
+	s.registerSite()
 	// Operations console: static assets only; it has no authority of its own.
 	s.mux.Handle("GET /console/", webui.Handler())
 	s.mux.Handle("GET /{$}", http.RedirectHandler("/console/", http.StatusFound))
@@ -516,6 +517,8 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		// RFC 9470 step-up authentication challenge.
 		w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_user_authentication", error_description="recent multi-factor authentication required", max_age=600`)
 		writeErr(w, http.StatusUnauthorized, "step_up_required", "recent multi-factor authentication required")
+	case errors.Is(err, kernel.ErrDeviceRefused):
+		writeErr(w, http.StatusForbidden, "device_refused", "the field device is not registered to you, is revoked, or its key is wrong")
 	case errors.Is(err, kernel.ErrSessionRevoked):
 		writeErr(w, http.StatusUnauthorized, "session_revoked", "session revoked; authenticate again")
 	case errors.Is(err, kernel.ErrBudgetExceeded):

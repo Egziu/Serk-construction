@@ -1,0 +1,36 @@
+package httpapi
+
+// Review 12 HTTP probes (independent reviewer). Synthetic data only.
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+func TestZZR12_WrongDeviceKeyNoLockout(t *testing.T) {
+	a := newP2PAPI(t)
+	P := []string{a.project}
+	eng, engMFA := a.tok("u-site-eng", P, false, "site_engineer"), a.tok("u-site-eng", P, true, "site_engineer")
+	_, reg := a.do("POST", "/v1/site/devices", engMFA, map[string]any{"label": "Tablet probe"})
+	dev, secret := reg["id"].(string), reg["secret"].(string)
+	save := map[string]any{"client_ref": uuid.NewString(), "project_id": a.project, "diary_date": time.Now().UTC().Format("2006-01-02"), "weather": "Clear",
+		"notes": "probe", "base_version": 0, "labour": []map[string]any{{"trade": "Labourers", "headcount": 2, "hours": "16"}}}
+	codes := map[int]int{}
+	for i := 0; i < 40; i++ {
+		st, _ := a.syncReq(eng, dev, "sfd_guess"+strings.Repeat("A", i%5), []map[string]any{siteOp(1, "site_diary.save", save, time.Now())})
+		codes[st]++
+	}
+	t.Logf("40 wrong device keys from one IP/token: status counts %v", codes)
+	st, out := a.syncReq(eng, dev, secret, []map[string]any{siteOp(1, "site_diary.save", save, time.Now())})
+	t.Logf("then correct key: %d %v", st, asJSON(out))
+	// Same command body, seq as a huge JSON number.
+	op := siteOp(2, "site_diary.save", save, time.Now())
+	op["seq"] = 9007199254740993 // 2^53+1: not representable in a JS client
+	st, out = a.syncReq(eng, dev, secret, []map[string]any{op})
+	t.Logf("seq 2^53+1: %d %v", st, asJSON(out))
+	list := a.call(200, "GET", "/v1/site/devices", eng, nil)
+	t.Logf("device list (as a JS client would parse last_seq): %v", asJSON(list))
+}

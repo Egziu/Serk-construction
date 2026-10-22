@@ -1,0 +1,8 @@
+=== RUN   TestZZR12_WrongDeviceKeyNoLockout
+    zz_review12_site_api_test.go:26: 40 wrong device keys from one IP/token: status counts map[403:40]
+    zz_review12_site_api_test.go:28: then correct key: 200 {"results":[{"diary_id":"628a5461-8695-493e-9eda-c5b431a7512d","number":"SDY-2026-000001","op_id":"db8a7001-1f5d-4605-b1b6-e9b751fe816e","outcome":"APPLIED","seq":1,"status":"DRAFT","version":1}]}
+    zz_review12_site_api_test.go:33: seq 2^53+1: 200 {"results":[{"diary_id":"628a5461-8695-493e-9eda-c5b431a7512d","error":"diary SDY-2026-000001 is at version 1 (DRAFT); the change was based on version 0","number":"SDY-2026-000001","op_id":"62a084f0-3f33-4c16-9cda-d8dd6e774035","outcome":"CONFLICT","seq":9007199254740992,"server_status":"DRAFT","server_version":1}]}
+    zz_review12_site_api_test.go:35: device list (as a JS client would parse last_seq): {"items":[{"id":"940b7d75-7c63-47cf-9b38-21959649673d","label":"Tablet probe","last_seq":9007199254740992,"last_sync_at":"2026-10-22T23:55:28.910534+03:00","registered_at":"2026-10-22T23:55:28.843147+03:00","status":"ACTIVE","user_id":"u-site-eng"}]}
+--- PASS: TestZZR12_WrongDeviceKeyNoLockout (0.13s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/httpapi	0.139s

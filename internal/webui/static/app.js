@@ -216,6 +216,11 @@ const DOCS = {
     actions: { DRAFT: [['submit', 'schedule.manage']], SUBMITTED: [['approve', 'schedule.approve'], ['reject', 'schedule.approve', 'req']] } },
   schedule_progress: { title: 'Progress reports', one: 'Progress report', base: '/v1/progress', create: 'schedule.manage', form: 'progress',
     statuses: ['DRAFT', 'APPROVED', 'REJECTED'], actions: { DRAFT: [['approve', 'schedule.approve'], ['reject', 'schedule.approve', 'req']] } },
+  // Site operations (0037): diaries prepared online or on a field device.
+  site_diary: { title: 'Site diaries', one: 'Site diary', base: '/v1/site/diaries', create: 'site.diary.manage', form: 'diary',
+    statuses: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELLED'],
+    actions: { DRAFT: [['submit', 'site.diary.manage'], ['cancel', 'site.diary.manage', 'req'], ['reject', 'site.diary.approve', 'req']],
+      SUBMITTED: [['approve', 'site.diary.approve'], ['reject', 'site.diary.approve', 'req']] } },
   money_in: { title: 'Money received', one: 'Money received', statuses: ['UNAPPLIED', 'RECORDED'], actions: {},
     link: (d) => (d.status === 'UNAPPLIED' && S.can.has('ar.receipt.create') ? `#/new/receipt/${d.id}` : null) },
 };
@@ -228,7 +233,8 @@ const NAV = [
   ['Project', [['#/list/boq_version', 'BOQ', 'p2p.read'], ['#/list/purchase_requisition', 'Requisitions', 'p2p.read'], ['#/cost', 'Cost report', 'p2p.read']]],
   ['Planning', [['#/list/schedule_version', 'Schedules', 'p2p.read'], ['#/list/schedule_progress', 'Progress', 'p2p.read'], ['#/evm', 'Earned value', 'p2p.read']]],
   ['Procurement', [['#/list/rfq', 'RFQs', 'p2p.read'], ['#/list/rfq_quote', 'Quotes', 'p2p.read'], ['#/list/purchase_order', 'Purchase orders', 'p2p.read'], ['#/list/supplier', 'Suppliers', 'p2p.read']]],
-  ['Site', [['#/list/grn', 'Goods receipts', 'p2p.read']]],
+  ['Site', [['#/list/site_diary', 'Site diaries', 'p2p.read'], ['#/site/devices', 'Field devices', 'site.device.register|site.device.manage'],
+    ['#/list/grn', 'Goods receipts', 'p2p.read']]],
   ['Stores', [['#/stock', 'Stock on hand', 'p2p.read'], ['#/list/stock_issue', 'Stock issues', 'p2p.read'], ['#/list/stock_count', 'Stock counts', 'p2p.read'],
     ['#/list/stock_transfer', 'Transfers', 'p2p.read'],
     ['#/list/stock_receipt', 'Put-aways', 'p2p.read'], ['#/list/stock_item', 'Stock items', 'p2p.read'], ['#/list/warehouse', 'Warehouses', 'p2p.read']]],
@@ -284,6 +290,8 @@ const QUEUES = [
   ['schedule.manage', 'schedule_version', 'DRAFT', 'Schedules to submit'],
   ['schedule.approve', 'schedule_version', 'SUBMITTED', 'Schedules to approve'],
   ['schedule.approve', 'schedule_progress', 'DRAFT', 'Progress reports to approve'],
+  ['site.diary.manage', 'site_diary', 'DRAFT', 'Site diaries to submit'],
+  ['site.diary.approve', 'site_diary', 'SUBMITTED', 'Site diaries to approve'],
   ['stock.item.approve', 'stock_item', 'PENDING', 'Stock items to approve'],
   ['stock.receive', 'grn', 'CONFIRMED', 'Goods receipts to put away'],
   ['stock.issue.approve', 'stock_issue', 'DRAFT', 'Stock issues to approve'],
@@ -335,6 +343,7 @@ async function route() {
       case 'cost': return await renderCost();
       case 'stock': return await renderStock();
       case 'evm': return await renderEVM();
+      case 'site': return await renderDevices();
       default: return await renderHome();
     }
   } catch (e) {
@@ -486,7 +495,7 @@ function rowsTable(caption, rows) {
   const lr = (k) => { const i = LINE_ORDER.indexOf(k); return i < 0 ? LINE_ORDER.length : i; };
   const offsets = new Set(['es', 'ef', 'ls', 'lf']);
   const keys = Object.keys(rows[0]).filter((k) => !HIDE.has(k) && !offsets.has(k) && !/_id$/.test(k) && typeof rows[0][k] !== 'object').sort((a, b) => lr(a) - lr(b));
-  return table(caption, keys.map((k) => ({ label: words(k), num: /quantity|qty|price|amount|rate|total|pct|line|budget|duration|float|percent|lag/.test(k),
+  return table(caption, keys.map((k) => ({ label: words(k), num: /quantity|qty|price|amount|rate|total|pct|line|budget|duration|float|percent|lag|hours|headcount|version/.test(k),
     cell: (r) => (r[k] == null ? '' : /_pct$/.test(k) ? `${(Number(r[k]) * 100).toFixed(2)}%` : fmtValue(k, r[k])) })), rows);
 }
 
@@ -504,7 +513,8 @@ async function renderDoc(type, id) {
       rowsTable('Invoice against purchase order and confirmed receipts', md.lines)));
   }
   parts.push(rowsTable('Lines', det.lines), rowsTable('Items', det.items), rowsTable('Allocations', det.alloc),
-    rowsTable('Activities (critical path computed; the database re-verifies it)', det.activities), rowsTable('Dependencies', det.links));
+    rowsTable('Activities (critical path computed; the database re-verifies it)', det.activities), rowsTable('Dependencies', det.links),
+    rowsTable('Labour (this version)', det.labour), rowsTable('Equipment (this version)', det.equipment));
   if (Array.isArray(det.quotes)) parts.push(rowsTable('Quotes received', det.quotes.map((x) => x.q)));
   if (det.payee) parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Payee (approved bank account)'), kv(det.payee)));
   if (type === 'contract' && d.status === 'ACTIVE') parts.push(await positionPanel(d.id));
@@ -1254,6 +1264,31 @@ const FORMS = {
     });
   },
 
+  async diary() {
+    const proj = select('project_id', projectOpts(), { required: true });
+    const at = input('diary_date', { type: 'date', value: today(), required: true });
+    const weather = input('weather', { type: 'text', required: true, maxlength: '200' });
+    const notes = h('textarea', { name: 'notes', maxlength: '8000', rows: '4' });
+    const labour = lineGrid('Labour (trade, headcount, person-hours)', [
+      { key: 'trade', label: 'Trade', make: txt('trade', { maxlength: '100' }) },
+      { key: 'headcount', label: 'Headcount', make: num('headcount', { inputmode: 'numeric' }) },
+      { key: 'hours', label: 'Person-hours', make: num('hours') },
+    ], [], true);
+    const equipment = lineGrid('Equipment (hours worked and idle)', [
+      { key: 'description', label: 'Equipment', make: txt('description', { maxlength: '200' }) },
+      { key: 'hours', label: 'Hours worked', make: num('hours') },
+      { key: 'idle_hours', label: 'Hours idle', make: num('idle_hours') },
+    ], [], true);
+    formPage('Record a site diary', 'One diary per project and day. A project manager approves it after you submit it. Field devices record diaries offline and synchronise them.', [
+      h('div', { class: 'grid' }, field('Project', proj), field('Date', at), field('Weather', weather)), field('Notes', notes), labour, equipment], 'Save diary', async () => {
+      const lab = labour.rows().filter((r) => r.trade).map((r) => ({ trade: r.trade, headcount: Number(r.headcount), hours: r.hours }));
+      const eq = equipment.rows().filter((r) => r.description).map((r) => ({ description: r.description, hours: r.hours || '0', idle_hours: r.idle_hours || '0' }));
+      const res = await api('POST', '/v1/site/diaries', { client_ref: crypto.randomUUID(), project_id: proj.value, diary_date: at.value, weather: weather.value.trim(),
+        notes: notes.value, base_version: 0, labour: lab, equipment: eq });
+      created('site_diary', res, 'Site diary');
+    });
+  },
+
   async progress() {
     const proj = select('project_id', projectOpts(), { required: true });
     const at = input('status_date', { type: 'date', value: today(), required: true });
@@ -1626,6 +1661,44 @@ async function renderEVM() {
   page('Earned value', 'From the approved baseline (PV spread over each activity\'s working days), the latest approved progress (EV) and the posted ledger cost on the project (AC).',
     h('div', { class: 'toolbar' }, field('Project', proj), field('Status date', at)), out);
   await load();
+}
+
+// ---------- field devices ----------
+async function renderDevices() {
+  const r = await api('GET', '/v1/site/devices');
+  const out = h('div', { 'aria-live': 'polite' });
+  const label = input('label', { type: 'text', maxlength: '100', required: true });
+  const reg = h('form', { class: 'panel', novalidate: true }, field('Device name', label, 'Registering a device needs a recent multi-factor sign-in. Its key is shown once.'),
+    h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Register a device')));
+  reg.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    clearError();
+    if (!label.value.trim()) { showError(new Error('Name the device.')); label.focus(); return; }
+    try {
+      const d = await api('POST', '/v1/site/devices', { label: label.value.trim() });
+      out.replaceChildren(h('div', { class: 'notice', role: 'status' }, h('p', {}, `Device registered. Enter this key in the field app now; it is not shown again.`),
+        h('pre', { class: 'secret' }, `device id  ${d.id}\ndevice key ${d.secret}`)));
+      label.value = '';
+    } catch (e) { showError(e); }
+  });
+  const revoke = (d) => {
+    if (d.status !== 'ACTIVE') return '';
+    const reason = input('reason', { type: 'text', maxlength: '500', 'aria-label': `Reason for revoking ${d.label}` });
+    const btn = h('button', { type: 'button', class: 'danger' }, 'Revoke');
+    btn.addEventListener('click', async () => {
+      clearError();
+      if (reason.value.trim().length < 5) { showError(new Error('Give a reason of at least 5 characters.')); reason.focus(); return; }
+      btn.disabled = true;
+      try { await api('POST', `/v1/site/devices/${d.id}/revoke`, { reason: reason.value.trim() }); say(`${d.label} revoked.`); await renderDevices(); } catch (e) { btn.disabled = false; showError(e); }
+    });
+    return h('span', { class: 'inline' }, reason, btn);
+  };
+  page('Field devices', 'Devices that may synchronise site records prepared offline. A revoked device can never synchronise again, including records it queued before the revocation.',
+    S.can.has('site.device.register') ? reg : null, out,
+    table(`Devices (${r.items.length})`, [
+      { label: 'Device', cell: (d) => d.label }, { label: 'Person', cell: (d) => d.user_id }, { label: 'Status', cell: (d) => chip(d.status) },
+      { label: 'Last sync', cell: (d) => (d.last_sync_at ? when(d.last_sync_at) : 'never') }, { label: 'Commands', num: true, cell: (d) => String(d.last_seq) },
+      { label: 'Registered', cell: (d) => when(d.registered_at) }, { label: 'Action', cell: revoke }], r.items, 'No devices registered.'));
 }
 
 // ---------- stock ----------
