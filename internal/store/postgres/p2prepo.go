@@ -61,7 +61,7 @@ var p2pTables = map[string]struct{ table, creator, children string }{
 	"grn":                   {"grns", "created_by", ""},
 	"supplier_invoice":      {"supplier_invoices", "entered_by", ""},
 	"payment_instruction":   {"payment_instructions", "created_by", ""},
-	// Journey B (0017).
+	// Journey B (0018).
 	"customer":         {"customers", "created_by", ""},
 	"contract_policy":  {"contract_policies", "created_by", ""},
 	"contract":         {"contracts", "created_by", ""},
@@ -416,7 +416,7 @@ func ProjectCostCodes(ctx context.Context, tx pgx.Tx, projectID string) ([]RefIt
 		 ORDER BY c.code`, projectID)
 }
 
-// ContractPosition is the commercial position of a contract (0017).
+// ContractPosition is the commercial position of a contract (0018).
 type ContractPosition struct {
 	ContractValue    decimal.Decimal `json:"contract_value"`
 	MeasuredValue    decimal.Decimal `json:"measured_value"`

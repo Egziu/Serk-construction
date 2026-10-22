@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -310,6 +311,12 @@ func (s *Service) ReverseJournal(ctx context.Context, p auth.Principal, original
 		}
 		if err := s.authz.RequireProject(p, auth.PermJournalReverse, orig.TenantID, orig.ProjectID); err != nil {
 			return err
+		}
+		// Subledger journals are corrected at their document, never reversed:
+		// a reversal would leave the document and the ledger disagreeing
+		// (review 6, R6-F4; also refused in SQL by 0020).
+		if st := string(orig.SourceType); strings.HasPrefix(st, "P2P_") || strings.HasPrefix(st, "AR_") {
+			return fmt.Errorf("%w: %s journals are not reversed; correct the source document instead", ErrInvalidInput, st)
 		}
 		if eventAt.IsZero() {
 			// A server-chosen default would make identical retries hash

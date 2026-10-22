@@ -1,0 +1,132 @@
+=== RUN   TestR6_01_NegativeAmountDue
+    review6_regression_test.go:109: held: amount due 10500.000000 (gross 350000.000000, retention 70000.000000, recovery 280000.000000, VAT 10500.000000)
+    review6_regression_test.go:120: held (after 0020): recovery is capped, so the amount due is non-negative and the invoice approves normally
+--- PASS: TestR6_01_NegativeAmountDue (0.59s)
+=== RUN   TestR6_02_SubCentAllocations
+    review6_regression_test.go:135: held: sub-cent allocation refused at recording: store: database invariant violated: receipt allocation 199.995000 ETB has more than 2 decimal place(s) (SC-14)
+--- PASS: TestR6_02_SubCentAllocations (0.21s)
+=== RUN   TestR6_03_AdvanceRecoveryEdges
+    review6_regression_test.go:164: held: IPC1 recovery limited to the advance received: 300000.000000
+    review6_regression_test.go:172: held: certify an IPC prepared before an advance receipt (stale)              store: database invariant violated: IPC IPC-2026-000002 is stale: measurements, certificates or advance receipts changed since it was prepared; cancel and prepare it again
+    review6_regression_test.go:176: info: IPC3 this_gross/recovery/total recovered = 350000.000000/175000.000000/475000.000000 (catch-up of IPC1's shortfall is capped by 50% of this gross)
+    review6_regression_test.go:181: held: total recovered 475000.000000 <= advance received 1000000
+--- PASS: TestR6_03_AdvanceRecoveryEdges (0.28s)
+=== RUN   TestR6_04_IPCPeriodUnconstrained
+    review6_regression_test.go:195: held: IPC period before contract signature refused: store: database invariant violated: the certificate period must end on or after the contract signature (2026-10-01) and the last verified measurement (2026-10-20), and after the last certificate (<NULL>)
+--- PASS: TestR6_04_IPCPeriodUnconstrained (0.17s)
+=== RUN   TestR6_05_RawWorkflowSkips
+    review6_regression_test.go:214: held: INSERT an IPC directly as CERTIFIED                                    store: database invariant violated: IPCs are prepared DRAFT for an ACTIVE contract
+    review6_regression_test.go:216: held: INSERT a measurement directly as VERIFIED                              store: database invariant violated: measurements are recorded DRAFT against an ACTIVE contract
+    review6_regression_test.go:218: held: INSERT a contract directly as ACTIVE                                   store: database invariant violated: contracts are created DRAFT in the entity's functional currency
+    review6_regression_test.go:220: held: INSERT a contract line after activation                                store: database invariant violated: contract lines change only while the contract is DRAFT
+    review6_regression_test.go:221: held: UPDATE a contract line rate after activation                           store: database invariant violated: privilege: permission denied for table contract_lines
+    review6_regression_test.go:222: held: DELETE a contract line after activation                                store: database invariant violated: privilege: permission denied for table contract_lines
+    review6_regression_test.go:223: held: UPDATE retention_pct on an ACTIVE contract                             store: database invariant violated: privilege: permission denied for table contracts
+    review6_regression_test.go:224: held: UPDATE a verified measurement quantity                                 store: database invariant violated: privilege: permission denied for table measurement_lines
+    review6_regression_test.go:225: held: INSERT a measurement line into a VERIFIED measurement                  store: database invariant violated: measurement lines change only while the measurement is DRAFT
+    review6_regression_test.go:229: held: UPDATE an IPC's amount_due                                             store: database invariant violated: privilege: permission denied for table ipcs
+    review6_regression_test.go:230: held: DRAFT IPC -> CERTIFIED skipping SUBMITTED (attested certifier)         store: database invariant violated: illegal IPC transition DRAFT -> CERTIFIED
+    review6_regression_test.go:233: held: certify an IPC with an attestation lacking MFA                         store: database invariant violated: privilege: ipc.certify requires a recent multi-factor authentication in the attestation
+    review6_regression_test.go:235: held: certify as a different actor than attested                             store: database invariant violated: privilege: ipc.certify of ipc bd2f09be-23bf-46cc-a5e3-8abb71a6e249 requires a verified approval attestation for u-cfo
+    review6_regression_test.go:238: held: CERTIFIED -> INVOICED without an invoice approval                      store: database invariant violated: privilege: an IPC becomes INVOICED only with the attested approval of its customer invoice
+    review6_regression_test.go:243: held: INSERT a customer invoice with caller figures (second invoice for the IPC) store: database invariant violated: customer_invoices_ipc_id_key
+    review6_regression_test.go:245: held: approve the invoice without its journal (attested approver)            store: database invariant violated: AR_INVOICE f33daef1-7c61-492d-90e1-f12e684f112c has no generated journal
+    review6_regression_test.go:248: held: approve the invoice with a MANUAL-source journal carrying its exact lines store: database invariant violated: journal acea0a52-3322-4b8e-bddc-6367c1ed8abd is not the DRAFT AR_INVOICE journal of f33daef1-7c61-492d-90e1-f12e684f112c (entity, currency, date)
+    review6_regression_test.go:275: held: manual journal with reserved source type AR_INVOICE                    store: database invariant violated: journal 6d53ac6a-0876-439c-92ca-64773661df9a uses reserved source type AR_INVOICE but no AR_INVOICE document references it
+    review6_regression_test.go:275: held: manual journal with reserved source type AR_RECEIPT                    store: database invariant violated: journal d657c5de-d23d-401c-be58-c931958e3bff uses reserved source type AR_RECEIPT but no AR_RECEIPT document references it
+    review6_regression_test.go:275: held: manual journal with reserved source type AR_OTHER                      store: database invariant violated: journal 16e03e31-0796-45ac-8de6-9f2f68ede1f0 uses reserved source type AR_OTHER but no AR_OTHER document references it
+    review6_regression_test.go:282: held: approve invoice B with invoice A's attestation                         store: database invariant violated: privilege: ar.invoice.approve of customer_invoice ac0e3d3f-236d-4aa5-9cec-df0d601e4449 requires a verified approval attestation for u-ar-supervisor
+    review6_regression_test.go:292: held: approve invoice B bound to invoice A's journal                         store: database invariant violated: journal ae80e7dd-84fc-449e-a0bd-d512fe9c46a1 is not the DRAFT AR_INVOICE journal of ac0e3d3f-236d-4aa5-9cec-df0d601e4449 (entity, currency, date)
+    review6_regression_test.go:294: held: change the approved invoice's journal_id                               store: database invariant violated: privilege: customer invoice column journal_id cannot be changed in this transition
+    review6_regression_test.go:298: held: receipt for a money-out statement line                                 store: database invariant violated: a receipt is recorded for an unmatched money-in statement line
+    review6_regression_test.go:301: held: receipt INSERTed as CONFIRMED                                          store: database invariant violated: receipts are recorded DRAFT
+    review6_regression_test.go:304: held: receipt with a caller-chosen amount (no attestation)                   store: database invariant violated: privilege: ar.receipt.create of customer_receipt db238630-4925-4f6b-93e8-4521f40697f8 requires a verified approval attestation for u-ar-clerk
+    review6_regression_test.go:308: held: add an allocation after confirmation                                   store: database invariant violated: allocations are added only while the receipt is DRAFT
+    review6_regression_test.go:309: held: change an allocation after confirmation                                store: database invariant violated: privilege: permission denied for table receipt_allocations
+    review6_regression_test.go:310: held: delete an allocation after confirmation                                store: database invariant violated: privilege: permission denied for table receipt_allocations
+    review6_regression_test.go:311: held: match the receipted money-in line to something else                    store: database invariant violated: statement line 1 does not match payment <NULL> (must be RELEASED from this account, same amount out, reference containing the payment number)
+--- PASS: TestR6_05_RawWorkflowSkips (0.29s)
+=== RUN   TestR6_06_ReceiptCancelAndLineReuse
+    review6_regression_test.go:329: info: re-recording the line while the wrong draft exists: store: database invariant violated: customer_receipts_one_live_per_line
+    review6_regression_test.go:337: held: line re-usable after cancellation
+    review6_regression_test.go:343: info: AR recon "Unapplied money in (statement lines without a confirmed receipt)": 35000 in 1 lines (permanently, for this line)
+--- PASS: TestR6_06_ReceiptCancelAndLineReuse (0.22s)
+=== RUN   TestR6_07_ForeignCurrencyReceiptToAdvance
+    review6_regression_test.go:375: held: USD receipt to ETB contract advance refused at recording: store: database invariant violated: an allocation must be to an invoice or contract of the receipt's entity and currency
+--- PASS: TestR6_07_ForeignCurrencyReceiptToAdvance (0.17s)
+=== RUN   TestR6_08_ReversedInvoiceJournal
+    review6_regression_test.go:407: held: reversal of an AR journal refused: kernel: invalid input: AR_INVOICE journals are not reversed; correct the source document instead
+--- PASS: TestR6_08_ReversedInvoiceJournal (0.23s)
+=== RUN   TestR6_09_ContractPolicySuccession
+    review6_regression_test.go:487: held: a successor is possible (same <nil> / fresh store: database invariant violated: a successor contract policy keeps the AR, retention and advance control accounts / vat <nil>)
+    review6_regression_test.go:504: held: company bank account on the AR control account refused: store: database invariant violated: bank and payments-in-transit accounts must not be receivable, retention, advance, VAT output or revenue control accounts
+    review6_regression_test.go:513: held: P2P policy on an AR control account refused: store: database invariant violated: P2P control accounts must not be receivable, retention, advance, VAT output or revenue control accounts
+--- PASS: TestR6_09_ContractPolicySuccession (0.16s)
+=== RUN   TestR6_10_ManualJournalOnARControl
+    review6_regression_test.go:542: info: a manual journal Dr AR / Cr contract revenue 5,000 was created, approved and posted (no control-account guard on manual journals)
+    review6_regression_test.go:550: held: AR reconciliation detects it: difference -5000
+    review6_regression_test.go:556: info: project profitability revenue 0 (the manual revenue is on the project)
+--- PASS: TestR6_10_ManualJournalOnARControl (0.15s)
+=== RUN   TestR6_11_HumanRuleAndDraftParity
+    review6_regression_test.go:596: held: Go and SQL draft-action lists agree on 74 actions; draft (non-human allowed): [ap.submit ar.invoice.create ar.receipt.create bank.import bankacct.create boq.submit contract.policy.create contract.submit customer.create grn.submit ipc.submit measure.submit payment.submit po.create pr.submit rfq.quote.record supplier.bank.create supplier.create workflow.start .create]
+    review6_regression_test.go:607: held: IPC certification by kind "service"                                    auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:607: held: IPC certification by kind "ai"                                         auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:607: held: IPC certification by kind ""                                           auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:607: held: IPC certification by kind "Human"                                      auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:607: held: IPC certification by kind "human "                                     auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:614: held: measurement verification by a service principal                        auth: forbidden: measure.verify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:615: held: measurement rejection by a service principal                           auth: forbidden: measure.verify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:618: held: IPC cancellation by an AI principal                                    auth: forbidden: ipc.cancel is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    review6_regression_test.go:631: held: signed ipc.certify attestation without principal.human                 store: database invariant violated: privilege: ipc.certify is a decision reserved to principals the identity provider asserts are human (actor u-commercial)
+    review6_regression_test.go:645: info: an AI principal recorded receipt 3f15c5fc (draft action, by design)
+    review6_regression_test.go:646: held: confirm a receipt using the AI's ar.receipt.create attestation         store: database invariant violated: privilege: ar.receipt.confirm of customer_receipt 3f15c5fc-261f-458d-9d08-e70fd8b94be6 requires a verified approval attestation for u-bot-clerk
+    review6_regression_test.go:656: held: receipt confirmation by a service principal                            auth: forbidden: ar.receipt.confirm is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+--- PASS: TestR6_11_HumanRuleAndDraftParity (0.23s)
+=== RUN   TestR6_12_SoDCombinedRoles
+    review6_regression_test.go:672: held: invoice approved by its issuer (ar_clerk+ar_supervisor)                auth: segregation of duties violation: the creator of a customer invoice cannot approve or reject it
+    review6_regression_test.go:673: held: raw: invoice approved by its issuer with a genuine attestation         store: database invariant violated: AR_INVOICE f68862b6-2e91-430c-a4d0-3b72347f0c0f has no generated journal
+    review6_regression_test.go:692: info: importer with differently-cased id records:  store: database invariant violated: a receipt is recorded by someone independent of the statement import
+--- PASS: TestR6_12_SoDCombinedRoles (0.22s)
+=== RUN   TestR6_13_Visibility
+    review6_regression_test.go:761: info: u-outsider (tenant bb762f66) gets zero profitability for project A (RLS: no data)
+    review6_regression_test.go:766: info: u-outsider gets an empty AR reconciliation for tenant-1's entity (RLS: no data)
+    review6_regression_test.go:769: held (unless OPEN above): project-B and tenant-2 principals cannot read/list/position/profitability/reconcile project-A Journey B documents; out-of-scope == nonexistent
+    review6_regression_test.go:774: held: project-B AR clerk issues an invoice for a project-A IPC               store: not found
+    review6_regression_test.go:777: held: project-B AR clerk records a receipt (entity level)                    auth: forbidden: receipts need tenant-wide scope
+    review6_regression_test.go:781: held: project-A QS measures a project-B contract                             store: not found
+    review6_regression_test.go:783: info: ContractPosition calls loadDoc (SELECT ... FOR UPDATE) although it only reads
+--- PASS: TestR6_13_Visibility (0.37s)
+=== RUN   TestR6_02b_SubCentAllocationsBalanced
+    review6_regression_test.go:798: held: record a receipt with allocations 199.994 + 0.006 (refused at recording since 0020) store: database invariant violated: receipt allocation 199.994000 ETB has more than 2 decimal place(s) (SC-14)
+--- PASS: TestR6_02b_SubCentAllocationsBalanced (0.24s)
+=== RUN   TestR6_14_ConcurrentConfirmations
+    review6_regression_test.go:830: info: concurrent confirmation refused: store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 38500.000000): it would be over-allocated or is not payable
+    review6_regression_test.go:830: info: concurrent confirmation refused: store: database invariant violated: contract CTR-2026-000001 cannot take this advance (agreed advance 1000000.000000)
+    review6_regression_test.go:838: held: concurrent confirmations: 2 succeeded; invoice allocated 23100 of 38500; advance received 600000 of 1000000
+--- PASS: TestR6_14_ConcurrentConfirmations (0.28s)
+=== RUN   TestR6_15_ConcurrentMeasurementVerification
+    review6_regression_test.go:863: info: store: database invariant violated: contract line 3: cumulative measured 140.0000 exceeds the contract quantity 120.0000 (a variation is required)
+    review6_regression_test.go:870: held: verified quantity 70 <= 120 under concurrent verification
+--- PASS: TestR6_15_ConcurrentMeasurementVerification (0.20s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/kernel	4.036s
+=== RUN   TestR6_API_JourneyB
+    review6_regression_test.go:60: info: customer create with pkind "service" -> 201
+    review6_regression_test.go:67: held: customer approval with pkind "service" -> 403 map[code:forbidden message:insufficient permission]
+    review6_regression_test.go:60: info: customer create with pkind "ai" -> 201
+    review6_regression_test.go:67: held: customer approval with pkind "ai" -> 403 map[code:forbidden message:insufficient permission]
+    review6_regression_test.go:60: info: customer create with pkind "" -> 201
+    review6_regression_test.go:67: held: customer approval with pkind "" -> 403 map[code:forbidden message:insufficient permission]
+    review6_regression_test.go:80: info: contract with retention 20% and advance recovery 100% accepted and activated over HTTP (amount due of every IPC funded by the advance is negative; see kernel TestR6_01)
+    review6_regression_test.go:92: held: contract position: other project 404, nonexistent 404
+    review6_regression_test.go:99: held: profitability: other project 403, nonexistent 403
+    review6_regression_test.go:105: held: project-scoped AR reconciliation -> 403
+    review6_regression_test.go:112: held: other-project QS list contract -> 200 (0 items)
+    review6_regression_test.go:112: held: other-project QS list customer_receipt -> 200 (0 items)
+    review6_regression_test.go:112: held: other-project QS list money_in -> 200 (0 items)
+    review6_regression_test.go:121: held: malformed allocation id -> 422 map[code:validation message:each allocation names exactly one invoice_id or contract_id (canonical UUID)]
+    review6_regression_test.go:128: held: malformed customer_id -> 422 map[code:validation message:project_id and customer_id must be canonical UUIDs]
+    review6_regression_test.go:135: held: negative retention/quantity -> 409 map[code:invariant_violation message:the database refused the change: new row for relation "contracts" violates check constraint "contracts_retention_pct_check"]
+--- PASS: TestR6_API_JourneyB (0.12s)
+PASS
+ok  	github.com/serk-group/serk-construction/internal/httpapi	0.121s

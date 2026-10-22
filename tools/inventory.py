@@ -39,7 +39,7 @@ tests = {}  # name -> file
 for f in sorted(glob.glob(os.path.join(ROOT, "**/*_test.go"), recursive=True)):
     for t in re.findall(r"^func (Test\w+)\(t \*testing\.T\)", open(f).read(), re.M):
         tests[t] = os.path.relpath(f, ROOT)
-LOGS = ["docs/testing/evidence/full-suite-go1.26.10.txt"]
+LOGS = ["docs/testing/evidence/full-suite-r6-fixes.txt"]
 results = {}
 for lg in LOGS:  # later logs override earlier ones
     if os.path.exists(os.path.join(ROOT, lg)):
@@ -80,7 +80,7 @@ DOMAINS = [
       gaps="Statement authenticity depends on how the file is obtained: no bank-signed feed (R-BANKFEED)"),
  dict(name="Contracts and measurements (Journey B)", status="implemented", tables=r"^(customers|contract_|contracts|measurement)", routes=r"^/v1/(customers|contract|measurements)",
       screens=r"#/list/(contract|measurement|customer$)", perms=r"^(customer|contract|measure)\.", postings="-",
-      tests=r"^Test(JourneyB|APIJourneyB|ConsoleBrowserJourneyB|GovernedAI)", gaps="No variations/change orders; no retention release; independent review 6 pending at generation time"),
+      tests=r"^Test(JourneyB|APIJourneyB|ConsoleBrowserJourneyB|GovernedAI)", gaps="No variations/change orders; no retention release"),
  dict(name="IPC, AR invoicing and receipts (Journey B)", status="implemented", tables=r"^(ipcs|customer_invoices|customer_receipts|receipt_allocations)",
       routes=r"^/v1/(ipcs|customer-invoices|receipts)|ar-reconciliation|position", screens=r"#/list/(ipc|customer_invoice|customer_receipt|money_in)",
       perms=r"^(ipc|ar)\.", postings="AR_INVOICE: Dr AR, retention, advances; Cr revenue, VAT output. AR_RECEIPT: Dr bank; Cr AR, advances",

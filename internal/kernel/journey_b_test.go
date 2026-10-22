@@ -476,3 +476,34 @@ func TestJourneyB_CertificateHashConstant(t *testing.T) {
 		t.Fatal("arCertSHA is not sha256(\"test\")")
 	}
 }
+
+// R6-F2: a wrong DRAFT receipt is cancelled through the kernel and its
+// statement line is applied correctly afterwards; decisions stay human.
+func TestJourneyB_CancelReceipt(t *testing.T) {
+	w := newARWorld(t)
+	f, c := w.f, w.cast
+	ctr := w.activeContract(t)
+	w.measure(t, 15, "1000", "0", "0")
+	inv, _ := w.approvedInvoice(t, w.certifiedIPC(t, 15, "ERA-IPC-01"))
+	lines := w.statement(t, c.bankOfficer, "CBE-C-001", "0", "1000000", [3]string{"1000000", "ERA ADVANCE", "ERA"})
+	wrong, err := f.svc.RecordReceipt(f.ctx, w.ar.arClerk, lines[0], []ReceiptAllocation{{InvoiceID: inv, Amount: dec("1000000")}})
+	if err == nil {
+		t.Logf("note: over-allocation is refused only at confirmation; recorded draft %s", wrong[:8])
+	} else {
+		wrong, err = f.svc.RecordReceipt(f.ctx, w.ar.arClerk, lines[0], []ReceiptAllocation{{ContractID: ctr, Amount: dec("1000000")}})
+		must(t, "wrong draft", err)
+	}
+	arDenied(t, "cancelling without a reason", f.svc.CancelReceipt(f.ctx, w.ar.arClerk, wrong, ""), "reason")
+	ai := w.ar.arClerk
+	ai.UserID, ai.Kind = "u-ar-assistant", auth.KindAI
+	arDenied(t, "cancellation by an AI principal", f.svc.CancelReceipt(f.ctx, ai, wrong, "Allocated to the wrong document"), "reserved to human principals")
+	must(t, "cancel", f.svc.CancelReceipt(f.ctx, w.ar.arClerk, wrong, "Allocated to the wrong document"))
+	_, err = f.svc.ConfirmReceipt(f.ctx, w.ar.arSup, wrong)
+	arDenied(t, "confirming a cancelled receipt", err, "CANCELLED")
+	// The line is free again: the correct receipt goes through.
+	_, j := w.confirmedReceipt(t, lines[0], ReceiptAllocation{ContractID: ctr, Amount: dec("1000000")})
+	w.financePost(t, j)
+	if got := w.balance(t, "2200"); !got.Equal(dec("-1000000")) {
+		t.Errorf("advance account after the corrected receipt: %s", got)
+	}
+}

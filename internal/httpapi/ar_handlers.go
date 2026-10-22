@@ -73,6 +73,9 @@ func (s *Server) registerAR() {
 		return map[string]any{"id": id, "journal_id": jid}, err
 	}))
 	m.Handle("POST /v1/receipts", s.authed(s.recordReceipt))
+	m.Handle("POST /v1/receipts/{id}/cancel", decide(func(ctx context.Context, p auth.Principal, id string, b decisionBody) (any, error) {
+		return nil, k().CancelReceipt(ctx, p, id, b.Reason)
+	}))
 	m.Handle("POST /v1/receipts/{id}/confirm", decide(func(ctx context.Context, p auth.Principal, id string, _ decisionBody) (any, error) {
 		jid, err := k().ConfirmReceipt(ctx, p, id)
 		return map[string]any{"id": id, "journal_id": jid}, err
@@ -114,6 +117,10 @@ func (s *Server) createContract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.ContractInput.SignedOn = b.SignedOn.Time
+	if !canonicalUUID(b.ProjectID) || !canonicalUUID(b.CustomerID) { // R6-F7: 422, not 500
+		writeErr(w, http.StatusUnprocessableEntity, "validation", "project_id and customer_id must be canonical UUIDs")
+		return
+	}
 	id, err := s.cfg.Kernel.CreateContract(r.Context(), principalFrom(r.Context()), b.ContractInput)
 	s.created(w, id, err)
 }
@@ -195,6 +202,12 @@ func (s *Server) recordReceipt(w http.ResponseWriter, r *http.Request) {
 	if !canonicalUUID(b.StatementLineID) {
 		writeErr(w, http.StatusUnprocessableEntity, "validation", "statement_line_id must be a canonical UUID")
 		return
+	}
+	for _, a := range b.Allocations {
+		if (a.InvoiceID != "" && !canonicalUUID(a.InvoiceID)) || (a.ContractID != "" && !canonicalUUID(a.ContractID)) || (a.InvoiceID == "") == (a.ContractID == "") {
+			writeErr(w, http.StatusUnprocessableEntity, "validation", "each allocation names exactly one invoice_id or contract_id (canonical UUID)")
+			return
+		}
 	}
 	id, err := s.cfg.Kernel.RecordReceipt(r.Context(), principalFrom(r.Context()), b.StatementLineID, b.Allocations)
 	s.created(w, id, err)

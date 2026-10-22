@@ -585,11 +585,41 @@ func (s *Service) ConfirmReceipt(ctx context.Context, p auth.Principal, id strin
 	return jid, err
 }
 
+// CancelReceipt cancels a DRAFT receipt with a reason, releasing its
+// statement line for a correct receipt (R6-F2). The recorder or a
+// supervisor may cancel; a confirmed receipt is never cancelled.
+func (s *Service) CancelReceipt(ctx context.Context, p auth.Principal, id, reason string) error {
+	if err := requireReason(reason); err != nil {
+		return err
+	}
+	perm := auth.PermARReceiptCreate
+	if !s.authz.Has(p, perm) {
+		perm = auth.PermARReceiptConfirm
+	}
+	return s.p2pTx(ctx, p, perm, func(ctx context.Context, tx pgx.Tx) error {
+		d, err := s.loadDoc(ctx, tx, p, perm, "customer_receipt", id)
+		if err != nil {
+			return err
+		}
+		if err := requireStatus(d, "DRAFT"); err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, tx, p, "ar.receipt.cancel", "customer_receipt", id, "CANCELLED"); err != nil {
+			return err
+		}
+		if err := postgres.Exec1(ctx, tx, `UPDATE customer_receipts SET status = 'CANCELLED', cancel_reason = $2 WHERE id = $1::uuid`, id, strings.TrimSpace(reason)); err != nil {
+			return err
+		}
+		return s.record(ctx, tx, p, "ar.receipt.cancel", "customer_receipt", id, "ar.receipt_cancelled", map[string]any{"receipt_id": id, "reason": reason})
+	})
+}
+
 // ContractPosition reports a contract's commercial position.
 func (s *Service) ContractPosition(ctx context.Context, p auth.Principal, contractID string) (postgres.ContractPosition, error) {
 	var out postgres.ContractPosition
 	err := s.p2pTx(ctx, p, auth.PermP2PRead, func(ctx context.Context, tx pgx.Tx) error {
-		if _, err := s.loadDoc(ctx, tx, p, auth.PermP2PRead, "contract", contractID); err != nil {
+		// A read: visibility without a row lock (R6-F8).
+		if _, err := s.visibleDoc(ctx, tx, p, "contract", contractID, false); err != nil {
 			return err
 		}
 		var err error

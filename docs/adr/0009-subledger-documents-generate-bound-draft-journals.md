@@ -54,3 +54,6 @@ The subledger must not weaken any of this. Two shortcuts would weaken it:
 - **Post subledger accounting automatically, without finance approval.** This is faster, but it would give procurement and AP users an indirect posting path. Rejected.
 - **Compute amounts in Go and store them.** This is simpler, but a second writer (tenant SQL, a future service) could store different numbers. Rejected in favour of database computation, with Go/SQL rounding differentially tested.
 - **Trust the uploaded statement lines with only a file hash.** That was the 0013 design. Review 3 (H2) showed the lines were not bound to the file, so it was replaced by the parsed-content digest verified at commit.
+
+**Amendment (2026-10-22, 0020):** subledger journals are no longer corrected by reversal. A reversal leaves the source document live while its accounting is undone, so reversal of `P2P_*` and `AR_*` journals is refused. Corrections are document-level (see ADR 0011, R6-F4).
+

@@ -187,7 +187,7 @@ const DOCS = {
   customer_invoice: { title: 'Customer invoices', one: 'Customer invoice', base: '/v1/customer-invoices',
     statuses: ['DRAFT', 'APPROVED'], actions: { DRAFT: [['approve', 'ar.invoice.approve']] } },
   customer_receipt: { title: 'Receipts', one: 'Receipt', base: '/v1/receipts', create: 'ar.receipt.create', form: 'receipt',
-    statuses: ['DRAFT', 'CONFIRMED', 'CANCELLED'], actions: { DRAFT: [['confirm', 'ar.receipt.confirm']] } },
+    statuses: ['DRAFT', 'CONFIRMED', 'CANCELLED'], actions: { DRAFT: [['confirm', 'ar.receipt.confirm'], ['cancel', 'ar.receipt.create', 'req'], ['cancel', 'ar.receipt.confirm', 'req']] } },
   money_in: { title: 'Money received', one: 'Money received', statuses: ['UNAPPLIED', 'RECORDED'], actions: {},
     link: (d) => (d.status === 'UNAPPLIED' && S.can.has('ar.receipt.create') ? `#/new/receipt/${d.id}` : null) },
 };
@@ -503,7 +503,8 @@ function nextSteps(type, d) {
 
 function actionsPanel(type, d, det) {
   const meta = DOCS[type];
-  const acts = (meta.actions[d.status] || []).filter(([, perm]) => S.can.has(perm));
+  const seen = new Set();
+  const acts = (meta.actions[d.status] || []).filter(([a, perm]) => S.can.has(perm) && !seen.has(a) && seen.add(a));
   if (!acts.length) return null;
   const box = h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Actions'));
   for (const [action, , mode] of acts) {

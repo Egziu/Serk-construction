@@ -1,0 +1,147 @@
+=== RUN   TestR6_01_NegativeAmountDue
+    zz_review6_test.go:107: OPEN: IPC certified with a negative amount due: -70000.000000 (gross 350000.000000, retention 70000.000000, recovery 350000.000000, VAT 0.000000)
+    zz_review6_test.go:118: OPEN: certified IPC 9e1a91b7 cannot be invoiced (stuck: IPC stays CERTIFIED, invoice DRAFT, no credit to the client's account): ledger: journal does not balance: debits 420000.00 ETB credits 350000.00 ETB
+--- FAIL: TestR6_01_NegativeAmountDue (0.80s)
+=== RUN   TestR6_02_SubCentAllocations
+    zz_review6_test.go:141: held (late): sub-cent receipt recorded as DRAFT 9f2e349d but refused at confirmation: ledger: invalid line: line 3 amount must be positive
+    zz_review6_test.go:142: OPEN: sub-cent allocations accepted at recording (receipt 9f2e349d now DRAFT, unconfirmable, and blocks its statement line)
+--- FAIL: TestR6_02_SubCentAllocations (0.28s)
+=== RUN   TestR6_03_AdvanceRecoveryEdges
+    zz_review6_test.go:165: held: IPC1 recovery limited to the advance received: 300000.000000
+    zz_review6_test.go:173: held: certify an IPC prepared before an advance receipt (stale)              store: database invariant violated: IPC IPC-2026-000002 is stale: measurements, certificates or advance receipts changed since it was prepared; cancel and prepare it again
+    zz_review6_test.go:177: info: IPC3 this_gross/recovery/total recovered = 350000.000000/175000.000000/475000.000000 (catch-up of IPC1's shortfall is capped by 50% of this gross)
+    zz_review6_test.go:182: held: total recovered 475000.000000 <= advance received 1000000
+--- PASS: TestR6_03_AdvanceRecoveryEdges (0.34s)
+=== RUN   TestR6_04_IPCPeriodUnconstrained
+    zz_review6_test.go:199: OPEN (low): IPC 0b404078 'to 2025-01-01' (contract signed 2026-10-01, work measured to 2026-10-20) prepared with gross 35000.000000
+--- FAIL: TestR6_04_IPCPeriodUnconstrained (0.19s)
+=== RUN   TestR6_05_RawWorkflowSkips
+    zz_review6_test.go:215: held: INSERT an IPC directly as CERTIFIED                                    store: database invariant violated: IPCs are prepared DRAFT for an ACTIVE contract
+    zz_review6_test.go:217: held: INSERT a measurement directly as VERIFIED                              store: database invariant violated: measurements are recorded DRAFT against an ACTIVE contract
+    zz_review6_test.go:219: held: INSERT a contract directly as ACTIVE                                   store: database invariant violated: contracts are created DRAFT in the entity's functional currency
+    zz_review6_test.go:221: held: INSERT a contract line after activation                                store: database invariant violated: contract lines change only while the contract is DRAFT
+    zz_review6_test.go:222: held: UPDATE a contract line rate after activation                           store: database invariant violated: privilege: permission denied for table contract_lines
+    zz_review6_test.go:223: held: DELETE a contract line after activation                                store: database invariant violated: privilege: permission denied for table contract_lines
+    zz_review6_test.go:224: held: UPDATE retention_pct on an ACTIVE contract                             store: database invariant violated: privilege: permission denied for table contracts
+    zz_review6_test.go:225: held: UPDATE a verified measurement quantity                                 store: database invariant violated: privilege: permission denied for table measurement_lines
+    zz_review6_test.go:226: held: INSERT a measurement line into a VERIFIED measurement                  store: database invariant violated: measurement lines change only while the measurement is DRAFT
+    zz_review6_test.go:230: held: UPDATE an IPC's amount_due                                             store: database invariant violated: privilege: permission denied for table ipcs
+    zz_review6_test.go:231: held: DRAFT IPC -> CERTIFIED skipping SUBMITTED (attested certifier)         store: database invariant violated: illegal IPC transition DRAFT -> CERTIFIED
+    zz_review6_test.go:234: held: certify an IPC with an attestation lacking MFA                         store: database invariant violated: privilege: ipc.certify requires a recent multi-factor authentication in the attestation
+    zz_review6_test.go:236: held: certify as a different actor than attested                             store: database invariant violated: privilege: ipc.certify of ipc 7906a2e7-94be-479a-9344-6b28ec8560a3 requires a verified approval attestation for u-cfo
+    zz_review6_test.go:239: held: CERTIFIED -> INVOICED without an invoice approval                      store: database invariant violated: privilege: an IPC becomes INVOICED only with the attested approval of its customer invoice
+    zz_review6_test.go:244: held: INSERT a customer invoice with caller figures (second invoice for the IPC) store: database invariant violated: customer_invoices_ipc_id_key
+    zz_review6_test.go:246: held: approve the invoice without its journal (attested approver)            store: database invariant violated: AR_INVOICE f4ca363d-1933-40c6-8144-d771403550fc has no generated journal
+    zz_review6_test.go:249: held: approve the invoice with a MANUAL-source journal carrying its exact lines store: database invariant violated: journal 5bc0197e-1d95-48f8-9732-305dd3b8705b is not the DRAFT AR_INVOICE journal of f4ca363d-1933-40c6-8144-d771403550fc (entity, currency, date)
+    zz_review6_test.go:276: held: manual journal with reserved source type AR_INVOICE                    store: database invariant violated: journal a14ef66d-d546-4ceb-904f-20bf2d08824c uses reserved source type AR_INVOICE but no AR_INVOICE document references it
+    zz_review6_test.go:276: held: manual journal with reserved source type AR_RECEIPT                    store: database invariant violated: journal 9dac7447-4d29-47f4-9f4c-a097a72926eb uses reserved source type AR_RECEIPT but no AR_RECEIPT document references it
+    zz_review6_test.go:276: held: manual journal with reserved source type AR_OTHER                      store: database invariant violated: journal 7b210285-b2e4-4cb6-9348-b7a7eadd0080 uses reserved source type AR_OTHER but no AR_OTHER document references it
+    zz_review6_test.go:283: held: approve invoice B with invoice A's attestation                         store: database invariant violated: privilege: ar.invoice.approve of customer_invoice ad694359-fc48-45ae-b569-89b63f59f2e9 requires a verified approval attestation for u-ar-supervisor
+    zz_review6_test.go:293: held: approve invoice B bound to invoice A's journal                         store: database invariant violated: journal 58b5a529-fd45-4d27-b678-7c3bb097b59f is not the DRAFT AR_INVOICE journal of ad694359-fc48-45ae-b569-89b63f59f2e9 (entity, currency, date)
+    zz_review6_test.go:295: held: change the approved invoice's journal_id                               store: database invariant violated: privilege: customer invoice column journal_id cannot be changed in this transition
+    zz_review6_test.go:299: held: receipt for a money-out statement line                                 store: database invariant violated: a receipt is recorded for an unmatched money-in statement line
+    zz_review6_test.go:302: held: receipt INSERTed as CONFIRMED                                          store: database invariant violated: receipts are recorded DRAFT
+    zz_review6_test.go:305: held: receipt with a caller-chosen amount (no attestation)                   store: database invariant violated: privilege: ar.receipt.create of customer_receipt ccd8b67c-029f-47ac-a0f8-fb04b6b603ef requires a verified approval attestation for u-ar-clerk
+    zz_review6_test.go:309: held: add an allocation after confirmation                                   store: database invariant violated: allocations are added only while the receipt is DRAFT
+    zz_review6_test.go:310: held: change an allocation after confirmation                                store: database invariant violated: privilege: permission denied for table receipt_allocations
+    zz_review6_test.go:311: held: delete an allocation after confirmation                                store: database invariant violated: privilege: permission denied for table receipt_allocations
+    zz_review6_test.go:312: held: match the receipted money-in line to something else                    store: database invariant violated: statement line 1 does not match payment <NULL> (must be RELEASED from this account, same amount out, reference containing the payment number)
+--- PASS: TestR6_05_RawWorkflowSkips (0.35s)
+=== RUN   TestR6_06_ReceiptCancelAndLineReuse
+    zz_review6_test.go:330: info: re-recording the line while the wrong draft exists: store: database invariant violated: customer_receipts_statement_line_id_key
+    zz_review6_test.go:336: OPEN: after cancelling the wrong draft receipt the money-in line can never be receipted again: store: database invariant violated: customer_receipts_statement_line_id_key
+    zz_review6_test.go:344: info: AR recon "Unapplied money in (statement lines without a confirmed receipt)": 35000 in 1 lines (permanently, for this line)
+--- FAIL: TestR6_06_ReceiptCancelAndLineReuse (0.28s)
+=== RUN   TestR6_07_ForeignCurrencyReceiptToAdvance
+    zz_review6_test.go:383: held (at confirmation): USD 1000 receipt to an ETB contract advance refused: store: database invariant violated: insert or update on table "journals" violates foreign key constraint "journals_tenant_id_legal_entity_id_functional_currency_fkey"
+    zz_review6_test.go:384: info: but it was accepted as DRAFT df8e673f and now blocks the statement line
+--- PASS: TestR6_07_ForeignCurrencyReceiptToAdvance (0.20s)
+=== RUN   TestR6_08_ReversedInvoiceJournal
+    zz_review6_test.go:420: info: after reversal: invoice APPROVED / journal REVERSED / IPC INVOICED
+    zz_review6_test.go:429: info: AR recon Accounts receivable          subledger         -38500 gl         -38500 diff 0 open 1
+    zz_review6_test.go:429: info: AR recon Retention receivable         subledger              0 gl              0 diff 0 open 1
+    zz_review6_test.go:429: info: AR recon Advances received            subledger              0 gl              0 diff 0 open 0
+    zz_review6_test.go:429: info: AR recon Unapplied money in (statemen subledger              0 gl              0 diff 0 open 0
+    zz_review6_test.go:438: info: contract position invoiced 38500 certified 35000 receivable_open 0; GL AR -38500 revenue 0
+    zz_review6_test.go:442: info: next IPC gross 350.000000 (the reversed 35,000 of work is treated as already certified: previous_gross 35000.000000)
+    zz_review6_test.go:446: OPEN: AR reconciliation reports zero difference on every check while the GL shows AR -38500 (a credit: cash received against an invoice whose revenue was reversed) and the contract position still reports 38500 invoiced/certified; the invoice remains APPROVED and payable
+--- FAIL: TestR6_08_ReversedInvoiceJournal (0.36s)
+=== RUN   TestR6_09_ContractPolicySuccession
+    zz_review6_test.go:485: OPEN: no successor contract policy can ever be approved (VAT rate/base frozen forever):
+          same control accounts: store: database invariant violated: contract policy control accounts must not be bank or procure-to-pay control accounts
+          fresh control accounts: store: database invariant violated: a successor contract policy keeps the AR, retention and advance control accounts
+          same AR/retention/advance, new VAT account: store: database invariant violated: contract policy control accounts must not be bank or procure-to-pay control accounts
+    zz_review6_test.go:503: OPEN (low): a company bank account was registered with the AR control account as its bank GL account; CFO approval: <nil>
+    zz_review6_test.go:514: held: P2P policy on an AR control account refused: store: database invariant violated: a successor P2P policy keeps the GRNI and AP control accounts of the approved policy
+--- FAIL: TestR6_09_ContractPolicySuccession (0.24s)
+=== RUN   TestR6_10_ManualJournalOnARControl
+    zz_review6_test.go:543: info: a manual journal Dr AR / Cr contract revenue 5,000 was created, approved and posted (no control-account guard on manual journals)
+    zz_review6_test.go:551: held: AR reconciliation detects it: difference -5000
+    zz_review6_test.go:557: info: project profitability revenue 0 (the manual revenue is on the project)
+--- PASS: TestR6_10_ManualJournalOnARControl (0.24s)
+=== RUN   TestR6_11_HumanRuleAndDraftParity
+    zz_review6_test.go:597: held: Go and SQL draft-action lists agree on 74 actions; draft (non-human allowed): [ap.submit ar.invoice.create ar.receipt.create bank.import bankacct.create boq.submit contract.policy.create contract.submit customer.create grn.submit ipc.submit measure.submit payment.submit po.create pr.submit rfq.quote.record supplier.bank.create supplier.create workflow.start .create]
+    zz_review6_test.go:608: held: IPC certification by kind "service"                                    auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review6_test.go:608: held: IPC certification by kind "ai"                                         auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review6_test.go:608: held: IPC certification by kind ""                                           auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review6_test.go:608: held: IPC certification by kind "Human"                                      auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review6_test.go:608: held: IPC certification by kind "human "                                     auth: forbidden: ipc.certify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review6_test.go:615: held: measurement verification by a service principal                        auth: forbidden: measure.verify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review6_test.go:616: held: measurement rejection by a service principal                           auth: forbidden: measure.verify is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review6_test.go:619: held: IPC cancellation by an AI principal                                    auth: forbidden: ipc.cancel is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    zz_review6_test.go:632: held: signed ipc.certify attestation without principal.human                 store: database invariant violated: privilege: ipc.certify is a decision reserved to principals the identity provider asserts are human (actor u-commercial)
+    zz_review6_test.go:646: info: an AI principal recorded receipt 4c3556c1 (draft action, by design)
+    zz_review6_test.go:647: held: confirm a receipt using the AI's ar.receipt.create attestation         store: database invariant violated: privilege: ar.receipt.confirm of customer_receipt 4c3556c1-b55f-43c8-8afc-58d48954e1b6 requires a verified approval attestation for u-bot-clerk
+    zz_review6_test.go:657: held: receipt confirmation by a service principal                            auth: forbidden: ar.receipt.confirm is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+--- PASS: TestR6_11_HumanRuleAndDraftParity (0.33s)
+=== RUN   TestR6_12_SoDCombinedRoles
+    zz_review6_test.go:673: held: invoice approved by its issuer (ar_clerk+ar_supervisor)                auth: segregation of duties violation: the creator of a customer invoice cannot approve or reject it
+    zz_review6_test.go:674: held: raw: invoice approved by its issuer with a genuine attestation         store: database invariant violated: AR_INVOICE 01c37a9a-efdc-40f6-b808-f21f9136d2cd has no generated journal
+    zz_review6_test.go:688: info: the importer could RECORD a receipt on its own statement line (refused only at confirmation)
+    zz_review6_test.go:693: info: importer with differently-cased id records:  store: database invariant violated: customer_receipts_statement_line_id_key
+--- PASS: TestR6_12_SoDCombinedRoles (0.36s)
+=== RUN   TestR6_13_Visibility
+    zz_review6_test.go:762: info: u-outsider (tenant d9fa203a) gets zero profitability for project A (RLS: no data)
+    zz_review6_test.go:767: info: u-outsider gets an empty AR reconciliation for tenant-1's entity (RLS: no data)
+    zz_review6_test.go:770: held (unless OPEN above): project-B and tenant-2 principals cannot read/list/position/profitability/reconcile project-A Journey B documents; out-of-scope == nonexistent
+    zz_review6_test.go:775: held: project-B AR clerk issues an invoice for a project-A IPC               store: not found
+    zz_review6_test.go:778: held: project-B AR clerk records a receipt (entity level)                    auth: forbidden: receipts need tenant-wide scope
+    zz_review6_test.go:782: held: project-A QS measures a project-B contract                             store: not found
+    zz_review6_test.go:784: info: ContractPosition calls loadDoc (SELECT ... FOR UPDATE) although it only reads
+--- PASS: TestR6_13_Visibility (0.47s)
+=== RUN   TestR6_02b_SubCentAllocationsBalanced
+    zz_review6_test.go:801: held: confirm a receipt with allocations 199.994 + 0.006 (journal 199.99 + 0.01) store: database invariant violated: journal d0fe9ccc-d5de-44a5-b6cf-91abcd0321ff lines do not equal the accounting of AR_RECEIPT 671dc130-211c-4c3f-baad-bd2e3545e3be (expected 5e92f5b9-b9ed-43fb-84c5-4546c8c9c837|CREDIT|0.006000|-|-;66d07c34-2c3a-445e-91ec-400615ccfe95|DEBIT|200.000000|-|-;6c91768d-ed3b-4e4e-9321-024967dcd80f|CREDIT|199.994000|-|-, got 5e92f5b9-b9ed-43fb-84c5-4546c8c9c837|CREDIT|0.010000|-|-;66d07c34-2c3a-445e-91ec-400615ccfe95|DEBIT|200.000000|-|-;6c91768d-ed3b-4e4e-9321-024967dcd80f|CREDIT|199.990000|-|-)
+--- PASS: TestR6_02b_SubCentAllocationsBalanced (0.31s)
+=== RUN   TestR6_14_ConcurrentConfirmations
+    zz_review6_test.go:833: info: concurrent confirmation refused: store: database invariant violated: invoice CINV-2026-000001 cannot take this allocation (status APPROVED, total 38500.000000): it would be over-allocated or is not payable
+    zz_review6_test.go:833: info: concurrent confirmation refused: store: database invariant violated: contract CTR-2026-000001 cannot take this advance (agreed advance 1000000.000000)
+    zz_review6_test.go:841: held: concurrent confirmations: 2 succeeded; invoice allocated 23100 of 38500; advance received 600000 of 1000000
+--- PASS: TestR6_14_ConcurrentConfirmations (0.46s)
+=== RUN   TestR6_15_ConcurrentMeasurementVerification
+    zz_review6_test.go:866: info: store: database invariant violated: contract line 3: cumulative measured 140.0000 exceeds the contract quantity 120.0000 (a variation is required)
+    zz_review6_test.go:873: held: verified quantity 70 <= 120 under concurrent verification
+--- PASS: TestR6_15_ConcurrentMeasurementVerification (0.26s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/kernel	5.500s
+=== RUN   TestR6_API_JourneyB
+    zz_review6_test.go:60: info: customer create with pkind "service" -> 201
+    zz_review6_test.go:67: held: customer approval with pkind "service" -> 403 map[code:forbidden message:insufficient permission]
+    zz_review6_test.go:60: info: customer create with pkind "ai" -> 201
+    zz_review6_test.go:67: held: customer approval with pkind "ai" -> 403 map[code:forbidden message:insufficient permission]
+    zz_review6_test.go:60: info: customer create with pkind "" -> 201
+    zz_review6_test.go:67: held: customer approval with pkind "" -> 403 map[code:forbidden message:insufficient permission]
+    zz_review6_test.go:80: info: contract with retention 20% and advance recovery 100% accepted and activated over HTTP (amount due of every IPC funded by the advance is negative; see kernel TestR6_01)
+    zz_review6_test.go:92: held: contract position: other project 404, nonexistent 404
+    zz_review6_test.go:99: held: profitability: other project 403, nonexistent 403
+    zz_review6_test.go:105: held: project-scoped AR reconciliation -> 403
+    zz_review6_test.go:112: held: other-project QS list contract -> 200 (0 items)
+    zz_review6_test.go:112: held: other-project QS list customer_receipt -> 200 (0 items)
+    zz_review6_test.go:112: held: other-project QS list money_in -> 200 (0 items)
+    zz_review6_test.go:121: held: malformed allocation id -> 404 map[code:not_found message:not found]
+    zz_review6_test.go:126: OPEN (info): malformed customer_id -> 500 map[error:map[code:internal message:internal error]]
+    zz_review6_test.go:135: held: negative retention/quantity -> 409 map[code:invariant_violation message:the database refused the change: new row for relation "contracts" violates check constraint "contracts_retention_pct_check"]
+--- FAIL: TestR6_API_JourneyB (0.20s)
+FAIL
+FAIL	github.com/serk-group/serk-construction/internal/httpapi	0.230s
+FAIL
+exit=1

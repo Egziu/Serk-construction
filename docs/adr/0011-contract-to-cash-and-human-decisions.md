@@ -101,3 +101,16 @@ Journey B reuses it without weakening any part.
   - AI, service and unknown kinds cannot approve an invoice, a customer or a contract.
   - The SQL trigger refuses a signed attestation that lacks the marker.
   - The SQL and Go lists of draft actions agree.
+
+## Addendum: independent review 6 (2026-10-22), migration 0020
+
+- **Contract policy succession works.** The insert guard no longer counts the entity's own contract policies as conflicting control accounts (R6-F1).
+- **Draft receipts can be cancelled** (attested, by a person, with a reason). A cancelled receipt releases its statement line. Recording now refuses anything that could never be confirmed: sub-cent amounts, currency or entity mismatch, the statement importer, or a partial allocation (R6-F2).
+- **Advance recovery is capped** at the certificate's gross less retention, so the amount due is never negative (R6-F3).
+  - Recovery is limited to the advance actually received, and a shortfall is **not** caught up by later certificates. Each certificate recovers at most its percentage of its own gross. This is deliberate and keeps each certificate explainable on its own. A catch-up rule would be a contract-policy option.
+- **Subledger journals (`P2P_*`, `AR_*`) are never reversed** (R6-F4), in the kernel and in SQL. A reversal would leave the document and the ledger disagreeing while reconciliation shows zero.
+  - Correction belongs at the document. The customer credit note that does this is not built yet (JB-CREDIT-NOTE, open).
+  - This also supersedes "corrected by reversal" in ADR 0009.
+- **Control accounts.** Bank accounts and P2P policies may not use contract-policy control accounts (R6-F5).
+- **IPC periods** follow the contract and the work (R6-F6).
+
