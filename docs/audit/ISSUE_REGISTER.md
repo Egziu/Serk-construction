@@ -147,3 +147,12 @@ Review 3 examined commit a1f337c (migration 0013). Review 4 re-verified the 0014
 | R6-F8 | Info | **CLOSED** (partly by design) | The position read locked the row; stale comments. | The position read takes no lock; the Go comments are fixed. The 0018 SQL header comment is left as committed. Advance recovery has no catch-up, by design: ADR 0011 now says so. Manual journals to AR control accounts are detected by reconciliation (held). | TestR6_13 |
 | JB-CREDIT-NOTE | Medium | OPEN | There is no document-level correction for an approved customer invoice (credit note or cancellation that reopens the IPC). Since R6-F4 the only path is a new correcting document, and that does not exist yet. | Planned: a credit note document generating an `AR_CREDIT` journal and reopening the IPC. | — |
 
+### Found while building Journey C (stock valuation, 0021)
+
+| ID | Severity | Status | Finding | Fix | Evidence |
+|---|---|---|---|---|---|
+| JC-COUNT-SOD | Medium | **CLOSED** (AI-verified) | Design defect: with count approval given to the finance manager, the approver became the preparer of the `STK_ADJUST` journal. Journal separation of duties then made the adjustment unpostable by the only role that approves journals. | New `inventory_controller` role holds `stock.adjust.approve`, outside the journal chain. | TestJourneyC_StockValuationToGL, TestAPIJourneyC_StockValuation |
+| JC-STK-REVERSAL | Low | **CLOSED** (AI-verified) | The kernel's no-reversal check covered only `P2P_` and `AR_`. A `STK_*` reversal draft could be created; SQL would refuse it only at posting. | The kernel refuses `STK_*` reversals up front. | TestJourneyC_Controls |
+| JC-TRANSFER | Medium | OPEN | Transfers between warehouses are not built. Moving stock needs an issue and a new receipt, which misstates value. | Planned: a transfer document moving layers at cost. | — |
+| JC-INVOICE-REVALUE | Low | OPEN | Invoice price variances on stock items go to the P2P price-variance account and are not revalued into the stock still on hand (standard-cost simplification). | Planned: revalue the remaining layers or average on invoice, or document as policy. | ADR 0012 |
+

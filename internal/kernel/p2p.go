@@ -69,6 +69,14 @@ func docProject(ctx context.Context, tx pgx.Tx, docType, id string) (string, err
 		q = `SELECT c.project_id::text FROM ipcs i JOIN contracts c ON c.id = i.contract_id WHERE i.id = $1::uuid`
 	case "customer_invoice":
 		q = `SELECT project_id::text FROM customer_invoices WHERE id = $1::uuid`
+	case "warehouse":
+		q = `SELECT COALESCE(project_id::text, '') FROM warehouses WHERE id = $1::uuid`
+	case "stock_receipt":
+		q = `SELECT o.project_id::text FROM stock_receipts r JOIN grns g ON g.id = r.grn_id JOIN purchase_orders o ON o.id = g.po_id WHERE r.id = $1::uuid`
+	case "stock_issue":
+		q = `SELECT project_id::text FROM stock_issues WHERE id = $1::uuid`
+	case "stock_count":
+		q = `SELECT COALESCE(project_id::text, '') FROM stock_counts WHERE id = $1::uuid`
 	case "supplier_invoice":
 		q = `SELECT o.project_id::text FROM supplier_invoices i JOIN purchase_orders o ON o.id = i.po_id WHERE i.id = $1::uuid`
 	default:

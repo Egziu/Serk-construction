@@ -1,0 +1,51 @@
+=== RUN   TestConsoleBrowserJourneyC
+    console_browser_c_test.go:94: browser journey C (3s):
+        06:54:06.873 a11y ok: stock item form
+        06:54:07.408 a11y ok: warehouse form
+        06:54:07.756 a11y ok: put-away form
+        06:54:07.826 a11y ok: stock on hand
+        06:54:07.889 12 t put away at 84,500 (1,014,000)
+        06:54:07.989 a11y ok: stock issue form
+        06:54:08.362 a11y ok: approved stock issue
+        06:54:08.496 a11y ok: stock count form
+        06:54:08.820 issue (422,500) and shortage (42,250) approved
+        06:54:09.438 a11y ok: reconciliation with inventory
+        06:54:09.683 a11y ok: stock on hand at 390px (dark)
+        
+        CONSOLE JOURNEY C: PASS
+--- PASS: TestConsoleBrowserJourneyC (3.76s)
+=== RUN   TestAPIJourneyC_StockValuation
+    journey_c_api_test.go:167: stock recon Inventory: 1200 1200: subledger 831250 gl 831250 difference 0
+    journey_c_api_test.go:167: stock recon Received, not yet put away: 1200: subledger 282000 gl 282000 difference 0
+    journey_c_api_test.go:167: stock recon Stock balances vs documents: 1200: subledger 549250 gl 549250 difference 0
+    journey_c_api_test.go:167: stock recon Cost layers vs stock balances: 1200: subledger 549250 gl 549250 difference 0
+--- PASS: TestAPIJourneyC_StockValuation (0.37s)
+=== RUN   TestJourneyC_StockValuationToGL
+    journey_c_test.go:152: issue 5d4a015b valued 113200
+    journey_c_test.go:152: issue b90b3518 valued 1272000
+    journey_c_test.go:179: closing balance ed38470e: 6.5 at 559000
+    journey_c_test.go:179: closing balance 8a89088a: 335 at 316016.67
+    journey_c_test.go:195: stock recon Inventory: 1200 Inventory                            subledger    922516.67 gl    922516.67 diff 0 open 0
+    journey_c_test.go:195: stock recon Received, not yet put away: 1200                     subledger        47500 gl        47500 diff 0 open 1
+    journey_c_test.go:195: stock recon Stock balances vs documents: 1200                    subledger    875016.67 gl    875016.67 diff 0 open 0
+    journey_c_test.go:195: stock recon Cost layers vs stock balances: 1200                  subledger    875016.67 gl    875016.67 diff 0 open 0
+--- PASS: TestJourneyC_StockValuationToGL (0.65s)
+=== RUN   TestJourneyC_Controls
+    journey_c_test.go:236: refused: stock item on a control account                                store: database invariant violated: the inventory account must be an active ASSET account that is not a bank, payables or receivables control account
+    journey_c_test.go:241: refused: stock item approved by its creator                             auth: segregation of duties violation: the creator of a stock item cannot approve or reject it
+    journey_c_test.go:245: refused: put-away beyond the goods receipt line                         store: database invariant violated: put-away 12.0001 exceeds what the goods receipt line still holds (0 of 12.0000 already put away)
+    journey_c_test.go:249: refused: put-away of a receipt posted to an expense account             store: database invariant violated: the goods receipt line must have been posted to the item's inventory account, in the item's unit, for an ACTIVE item of the entity
+    journey_c_test.go:258: refused: direct change of a stock balance                               store: database invariant violated: privilege: stock valuation state (stock_balances) is written only by stock documents
+    journey_c_test.go:263: refused: calling the valuation engine directly                          store: database invariant violated: privilege: stock is received only by a stock document
+    journey_c_test.go:269: refused: issue beyond the stock on hand                                 store: database invariant violated: insufficient stock of STEEL-G60 in the warehouse: 12.0000 on hand, 12.5000 requested
+    journey_c_test.go:274: refused: issue approved by its preparer                                 auth: segregation of duties violation: the creator of a stock issue cannot approve or reject it
+    journey_c_test.go:278: refused: issue approved by an AI principal                              auth: forbidden: stock.issue.approve is a decision reserved to human principals (the identity provider did not assert this principal is human); AI and service principals may only prepare drafts
+    journey_c_test.go:287: refused: editing the lines of a stock journal                           store: database invariant violated: privilege: permission denied for table journal_lines
+    journey_c_test.go:290: refused: reversing a stock journal                                      kernel: invalid input: STK_ISSUE journals are not reversed; correct the source document instead
+    journey_c_test.go:301: refused: approving a stale count                                        store: database invariant violated: count SCT-2026-000001 is stale: the book quantity changed from 11.0000 to 10.0000 since it was recorded; count again
+    journey_c_test.go:304: refused: a count that agrees with the books                             store: database invariant violated: the count agrees with the books: nothing to adjust
+    journey_c_test.go:313: refused: a surplus with no cost basis                                   store: database invariant violated: no cost basis for a surplus of SAND-01: receive it through purchasing
+    journey_c_test.go:315: refused: count approved by the storekeeper                              auth: forbidden: stock.adjust.approve
+    journey_c_test.go:321: refused: issue from another project's store                             store: not found
+    journey_c_test.go:344: refused: concurrent over-issue: one approved, the other store: database invariant violated: insufficient stock of STEEL-G60 in the warehouse: 4.0000 on hand, 6.0000 requested
+--- PASS: TestJourneyC_Controls (0.60s)

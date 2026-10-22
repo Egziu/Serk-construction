@@ -188,6 +188,16 @@ const DOCS = {
     statuses: ['DRAFT', 'APPROVED'], actions: { DRAFT: [['approve', 'ar.invoice.approve']] } },
   customer_receipt: { title: 'Receipts', one: 'Receipt', base: '/v1/receipts', create: 'ar.receipt.create', form: 'receipt',
     statuses: ['DRAFT', 'CONFIRMED', 'CANCELLED'], actions: { DRAFT: [['confirm', 'ar.receipt.confirm'], ['cancel', 'ar.receipt.create', 'req'], ['cancel', 'ar.receipt.confirm', 'req']] } },
+  // Stock (Journey C).
+  stock_item: { title: 'Stock items', one: 'Stock item', base: '/v1/stock-items', create: 'stock.item.manage', form: 'stockitem',
+    statuses: ['PENDING', 'ACTIVE'], actions: { PENDING: [['approve', 'stock.item.approve']] } },
+  warehouse: { title: 'Warehouses', one: 'Warehouse', create: 'warehouse.manage', form: 'warehouse', statuses: ['ACTIVE'], actions: {} },
+  stock_receipt: { title: 'Put-aways', one: 'Put-away', statuses: ['POSTED'], actions: {} },
+  stock_issue: { title: 'Stock issues', one: 'Stock issue', base: '/v1/stock-issues', create: 'stock.issue', form: 'stockissue',
+    statuses: ['DRAFT', 'APPROVED', 'REJECTED', 'CANCELLED'],
+    actions: { DRAFT: [['approve', 'stock.issue.approve'], ['reject', 'stock.issue.approve', 'req'], ['cancel', 'stock.issue', 'req']] } },
+  stock_count: { title: 'Stock counts', one: 'Stock count', base: '/v1/stock-counts', create: 'stock.count', form: 'stockcount',
+    statuses: ['DRAFT', 'APPROVED', 'REJECTED'], actions: { DRAFT: [['approve', 'stock.adjust.approve'], ['reject', 'stock.adjust.approve', 'req']] } },
   money_in: { title: 'Money received', one: 'Money received', statuses: ['UNAPPLIED', 'RECORDED'], actions: {},
     link: (d) => (d.status === 'UNAPPLIED' && S.can.has('ar.receipt.create') ? `#/new/receipt/${d.id}` : null) },
 };
@@ -200,6 +210,8 @@ const NAV = [
   ['Project', [['#/list/boq_version', 'BOQ', 'p2p.read'], ['#/list/purchase_requisition', 'Requisitions', 'p2p.read'], ['#/cost', 'Cost report', 'p2p.read']]],
   ['Procurement', [['#/list/rfq', 'RFQs', 'p2p.read'], ['#/list/rfq_quote', 'Quotes', 'p2p.read'], ['#/list/purchase_order', 'Purchase orders', 'p2p.read'], ['#/list/supplier', 'Suppliers', 'p2p.read']]],
   ['Site', [['#/list/grn', 'Goods receipts', 'p2p.read']]],
+  ['Stores', [['#/stock', 'Stock on hand', 'p2p.read'], ['#/list/stock_issue', 'Stock issues', 'p2p.read'], ['#/list/stock_count', 'Stock counts', 'p2p.read'],
+    ['#/list/stock_receipt', 'Put-aways', 'p2p.read'], ['#/list/stock_item', 'Stock items', 'p2p.read'], ['#/list/warehouse', 'Warehouses', 'p2p.read']]],
   ['Payables', [['#/list/supplier_invoice', 'Invoices', 'p2p.read'], ['#/list/payment_instruction', 'Payments', 'p2p.read']]],
   ['Treasury', [['#/bank', 'Bank statements', 'bank.import|bank.reconcile'], ['#/list/company_bank_account', 'Company banks', 'scope.tenant_wide'], ['#/list/supplier_bank_account', 'Supplier banks', 'p2p.read']]],
   ['Revenue', [['#/list/contract', 'Contracts', 'p2p.read'], ['#/list/measurement', 'Measurements', 'p2p.read'], ['#/list/ipc', 'Payment certificates', 'p2p.read'],
@@ -244,6 +256,10 @@ const QUEUES = [
   ['ar.invoice.approve', 'customer_invoice', 'DRAFT', 'Customer invoices to approve'],
   ['ar.receipt.create', 'money_in', 'UNAPPLIED', 'Money received to apply'],
   ['ar.receipt.confirm', 'customer_receipt', 'DRAFT', 'Receipts to confirm'],
+  ['stock.item.approve', 'stock_item', 'PENDING', 'Stock items to approve'],
+  ['stock.receive', 'grn', 'CONFIRMED', 'Goods receipts to put away'],
+  ['stock.issue.approve', 'stock_issue', 'DRAFT', 'Stock issues to approve'],
+  ['stock.adjust.approve', 'stock_count', 'DRAFT', 'Stock counts to approve'],
 ];
 
 // ---------- shell ----------
@@ -288,6 +304,7 @@ async function route() {
       case 'bank': return await renderBank();
       case 'recon': return await renderRecon();
       case 'cost': return await renderCost();
+      case 'stock': return await renderStock();
       default: return await renderHome();
     }
   } catch (e) {
@@ -344,7 +361,7 @@ async function renderHome() {
   page('My work', `Items waiting for you as ${S.me.roles.join(', ')}. Counts include only the projects you can see.`, cards);
   const qs = QUEUES.filter(([p]) => S.can.has(p));
   const jobs = qs.map(([, type, status]) => api('GET', `/v1/p2p/${type}?status=${status}`).then((r) => r.items.length).catch(() => null));
-  if (S.can.has('journal.approve')) jobs.push(Promise.all(['P2P_', 'AR_'].map((p) => api('GET', `/v1/journals?status=DRAFT&source_prefix=${p}`)))
+  if (S.can.has('journal.approve')) jobs.push(Promise.all(['P2P_', 'AR_', 'STK_'].map((p) => api('GET', `/v1/journals?status=DRAFT&source_prefix=${p}`)))
     .then((rs) => rs.reduce((n, r) => n + r.journals.length, 0)).catch(() => null));
   if (S.can.has('journal.post')) jobs.push(api('GET', '/v1/journals?status=APPROVED').then((r) => r.journals.length).catch(() => null));
   const counts = await Promise.all(jobs);
@@ -456,7 +473,7 @@ async function renderDoc(type, id) {
   if (det.payee) parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Payee (approved bank account)'), kv(det.payee)));
   if (type === 'contract' && d.status === 'ACTIVE') parts.push(await positionPanel(d.id));
   parts.push(actionsPanel(type, d, det), nextSteps(type, d), revealPanel(type, d));
-  page(`${meta.one} ${d.number || ''}`.trim(), null, ...parts);
+  page(`${meta.one} ${d.number || head.code || ''}`.trim(), null, ...parts);
 }
 
 // Full account numbers are masked everywhere; a holder of bank.details.reveal
@@ -497,6 +514,7 @@ function nextSteps(type, d) {
   if (type === 'purchase_order' && d.status === 'APPROVED') { add('grn.create', `#/new/grn/${d.id}`, 'Record goods receipt'); add('ap.enter', `#/new/invoice/${d.id}`, 'Enter supplier invoice'); }
   if (type === 'supplier_invoice' && d.status === 'APPROVED') add('payment.prepare', `#/new/payment/${d.id}`, 'Prepare payment');
   if (type === 'supplier' && d.status === 'ACTIVE') add('supplier.manage', `#/new/supplierbank/${d.id}`, 'Add bank account');
+  if (type === 'grn' && d.status === 'CONFIRMED') add('stock.receive', `#/new/putaway/${d.id}`, 'Put away into a warehouse');
   if (type === 'contract' && d.status === 'ACTIVE') { add('measure.create', `#/new/measurement/${d.id}`, 'Record measurement'); add('ipc.prepare', `#/new/ipc/${d.id}`, 'Prepare payment certificate'); }
   return links.length ? h('div', { class: 'actions' }, links) : null;
 }
@@ -1043,6 +1061,90 @@ const FORMS = {
     });
   },
 
+  async stockitem() {
+    const ent = select('legal_entity_id', entityOpts(), { required: true });
+    const code = input('code', { type: 'text', required: true });
+    const name = input('name', { type: 'text', required: true });
+    const unit = input('unit', { type: 'text', required: true, size: '6' });
+    const method = select('valuation_method', [{ value: 'FIFO', label: 'FIFO (first in, first out)' }, { value: 'WAC', label: 'Weighted average cost' }]);
+    const acct = select('inventory_account_id', accountOpts(['ASSET']), { required: true });
+    formPage('New stock item', 'Finance approves the item before stock can be received or issued. The unit must match the purchase order line.', [
+      h('div', { class: 'grid' }, field('Legal entity', ent), field('Item code', code), field('Name', name), field('Unit', unit), field('Valuation', method),
+        field('Inventory account', acct))], 'Create stock item', async () => {
+      const res = await api('POST', '/v1/stock-items', { legal_entity_id: ent.value, code: code.value.trim(), name: name.value.trim(), unit: unit.value.trim(),
+        valuation_method: method.value, inventory_account_id: acct.value });
+      created('stock_item', res, 'Stock item');
+    });
+  },
+
+  async warehouse() {
+    const ent = select('legal_entity_id', entityOpts(), { required: true });
+    const proj = select('project_id', [{ value: '', label: 'Central (no project)' }, ...projectOpts()]);
+    const code = input('code', { type: 'text', required: true });
+    const name = input('name', { type: 'text', required: true });
+    formPage('New warehouse', 'A project store holds stock for one project; a central warehouse serves the whole entity.', [
+      h('div', { class: 'grid' }, field('Legal entity', ent), field('Project', proj), field('Code', code), field('Name', name))], 'Create warehouse', async () => {
+      const res = await api('POST', '/v1/warehouses', { legal_entity_id: ent.value, project_id: proj.value || undefined, code: code.value.trim(), name: name.value.trim() });
+      created('warehouse', res, 'Warehouse');
+    });
+  },
+
+  async putaway(grnID) {
+    const grns = await docOpts('grn', 'CONFIRMED');
+    const grn = select('grn_id', grns, { required: true });
+    if (grnID) grn.value = grnID;
+    const items = select('stock_item_id', await docOpts('stock_item', 'ACTIVE'), { required: true });
+    const wh = select('warehouse_id', await docOpts('warehouse', 'ACTIVE'), { required: true });
+    const line = input('po_line_no', { type: 'number', min: '1', value: '1', required: true });
+    const qty = input('quantity', { inputmode: 'decimal', required: true });
+    formPage('Put away into a warehouse', 'Moves received goods into stock at the purchase order price. The goods receipt line must have been posted to the item\'s inventory account.', [
+      h('div', { class: 'grid' }, field('Goods receipt', grn), field('Purchase order line', line), field('Stock item', items), field('Warehouse', wh), field('Quantity', qty))],
+    'Put away', async () => {
+      await api('POST', `/v1/goods-receipts/${grn.value}/put-away`, { po_line_no: Number(line.value), stock_item_id: items.value, warehouse_id: wh.value, quantity: qty.value.trim() });
+      say('Put away.');
+      location.hash = '#/stock';
+    });
+  },
+
+  async stockissue() {
+    const wh = select('warehouse_id', await docOpts('warehouse', 'ACTIVE'), { required: true });
+    const item = select('stock_item_id', await docOpts('stock_item', 'ACTIVE'), { required: true });
+    const proj = select('project_id', projectOpts(), { required: true });
+    const qty = input('quantity', { inputmode: 'decimal', required: true });
+    const date = input('issue_date', { type: 'date', value: today(), required: true });
+    const acct = select('expense_account_id', accountOpts(['EXPENSE']), { required: true });
+    const cc = select('cost_code_id', [], { required: true });
+    const loadCC = async () => {
+      cc.textContent = '';
+      if (!proj.value) return;
+      for (const c of (await api('GET', `/v1/projects/${proj.value}/cost-codes`)).cost_codes) cc.append(h('option', { value: c.id }, `${c.code} ${c.name}`));
+    };
+    proj.addEventListener('change', () => loadCC().catch(showError));
+    formPage('Issue stock to a project', 'The site engineer or project manager approves the issue; its cost (FIFO or average) is computed then and charged to the cost code.', [
+      h('div', { class: 'grid' }, field('Warehouse', wh), field('Stock item', item), field('Quantity', qty), field('Project', proj), field('Cost code', cc),
+        field('Expense account', acct), field('Issue date', date))], 'Request issue', async () => {
+      const res = await api('POST', '/v1/stock-issues', { warehouse_id: wh.value, stock_item_id: item.value, project_id: proj.value, cost_code_id: cc.value,
+        expense_account_id: acct.value, quantity: qty.value.trim(), issue_date: date.value });
+      created('stock_issue', res, 'Stock issue');
+    });
+    await loadCC();
+  },
+
+  async stockcount() {
+    const wh = select('warehouse_id', await docOpts('warehouse', 'ACTIVE'), { required: true });
+    const item = select('stock_item_id', await docOpts('stock_item', 'ACTIVE'), { required: true });
+    const qty = input('counted_qty', { inputmode: 'decimal', required: true });
+    const date = input('count_date', { type: 'date', value: today(), required: true });
+    const acct = select('variance_account_id', accountOpts(['EXPENSE']), { required: true });
+    formPage('Record a stock count', 'The book quantity is taken when the count is recorded; finance approves the adjustment, and a count that has become stale is refused.', [
+      h('div', { class: 'grid' }, field('Warehouse', wh), field('Stock item', item), field('Counted quantity', qty), field('Count date', date), field('Variance account', acct))],
+    'Record count', async () => {
+      const res = await api('POST', '/v1/stock-counts', { warehouse_id: wh.value, stock_item_id: item.value, counted_qty: qty.value.trim(),
+        variance_account_id: acct.value, count_date: date.value });
+      created('stock_count', res, 'Stock count');
+    });
+  },
+
   async policy() {
     const ent = select('legal_entity_id', entityOpts(), { required: true });
     const f = (n, v) => input(n, { inputmode: 'decimal', value: v, required: true });
@@ -1065,11 +1167,11 @@ const FORMS = {
 async function renderJournals() {
   const p2pOnly = h('input', { type: 'checkbox', id: nextId('c'), checked: true });
   const fetchJ = async (status) => (p2pOnly.checked
-    ? (await Promise.all(['P2P_', 'AR_'].map((p) => api('GET', `/v1/journals?status=${status}&source_prefix=${p}`)))).flatMap((r) => r.journals)
+    ? (await Promise.all(['P2P_', 'AR_', 'STK_'].map((p) => api('GET', `/v1/journals?status=${status}&source_prefix=${p}`)))).flatMap((r) => r.journals)
     : (await api('GET', `/v1/journals?status=${status}`)).journals);
   const holder = h('div');
   page('Journals', 'Subledger documents create draft journals. A finance manager approves them and a controller posts them; neither can be the document’s creator.',
-    h('div', { class: 'toolbar' }, h('div', { class: 'check' }, p2pOnly, h('label', { for: p2pOnly.id }, 'Subledger journals only (procure-to-pay and receivables)'))), holder);
+    h('div', { class: 'toolbar' }, h('div', { class: 'check' }, p2pOnly, h('label', { for: p2pOnly.id }, 'Subledger journals only (procure-to-pay, receivables, stock)'))), holder);
   const load = async () => {
     holder.textContent = '';
     const sections = [['DRAFT', 'journal.approve', 'approve-batch', 'Approve selected'], ['APPROVED', 'journal.post', 'post-batch', 'Post selected']];
@@ -1200,8 +1302,15 @@ async function renderRecon() {
       { label: 'General ledger', num: true, cell: (c) => (c.check.startsWith('Unapplied') ? '' : money(c.gl)) },
       { label: 'Difference', num: true, cell: (c) => (c.check.startsWith('Unapplied') ? '' : money(c.difference)) },
       { label: 'Unposted / unapplied', num: true, cell: (c) => String(c.unposted_or_unmatched) }], ar));
-    const arBreaks = ar.filter((c) => c._class).length;
-    if (arBreaks) out.prepend(h('p', { class: 'alert', role: 'status' }, `${arBreaks} receivables difference(s) need investigation.`));
+    const stk = (await api('GET', `/v1/entities/${ent.value}/stock-reconciliation`)).checks || [];
+    for (const c of stk) c._class = c.difference !== '0' && !c.check.startsWith('Received') ? 'diff' : null;
+    if (stk.length) out.append(table('Inventory to general ledger', [
+      { label: 'Check', cell: (c) => c.check }, { label: 'Subledger', num: true, cell: (c) => money(c.subledger) },
+      { label: 'General ledger', num: true, cell: (c) => (c.check.startsWith('Received') ? '' : money(c.gl)) },
+      { label: 'Difference', num: true, cell: (c) => (c.check.startsWith('Received') ? '' : money(c.difference)) },
+      { label: 'Unposted / open', num: true, cell: (c) => String(c.unposted_or_unmatched) }], stk));
+    const arBreaks = ar.filter((c) => c._class).length + stk.filter((c) => c._class).length;
+    if (arBreaks) out.prepend(h('p', { class: 'alert', role: 'status' }, `${arBreaks} receivables or inventory difference(s) need investigation.`));
   };
   ent.addEventListener('change', () => load().catch(showError));
   page('Reconciliation', 'GRNI, payables, payments in transit, bank, receivables, retention and advances compared with posted general-ledger balances.', h('div', { class: 'toolbar' }, field('Legal entity', ent)), out);
@@ -1223,6 +1332,27 @@ async function renderCost() {
   };
   proj.addEventListener('change', () => load().catch(showError));
   page('Project cost report', 'Approved BOQ budget against commitments (approved POs), receipts, invoices and posted actuals.', h('div', { class: 'toolbar' }, field('Project', proj)), out);
+  await load();
+}
+
+// ---------- stock ----------
+async function renderStock() {
+  const ent = select('legal_entity_id', entityOpts());
+  const out = h('div');
+  const load = async () => {
+    out.textContent = '';
+    if (!ent.value) return;
+    const lines = (await api('GET', `/v1/entities/${ent.value}/stock-on-hand`)).lines || [];
+    out.append(table(`Stock on hand (${lines.length})`, [
+      { label: 'Item', cell: (l) => `${l.item_code} ${l.item_name}` }, { label: 'Warehouse', cell: (l) => l.warehouse_code },
+      { label: 'Valuation', cell: (l) => l.valuation_method }, { label: 'Quantity', num: true, cell: (l) => `${l.qty} ${l.unit}` },
+      { label: 'Unit cost', num: true, cell: (l) => money(l.unit_cost) }, { label: 'Value', num: true, cell: (l) => money(l.value) }], lines, 'No stock on hand.'));
+  };
+  ent.addEventListener('change', () => load().catch(showError));
+  const tools = h('div', { class: 'toolbar' }, field('Legal entity', ent),
+    S.can.has('stock.issue') ? h('a', { class: 'btn', href: '#/new/stockissue' }, 'Issue stock') : null,
+    S.can.has('stock.count') ? h('a', { class: 'btn ghost', href: '#/new/stockcount' }, 'Record a count') : null);
+  page('Stock on hand', 'Quantities and values by item and warehouse (the stores of your projects, or every warehouse for tenant-wide roles).', tools, out);
   await load();
 }
 

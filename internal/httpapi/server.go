@@ -136,6 +136,7 @@ func New(cfg Config) *Server {
 	s.mux.Handle("POST /v1/identity/logout", s.authed(s.logout))
 	s.registerP2P()
 	s.registerAR()
+	s.registerStock()
 	// Operations console: static assets only; it has no authority of its own.
 	s.mux.Handle("GET /console/", webui.Handler())
 	s.mux.Handle("GET /{$}", http.RedirectHandler("/console/", http.StatusFound))

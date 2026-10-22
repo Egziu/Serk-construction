@@ -69,6 +69,12 @@ var p2pTables = map[string]struct{ table, creator, children string }{
 	"ipc":              {"ipcs", "created_by", ""},
 	"customer_invoice": {"customer_invoices", "created_by", ""},
 	"customer_receipt": {"customer_receipts", "created_by", ""},
+	// Journey C (0021).
+	"stock_item":    {"stock_items", "created_by", ""},
+	"warehouse":     {"warehouses", "created_by", ""},
+	"stock_receipt": {"stock_receipts", "created_by", ""},
+	"stock_issue":   {"stock_issues", "created_by", ""},
+	"stock_count":   {"stock_counts", "created_by", ""},
 }
 
 // DocTypes reports whether a document type is known (for callers that must
@@ -286,6 +292,11 @@ var listSQL = map[string]string{
 	"ipc":                   `SELECT i.id::text, i.number, i.status, i.created_by, i.created_at, c.project_id::text, i.amount_due, c.number || ' IPC ' || i.seq || ' to ' || i.period_end FROM ipcs i JOIN contracts c ON c.id = i.contract_id`,
 	"customer_invoice":      `SELECT i.id::text, i.number, i.status, i.created_by, i.created_at, i.project_id::text, i.total, u.name FROM customer_invoices i JOIN customers u ON u.id = i.customer_id`,
 	"customer_receipt":      `SELECT r.id::text, r.number, r.status, r.created_by, r.created_at, '', r.amount, l.reference FROM customer_receipts r JOIN bank_statement_lines l ON l.id = r.statement_line_id`,
+	"stock_item":            `SELECT id::text, code, status, created_by, created_at, '', 0::numeric, name || ' (' || unit || ', ' || valuation_method || ')' FROM stock_items`,
+	"warehouse":             `SELECT id::text, code, status, created_by, created_at, COALESCE(project_id::text, ''), 0::numeric, name FROM warehouses`,
+	"stock_receipt":         `SELECT r.id::text, r.number, 'POSTED', r.created_by, r.created_at, o.project_id::text, r.amount, i.code || ' ' || r.quantity || ' ' || i.unit || ' into ' || w.code FROM stock_receipts r JOIN grns g ON g.id = r.grn_id JOIN purchase_orders o ON o.id = g.po_id JOIN stock_items i ON i.id = r.stock_item_id JOIN warehouses w ON w.id = r.warehouse_id`,
+	"stock_issue":           `SELECT s.id::text, s.number, s.status, s.created_by, s.created_at, s.project_id::text, COALESCE(s.amount, 0), i.code || ' ' || s.quantity || ' ' || i.unit || ' from ' || w.code FROM stock_issues s JOIN stock_items i ON i.id = s.stock_item_id JOIN warehouses w ON w.id = s.warehouse_id`,
+	"stock_count":           `SELECT c.id::text, c.number, c.status, c.created_by, c.created_at, COALESCE(c.project_id::text, ''), COALESCE(c.amount, 0), i.code || ' counted ' || c.counted_qty || ' (book ' || c.system_qty || ') in ' || w.code FROM stock_counts c JOIN stock_items i ON i.id = c.stock_item_id JOIN warehouses w ON w.id = c.warehouse_id`,
 	// Money-in statement lines not yet recorded as a receipt (AR worklist).
 	"money_in": `SELECT l.id::text, s.statement_no || '/' || l.line_no, CASE WHEN EXISTS (SELECT 1 FROM customer_receipts r WHERE r.statement_line_id = l.id AND r.status <> 'CANCELLED') THEN 'RECORDED' ELSE 'UNAPPLIED' END,
 	       s.imported_by, s.imported_at, '', l.amount, l.reference || ' — ' || l.counterparty FROM bank_statement_lines l JOIN bank_statements s ON s.id = l.statement_id WHERE l.amount > 0`,
@@ -474,4 +485,57 @@ func ProjectProfitability(ctx context.Context, tx pgx.Tx, project string) (Profi
 	var p Profitability
 	err := tx.QueryRow(ctx, `SELECT revenue_posted, cost_posted, margin FROM project_profitability($1::uuid)`, project).Scan(&p.RevenuePosted, &p.CostPosted, &p.Margin)
 	return p, err
+}
+
+// StockReconciliation reads stock_gl_reconciliation (0021).
+func StockReconciliation(ctx context.Context, tx pgx.Tx, entity string) ([]ReconCheck, error) {
+	rows, err := tx.Query(ctx, `SELECT check_name, subledger, COALESCE(gl, subledger), COALESCE(difference, 0), unposted_documents FROM stock_gl_reconciliation($1::uuid)`, entity)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ReconCheck{}
+	for rows.Next() {
+		var c ReconCheck
+		if err := rows.Scan(&c.Check, &c.Subledger, &c.GL, &c.Difference, &c.Unposted); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// StockLine is one item in one warehouse with its quantity and value.
+type StockLine struct {
+	ItemID          string          `json:"stock_item_id"`
+	ItemCode        string          `json:"item_code"`
+	ItemName        string          `json:"item_name"`
+	Unit            string          `json:"unit"`
+	ValuationMethod string          `json:"valuation_method"`
+	WarehouseID     string          `json:"warehouse_id"`
+	WarehouseCode   string          `json:"warehouse_code"`
+	ProjectID       string          `json:"project_id"`
+	Qty             decimal.Decimal `json:"qty"`
+	Value           decimal.Decimal `json:"value"`
+	UnitCost        decimal.Decimal `json:"unit_cost"`
+}
+
+// StockOnHand reads stock_on_hand (0021); the caller filters by visibility.
+func StockOnHand(ctx context.Context, tx pgx.Tx, entity string) ([]StockLine, error) {
+	rows, err := tx.Query(ctx, `SELECT stock_item_id::text, item_code, item_name, unit, valuation_method, warehouse_id::text, warehouse_code,
+		COALESCE(project_id::text, ''), qty, value, unit_cost FROM stock_on_hand($1::uuid)`, entity)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []StockLine{}
+	for rows.Next() {
+		var l StockLine
+		if err := rows.Scan(&l.ItemID, &l.ItemCode, &l.ItemName, &l.Unit, &l.ValuationMethod, &l.WarehouseID, &l.WarehouseCode, &l.ProjectID,
+			&l.Qty, &l.Value, &l.UnitCost); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
 }

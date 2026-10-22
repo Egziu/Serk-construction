@@ -315,7 +315,7 @@ func (s *Service) ReverseJournal(ctx context.Context, p auth.Principal, original
 		// Subledger journals are corrected at their document, never reversed:
 		// a reversal would leave the document and the ledger disagreeing
 		// (review 6, R6-F4; also refused in SQL by 0020).
-		if st := string(orig.SourceType); strings.HasPrefix(st, "P2P_") || strings.HasPrefix(st, "AR_") {
+		if st := string(orig.SourceType); strings.HasPrefix(st, "P2P_") || strings.HasPrefix(st, "AR_") || strings.HasPrefix(st, "STK_") {
 			return fmt.Errorf("%w: %s journals are not reversed; correct the source document instead", ErrInvalidInput, st)
 		}
 		if eventAt.IsZero() {

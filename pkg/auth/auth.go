@@ -109,6 +109,17 @@ const (
 	PermARInvoiceApprove      Permission = "ar.invoice.approve"
 	PermARReceiptCreate       Permission = "ar.receipt.create"
 	PermARReceiptConfirm      Permission = "ar.receipt.confirm"
+
+	// Stock valuation (Journey C). Maker/checker pairs are held by different
+	// seed roles (TestDefaultRolesSeparateDuties).
+	PermStockItemManage    Permission = "stock.item.manage"
+	PermStockItemApprove   Permission = "stock.item.approve"
+	PermWarehouseManage    Permission = "warehouse.manage"
+	PermStockReceive       Permission = "stock.receive"
+	PermStockIssue         Permission = "stock.issue"
+	PermStockIssueApprove  Permission = "stock.issue.approve"
+	PermStockCount         Permission = "stock.count"
+	PermStockAdjustApprove Permission = "stock.adjust.approve"
 )
 
 // Role is a named permission bundle. Roles are tenant-scoped data in
@@ -133,14 +144,14 @@ var DefaultRoles = map[string]Role{
 	"bank_statement_officer": {Name: "bank_statement_officer", Permissions: []Permission{PermBankImport, PermScopeTenantWide, PermP2PRead}},
 	"finance_manager": {Name: "finance_manager", Permissions: []Permission{PermJournalApprove, PermJournalRead, PermFXRead, PermFXApprove,
 		PermFXPolicyApprove, PermWBSApprove, PermScopeTenantWide, PermWorkflowRead, PermAPApproveException, PermPaymentApprove,
-		PermSupplierBankApprove, PermBankDetailsReveal, PermCustomerApprove, PermP2PRead}},
+		PermSupplierBankApprove, PermBankDetailsReveal, PermCustomerApprove, PermStockItemApprove, PermP2PRead}},
 	"controller": {Name: "controller", Permissions: []Permission{PermJournalPost, PermJournalReverse, PermJournalRead, PermPeriodClose,
 		PermAccountManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PPolicyManage, PermContractPolicyManage, PermP2PRead}},
 	"cfo": {Name: "cfo", Permissions: []Permission{PermJournalRead, PermFXRead, PermFXApprove, PermFXApproveExcept, PermFXPolicyApprove,
 		PermPeriodReopen, PermAuditRead, PermScopeTenantWide, PermWorkflowRead, PermWorkflowPublish, PermApprovalHighValue,
 		PermPaymentApprove, PermP2PPolicyApprove, PermBudgetOverride, PermBankAcctApprove, PermBankDetailsReveal, PermContractApprove, PermContractPolicyApprove, PermP2PRead}},
 	"auditor":            {Name: "auditor", Permissions: []Permission{PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PRead}},
-	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermP2PRead}},
+	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermStockIssueApprove, PermP2PRead}},
 	"project_accountant": {Name: "project_accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermWorkflowRead}},
 	"process_owner":      {Name: "process_owner", Permissions: []Permission{PermWorkflowDefine, PermWorkflowRead}},
 	"workflow_admin":     {Name: "workflow_admin", Permissions: []Permission{PermWorkflowAdmin, PermWorkflowRead, PermScopeTenantWide}},
@@ -149,17 +160,21 @@ var DefaultRoles = map[string]Role{
 	// Journey A operational roles.
 	"estimator":           {Name: "estimator", Permissions: []Permission{PermBOQManage, PermP2PRead}},
 	"commercial_manager":  {Name: "commercial_manager", Permissions: []Permission{PermBOQApprove, PermContractManage, PermIPCCertify, PermP2PRead}},
-	"site_engineer":       {Name: "site_engineer", Permissions: []Permission{PermPRCreate, PermGRNConfirm, PermRFQEvaluate, PermMeasureVerify, PermP2PRead}},
-	"storekeeper":         {Name: "storekeeper", Permissions: []Permission{PermGRNCreate, PermP2PRead}},
-	"procurement_officer": {Name: "procurement_officer", Permissions: []Permission{PermSupplierManage, PermRFQManage, PermPOManage, PermP2PRead}},
-	"procurement_manager": {Name: "procurement_manager", Permissions: []Permission{PermSupplierApprove, PermRFQAward, PermPOApprove, PermP2PRead}},
+	"site_engineer":       {Name: "site_engineer", Permissions: []Permission{PermPRCreate, PermGRNConfirm, PermRFQEvaluate, PermMeasureVerify, PermStockIssueApprove, PermP2PRead}},
+	"storekeeper":         {Name: "storekeeper", Permissions: []Permission{PermGRNCreate, PermStockReceive, PermStockIssue, PermStockCount, PermP2PRead}},
+	"procurement_officer": {Name: "procurement_officer", Permissions: []Permission{PermSupplierManage, PermRFQManage, PermPOManage, PermStockItemManage, PermP2PRead}},
+	"procurement_manager": {Name: "procurement_manager", Permissions: []Permission{PermSupplierApprove, PermRFQAward, PermPOApprove, PermWarehouseManage, PermP2PRead}},
 	"ap_clerk":            {Name: "ap_clerk", Permissions: []Permission{PermAPEnter, PermP2PRead}},
 	"ap_supervisor":       {Name: "ap_supervisor", Permissions: []Permission{PermAPApprove, PermP2PRead}},
 	// Journey B operational roles.
 	"quantity_surveyor": {Name: "quantity_surveyor", Permissions: []Permission{PermMeasureCreate, PermIPCPrepare, PermP2PRead}},
 	"ar_clerk": {Name: "ar_clerk", Permissions: []Permission{PermCustomerManage, PermARInvoiceCreate, PermARReceiptCreate, PermScopeTenantWide,
 		PermP2PRead}},
-	"ar_supervisor": {Name: "ar_supervisor", Permissions: []Permission{PermARInvoiceApprove, PermARReceiptConfirm, PermScopeTenantWide, PermP2PRead}},
+	// Approves stock count adjustments. Separate from the journal chain: the
+	// adjustment journal it generates is approved by finance and posted by a
+	// controller, and its preparer may do neither.
+	"inventory_controller": {Name: "inventory_controller", Permissions: []Permission{PermStockAdjustApprove, PermScopeTenantWide, PermP2PRead}},
+	"ar_supervisor":        {Name: "ar_supervisor", Permissions: []Permission{PermARInvoiceApprove, PermARReceiptConfirm, PermScopeTenantWide, PermP2PRead}},
 }
 
 // Principal kinds, as asserted by the identity provider (token claim
