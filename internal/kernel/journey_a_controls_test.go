@@ -148,7 +148,7 @@ func TestJourneyA_ReceiptAndMatchingControls(t *testing.T) {
 	w.approvedBOQ(t)
 	_, _, po := w.awardedPO(t, "20", "500")
 	// Over-receipt beyond the 5% tolerance is refused at confirmation.
-	g, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now(), "DN-1", []GRNLine{{POLineNo: 1, QtyReceived: dec("21.5")}})
+	g, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now().UTC(), "DN-1", []GRNLine{{POLineNo: 1, QtyReceived: dec("21.5")}})
 	must(t, "grn", err)
 	must(t, "grn submit", f.svc.SubmitGRN(f.ctx, c.store, g))
 	_, err = f.svc.ConfirmGRN(f.ctx, c.siteEng, g)
@@ -159,7 +159,7 @@ func TestJourneyA_ReceiptAndMatchingControls(t *testing.T) {
 	_, err = f.svc.ConfirmGRN(f.ctx, selfConfirm, g)
 	wantErr(t, "receipt confirmed by the storekeeper who recorded it", err, "segregation")
 	// A receipt journal with different accounting is refused by the database.
-	g2, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now(), "DN-2", []GRNLine{{POLineNo: 1, QtyReceived: dec("10")}})
+	g2, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now().UTC(), "DN-2", []GRNLine{{POLineNo: 1, QtyReceived: dec("10")}})
 	must(t, "grn2", err)
 	must(t, "grn2 submit", f.svc.SubmitGRN(f.ctx, c.store, g2))
 	err = f.app.WithTenant(f.ctx, f.tenant, func(ctx context.Context, tx pgx.Tx) error {

@@ -167,7 +167,7 @@ func (w *p2pWorld) awardedPO(t *testing.T, steelQty, cementQty string) (pr, rfq,
 func (w *p2pWorld) receipt(t *testing.T, po string, lines ...GRNLine) (grn, journal string) {
 	t.Helper()
 	f, c := w.f, w.cast
-	grn, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now(), "DN-"+key("x"), lines)
+	grn, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now().UTC(), "DN-"+key("x"), lines)
 	must(t, "grn", err)
 	must(t, "grn submit", f.svc.SubmitGRN(f.ctx, c.store, grn))
 	journal, err = f.svc.ConfirmGRN(f.ctx, c.siteEng, grn)

@@ -462,7 +462,7 @@ func TestR4_06_JournalFreeze(t *testing.T) {
 
 	// A P2P journal born with a chosen (future) created_txid, in a raw GRN
 	// confirmation under a genuine site-engineer attestation.
-	g, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now(), "DN-R4", []GRNLine{{POLineNo: 1, QtyReceived: dec("1")}})
+	g, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now().UTC(), "DN-R4", []GRNLine{{POLineNo: 1, QtyReceived: dec("1")}})
 	must(t, "grn", err)
 	must(t, "grn submit", f.svc.SubmitGRN(f.ctx, c.store, g))
 	r3held(t, "raw GRN confirm whose P2P journal is inserted with created_txid = txid_current()+5", f.r3tx(func(ctx context.Context, tx pgx.Tx) error {
@@ -485,7 +485,7 @@ func TestR4_06_JournalFreeze(t *testing.T) {
 		return err
 	}))
 	// Lines appended in the generating transaction after the binding check.
-	g2, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now(), "DN-R4b", []GRNLine{{POLineNo: 1, QtyReceived: dec("1")}})
+	g2, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now().UTC(), "DN-R4b", []GRNLine{{POLineNo: 1, QtyReceived: dec("1")}})
 	must(t, "grn2", err)
 	must(t, "grn2 submit", f.svc.SubmitGRN(f.ctx, c.store, g2))
 	var j2 string

@@ -148,9 +148,16 @@ try {
     await p.goto(BASE);
     const first = await p.evaluate(() => document.activeElement && document.activeElement.getAttribute('name'));
     if (first !== 'token') fail(`sign-in page focus is on "${first}", not the token field`);
-    await p.keyboard.press('Shift+Tab');
-    const skip = await p.evaluate(() => { const a = document.activeElement; return { text: a.textContent.trim(), left: a.getBoundingClientRect().left }; });
-    if (skip.text !== 'Skip to content' || skip.left < 0) fail(`Shift+Tab from the token field reaches "${skip.text}" at x=${skip.left}, not a visible skip link`);
+    // Walking back from the token field passes only labelled header controls
+    // (the day/night switch) and reaches the visible skip link first in order.
+    let skip = null;
+    for (let i = 0; i < 4 && !skip; i++) {
+      await p.keyboard.press('Shift+Tab');
+      const el = await p.evaluate(() => { const a = document.activeElement; return { text: a.textContent.trim(), label: a.getAttribute('aria-label') || '', left: a.getBoundingClientRect().left }; });
+      if (el.text === 'Skip to content') skip = el;
+      else if (!el.text && !el.label) fail(`Shift+Tab reaches an unlabelled control at x=${el.left}`);
+    }
+    if (!skip || skip.left < 0) fail(`Shift+Tab from the token field does not reach a visible skip link`);
     await audit(p, 'sign-in page');
     await ctx.close();
   }

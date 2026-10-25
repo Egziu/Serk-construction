@@ -156,7 +156,7 @@ func TestR3_04_LinesAddedAfterAttestation(t *testing.T) {
 	f, c := w.f, w.cast
 	w.approvedBOQ(t)
 	_, _, po := w.awardedPO(t, "20", "500")
-	g, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now(), "DN-R3", []GRNLine{{POLineNo: 1, QtyReceived: dec("1")}})
+	g, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now().UTC(), "DN-R3", []GRNLine{{POLineNo: 1, QtyReceived: dec("1")}})
 	must(t, "grn", err)
 	r3held(t, "GRN submitted after an extra line was added post-attestation", f.r3tx(func(ctx context.Context, tx pgx.Tx) error {
 		if err := f.authorizeIn(ctx, tx, c.store, "grn.submit", "grn", g, ""); err != nil {
@@ -228,7 +228,7 @@ func TestR3_06_AnotherDocumentsAttestation(t *testing.T) {
 	w.approvedBOQ(t)
 	_, _, po := w.awardedPO(t, "20", "500")
 	mk := func() string {
-		g, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now(), "DN-"+key("r3"), []GRNLine{{POLineNo: 1, QtyReceived: dec("1")}})
+		g, err := f.svc.CreateGRN(f.ctx, c.store, po, time.Now().UTC(), "DN-"+key("r3"), []GRNLine{{POLineNo: 1, QtyReceived: dec("1")}})
 		must(t, "grn", err)
 		must(t, "submit", f.svc.SubmitGRN(f.ctx, c.store, g))
 		return g
