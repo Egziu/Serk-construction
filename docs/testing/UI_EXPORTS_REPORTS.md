@@ -51,6 +51,10 @@ All three reports are read-only and need tenant-wide scope, because they aggrega
 
 ## Evidence
 
+- **Full race suite** (Go 1.26.10, PostgreSQL 16, fresh database `serk_full39b`): **368 PASS, 0 FAIL, 0 SKIP** (`evidence/full-suite-ui-exports-reports-fresh-db.txt`). This includes all five console browser journeys on the new design.
+  - A first run (`serk_full39`) failed 59 tests with one cause: test helpers dated goods receipts with the local clock (UTC+3, already 26 Oct) against a UTC database. They now use UTC; no production code was involved.
+  - The skip-link check now walks past the labelled day/night button.
+
 - **`internal/export` tests:**
   - Decimal formatting, including half-up rounding carry (999.995 → 1,000.00).
   - JSON-to-document mapping, with internal ids and fields hidden.
