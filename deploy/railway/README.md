@@ -48,6 +48,10 @@ Generated per environment, never committed: `SERK_TENANT_DB_SECRET`,
 
 ## Testing
 
+Railway's PostgreSQL template runs PostgreSQL 18; the test suite runs on 16.
+Smoke test from any machine: `python3 scripts/staging_smoke.py https://<domain> <passphrase>`.
+
+
 Open `https://<domain>/console/`, use **Test environment sign-in**, pick a
 persona and enter the staging passphrase. Each persona holds one duty;
 switch persona to approve what another prepared. Step-up actions (CFO,

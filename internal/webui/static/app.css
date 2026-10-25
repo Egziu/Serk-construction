@@ -35,6 +35,7 @@ a { color: var(--accent); }
 .who { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); }
 
 .shell { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: calc(100vh - 52px); }
+nav[hidden] + main { grid-column: 1 / -1; } /* signed out: the page spans the shell */
 nav { border-right: 1px solid var(--line); background: var(--panel); padding: 12px 8px; }
 nav h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 14px 10px 6px; }
 nav ul { list-style: none; margin: 0; padding: 0; }
