@@ -22,10 +22,12 @@ const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 's
 	"font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 var types = map[string]string{
-	".html": "text/html; charset=utf-8",
-	".js":   "text/javascript; charset=utf-8",
-	".css":  "text/css; charset=utf-8",
-	".svg":  "image/svg+xml",
+	".html":  "text/html; charset=utf-8",
+	".js":    "text/javascript; charset=utf-8",
+	".css":   "text/css; charset=utf-8",
+	".svg":   "image/svg+xml",
+	".woff2": "font/woff2",
+	".txt":   "text/plain; charset=utf-8",
 }
 
 // Handler serves /console/ and its assets. Unknown paths fall back to the

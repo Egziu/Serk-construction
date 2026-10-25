@@ -132,7 +132,7 @@ func main() {
 			Signer: httpapi.HS256Verifier{Secret: cfg.HS256Secret, Issuer: cfg.TokenIssuer, Audience: cfg.TokenAudience}}
 	}
 	h := httpapi.New(httpapi.Config{Verifier: verifier, Kernel: svc, Store: router, Logger: log, RatePerMinute: cfg.RatePerMinute, Metrics: metrics,
-		Abuse: abuse, Staging: staging})
+		Abuse: abuse, Staging: staging, CompanyName: cfg.CompanyName})
 	if cfg.SchedulerDSN != "" {
 		sched, err := pgxpool.New(ctx, cfg.SchedulerDSN)
 		if err != nil {

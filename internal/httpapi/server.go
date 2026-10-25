@@ -47,6 +47,10 @@ type Config struct {
 	// Staging enables the test-environment persona sign-in (never in
 	// production; see StagingLogin).
 	Staging *StagingLogin
+	// CompanyName overrides the export letterhead (default: the legal
+	// entity's registered name); Brand is the product line printed under it.
+	CompanyName string
+	Brand       string
 }
 
 // serverMetrics are the API's own instruments (GATEA-11).
@@ -99,6 +103,9 @@ func New(cfg Config) *Server {
 		cfg.RatePerMinute = 300
 	}
 	cfg.Abuse.defaults()
+	if cfg.Brand == "" {
+		cfg.Brand = "SERK Construction"
+	}
 	if cfg.Metrics == nil {
 		cfg.Metrics = obs.NewRegistry()
 	}
@@ -158,6 +165,8 @@ func New(cfg Config) *Server {
 	s.registerSchedule()
 	s.registerSite()
 	s.registerStaging()
+	s.registerExport()
+	s.registerReports()
 	// Operations console: static assets only; it has no authority of its own.
 	s.mux.Handle("GET /console/", webui.Handler())
 	s.mux.Handle("GET /{$}", http.RedirectHandler("/console/", http.StatusFound))

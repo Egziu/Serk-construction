@@ -229,7 +229,7 @@ const ACTION_LABEL = { submit: 'Submit for approval', approve: 'Approve', reject
   verify: 'Verify measurement', certify: 'Certify', invoice: 'Issue customer invoice' };
 
 const NAV = [
-  ['Overview', [['#/home', 'My work', null]]],
+  ['Overview', [['#/home', 'My work', null], ['#/reports', 'Reports', null]]],
   ['Project', [['#/list/boq_version', 'BOQ', 'p2p.read'], ['#/list/purchase_requisition', 'Requisitions', 'p2p.read'], ['#/cost', 'Cost report', 'p2p.read']]],
   ['Planning', [['#/list/schedule_version', 'Schedules', 'p2p.read'], ['#/list/schedule_progress', 'Progress', 'p2p.read'], ['#/evm', 'Earned value', 'p2p.read']]],
   ['Procurement', [['#/list/rfq', 'RFQs', 'p2p.read'], ['#/list/rfq_quote', 'Quotes', 'p2p.read'], ['#/list/purchase_order', 'Purchase orders', 'p2p.read'], ['#/list/supplier', 'Suppliers', 'p2p.read']]],
@@ -244,7 +244,8 @@ const NAV = [
     ['#/list/customer_invoice', 'Customer invoices', 'p2p.read'], ['#/list/customer_credit_note', 'Credit notes', 'p2p.read'],
     ['#/list/retention_release', 'Retention releases', 'p2p.read'], ['#/list/money_in', 'Money received', 'ar.receipt.create|ar.receipt.confirm'],
     ['#/list/customer_receipt', 'Receipts', 'scope.tenant_wide'], ['#/list/customer', 'Customers', 'p2p.read']]],
-  ['Finance', [['#/journals', 'Journals', 'journal.read'], ['#/recon', 'Reconciliation', 'journal.read'], ['#/list/p2p_policy', 'P2P policies', 'scope.tenant_wide'],
+  ['Finance', [['#/journals', 'Journals', 'journal.read'], ['#/recon', 'Reconciliation', 'journal.read'], ['#/tb', 'Trial balance', 'journal.read'],
+    ['#/aging/ap', 'Payables aging', 'scope.tenant_wide'], ['#/aging/ar', 'Receivables aging', 'scope.tenant_wide'], ['#/list/p2p_policy', 'P2P policies', 'scope.tenant_wide'],
     ['#/list/contract_policy', 'Contract policies', 'scope.tenant_wide']]],
 ];
 const allowed = (perm) => !perm || perm.split('|').some((p) => S.can.has(p));
@@ -312,6 +313,11 @@ function page(title, lede, ...kids) {
 function buildNav() {
   const nav = $('nav');
   nav.textContent = '';
+  // Phones: the menu folds away behind one button.
+  const tog = h('button', { type: 'button', class: 'ghost navtoggle', 'aria-expanded': 'false', 'aria-controls': 'nav' }, 'Menu');
+  tog.addEventListener('click', () => { const o = nav.classList.toggle('open'); tog.setAttribute('aria-expanded', String(o)); });
+  nav.addEventListener('click', (e) => { if (e.target.closest('a')) { nav.classList.remove('open'); tog.setAttribute('aria-expanded', 'false'); } });
+  nav.append(tog);
   for (const [group, items] of NAV) {
     const vis = items.filter(([, , p]) => allowed(p));
     if (!vis.length) continue;
@@ -344,6 +350,9 @@ async function route() {
       case 'stock': return await renderStock();
       case 'evm': return await renderEVM();
       case 'site': return await renderDevices();
+      case 'reports': return await renderReports();
+      case 'tb': return await renderTB();
+      case 'aging': return await renderAging(a === 'ar' ? 'ar' : 'ap');
       default: return await renderHome();
     }
   } catch (e) {
@@ -368,6 +377,7 @@ function renderSignin(msg) {
       $('who-mfa').hidden = !S.me.mfa;
       $('who').hidden = false;
       buildNav();
+      startBell();
       if (location.hash === '' || location.hash === '#/') location.hash = '#/home';
       else route();
       say(`Signed in as ${S.me.user_id}`);
@@ -424,28 +434,45 @@ async function stagingSignin(v, ta) {
 async function signOut(msg) {
   if (S.token) { try { await api('POST', '/v1/identity/logout'); } catch { /* session may already be gone */ } }
   S.token = null; S.me = null; S.ref = null; S.can = new Set();
+  stopBell();
   history.replaceState(null, '', '#/');
   renderSignin(msg || 'You have signed out.');
 }
 
 // ---------- home ----------
-async function renderHome() {
-  const cards = h('div', { class: 'cards' });
-  page('My work', `Items waiting for you as ${S.me.roles.join(', ')}. Counts include only the projects you can see.`, cards);
+// Work queues for the signed-in person's permissions (also the bell).
+async function workQueues() {
   const qs = QUEUES.filter(([p]) => S.can.has(p));
   const jobs = qs.map(([, type, status]) => api('GET', `/v1/p2p/${type}?status=${status}`).then((r) => r.items.length).catch(() => null));
   if (S.can.has('journal.approve')) jobs.push(Promise.all(['P2P_', 'AR_', 'STK_'].map((p) => api('GET', `/v1/journals?status=DRAFT&source_prefix=${p}`)))
     .then((rs) => rs.reduce((n, r) => n + r.journals.length, 0)).catch(() => null));
   if (S.can.has('journal.post')) jobs.push(api('GET', '/v1/journals?status=APPROVED').then((r) => r.journals.length).catch(() => null));
   const counts = await Promise.all(jobs);
-  const all = qs.map(([, type, status, label], i) => [label, `#/list/${type}/${status}`, counts[i]]);
+  const all = qs.map(([, type, status, label], i) => ({ label, href: `#/list/${type}/${status}`, n: counts[i] }));
   let k = qs.length;
-  if (S.can.has('journal.approve')) all.push(['Subledger journals to approve', '#/journals', counts[k++]]);
-  if (S.can.has('journal.post')) all.push(['Approved journals to post', '#/journals', counts[k++]]);
+  if (S.can.has('journal.approve')) all.push({ label: 'Subledger journals to approve', href: '#/journals', n: counts[k++] });
+  if (S.can.has('journal.post')) all.push({ label: 'Approved journals to post', href: '#/journals', n: counts[k++] });
+  return all;
+}
+function greeting() {
+  const hr = new Date().getHours();
+  return hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+}
+async function renderHome() {
+  const cards = h('div', { class: 'cards' });
+  const hero = h('section', { class: 'hero', 'aria-label': 'Summary' });
+  page('My work', null, hero, h('h2', { class: 'section' }, 'Waiting for you'), cards,
+    h('p', { class: 'foot-note' }, 'Counts include only the projects you can see. Every approval remains a human decision, checked again by the database.'));
+  const all = await workQueues();
+  const total = all.reduce((n, q) => n + (q.n || 0), 0);
+  hero.append(h('div', {}, h('p', { class: 'eyebrow' }, new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })),
+    h('h2', { class: 'hello' }, `${greeting()}, ${S.me.user_id}`), h('p', {}, `Signed in as ${S.me.roles.join(', ').replace(/_/g, ' ')}.`)),
+  h('div', { class: 'big' }, String(total), h('small', {}, total === 1 ? 'item waiting' : 'items waiting')));
   if (!all.length) cards.append(h('p', { class: 'empty' }, 'No work queues for your roles.'));
-  for (const [label, href, n] of all) {
-    cards.append(h('a', { class: 'card', href }, h('div', { class: 'n' }, n == null ? '–' : String(n)), h('div', { class: 't' }, label)));
+  for (const q of all.sort((a, b) => (b.n || 0) - (a.n || 0))) {
+    cards.append(h('a', { class: q.n ? 'card hot' : 'card', href: q.href }, h('div', { class: 'n' }, q.n == null ? '–' : String(q.n)), h('div', { class: 't' }, q.label)));
   }
+  setBell(all);
 }
 
 // ---------- lists ----------
@@ -465,12 +492,14 @@ async function renderList(type, status) {
   const filter = select('status', [{ value: '', label: 'All statuses' }, ...meta.statuses.map((s) => ({ value: s, label: words(s.toLowerCase()) }))]);
   filter.value = status || '';
   filter.addEventListener('change', () => { location.hash = `#/list/${type}${filter.value ? '/' + filter.value : ''}`; });
+  const listTitle = `${meta.title}${status ? ' — ' + words(status.toLowerCase()) : ''}`;
   const tools = h('div', { class: 'toolbar' }, field('Status', filter),
-    meta.form && S.can.has(meta.create) ? h('a', { class: 'btn', href: `#/new/${meta.form}` }, `New ${meta.one.toLowerCase()}`) : null);
+    meta.form && S.can.has(meta.create) ? h('a', { class: 'btn', href: `#/new/${meta.form}` }, `New ${meta.one.toLowerCase()}`) : null,
+    h('span', { class: 'spacer' }), exportBar(`/v1/p2p/${type}${status ? '?status=' + encodeURIComponent(status) : ''}`, listTitle));
   page(meta.title, null, tools, table(`${meta.title}${status ? ' — ' + words(status.toLowerCase()) : ''} (${r.items.length})`, [
     { label: 'Reference', cell: (d) => {
       const href = meta.link ? meta.link(d) : `#/doc/${type}/${d.id}`;
-      return href ? h('a', { href }, d.number || d.id.slice(0, 8)) : (d.number || d.id.slice(0, 8));
+      return href ? h('a', { href, class: 'ref' }, d.number || d.id.slice(0, 8)) : h('span', { class: 'ref' }, d.number || d.id.slice(0, 8));
     } },
     { label: 'Description', cell: (d) => d.label },
     { label: 'Status', cell: (d) => chip(d.status) },
@@ -553,7 +582,9 @@ async function renderDoc(type, id) {
   if (det.payee) parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Payee (approved bank account)'), kv(det.payee)));
   if (type === 'contract' && d.status === 'ACTIVE') parts.push(await positionPanel(d.id));
   parts.push(actionsPanel(type, d, det), nextSteps(type, d), revealPanel(type, d));
-  page(`${meta.one} ${d.number || head.code || (head.version ? 'v' + head.version : '')}`.trim(), null, ...parts);
+  const docTitle = `${meta.one} ${d.number || head.code || (head.version ? 'v' + head.version : '')}`.trim();
+  parts.unshift(h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }), exportBar(`/v1/p2p/${type}/${id}`, docTitle, { entity: () => head.legal_entity_id || '' })));
+  page(docTitle, null, ...parts);
 }
 
 // Full account numbers are masked everywhere; a holder of bank.details.reveal
@@ -1538,7 +1569,8 @@ async function renderJournals() {
           say(`${ok} of ${res.length} journals done.`);
         } catch (e) { btn.disabled = false; showError(e); }
       });
-      holder.append(h('h2', { class: 'section' }, status === 'DRAFT' ? 'Waiting for approval' : 'Approved, waiting to post'),
+      holder.append(h('div', { class: 'pagehead' }, h('h2', { class: 'section' }, status === 'DRAFT' ? 'Waiting for approval' : 'Approved, waiting to post'),
+        exportBar(`/v1/journals?status=${status}`, `Journals — ${status === 'DRAFT' ? 'waiting for approval' : 'approved, waiting to post'}`)),
         ...[table(`${status === 'DRAFT' ? 'Draft' : 'Approved'} journals (${js.length})`, cols, js, 'None.'), btn ? h('div', { class: 'actions' }, btn) : null, out].filter(Boolean));
     }
   };
@@ -1591,6 +1623,7 @@ async function renderBank() {
     { label: 'Closing balance', num: true, cell: (s) => money(s.amount) }, { label: 'Imported by', cell: (s) => s.created_by },
     { label: 'Action', cell: (s) => (S.can.has('bank.reconcile') && s.status === 'OPEN' ? reconcileButton(s) : '') },
   ], sts, 'No statements imported yet.'));
+  parts.push(h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }), exportBar('/v1/p2p/bank_statement', 'Bank statements')));
   page('Bank statements', 'Import statements and reconcile them automatically against released payments. Unmatched lines are left for investigation, never forced.', ...parts);
 }
 function reconcileButton(s) {
@@ -1644,7 +1677,11 @@ async function renderRecon() {
     if (arBreaks) out.prepend(h('p', { class: 'alert', role: 'status' }, `${arBreaks} receivables or inventory difference(s) need investigation.`));
   };
   ent.addEventListener('change', () => load().catch(showError));
-  page('Reconciliation', 'GRNI, payables, payments in transit, bank, receivables, retention and advances compared with posted general-ledger balances.', h('div', { class: 'toolbar' }, field('Legal entity', ent)), out);
+  const entName = () => (S.ref.legal_entities.find((e) => e.id === ent.value) || {}).name || '';
+  const rx = (path, t) => exportBar(() => `/v1/entities/${ent.value}/${path}`, () => `${t} — ${entName()}`, { entity: () => ent.value });
+  page('Reconciliation', 'GRNI, payables, payments in transit, bank, receivables, retention and advances compared with posted general-ledger balances.',
+    h('div', { class: 'toolbar' }, field('Legal entity', ent), h('span', { class: 'spacer' }),
+      h('div', { class: 'inline' }, rx('p2p-reconciliation', 'Payables reconciliation'), rx('ar-reconciliation', 'Receivables reconciliation'), rx('stock-reconciliation', 'Inventory reconciliation'))), out);
   await load();
 }
 
@@ -1662,7 +1699,9 @@ async function renderCost() {
       { label: 'Actual (posted)', num: true, cell: (r) => money(r.actual_posted) }, { label: 'Available', num: true, cell: (r) => money(r.available) }], rows, 'No budgeted cost codes.'));
   };
   proj.addEventListener('change', () => load().catch(showError));
-  page('Project cost report', 'Approved BOQ budget against commitments (approved POs), receipts, invoices and posted actuals.', h('div', { class: 'toolbar' }, field('Project', proj)), out);
+  const projName = () => { const p = S.ref.projects.find((x) => x.id === proj.value); return p ? `${p.code} ${p.name}` : ''; };
+  page('Project cost report', 'Approved BOQ budget against commitments (approved POs), receipts, invoices and posted actuals.',
+    h('div', { class: 'toolbar' }, field('Project', proj), h('span', { class: 'spacer' }), exportBar(() => `/v1/projects/${proj.value}/cost-report`, () => `Project cost report — ${projName()}`)), out);
   await load();
 }
 
@@ -1693,7 +1732,8 @@ async function renderEVM() {
   };
   for (const el of [proj, at]) el.addEventListener('change', () => load().catch(showError));
   page('Earned value', 'From the approved baseline (PV spread over each activity\'s working days), the latest approved progress (EV) and the posted ledger cost on the project (AC).',
-    h('div', { class: 'toolbar' }, field('Project', proj), field('Status date', at)), out);
+    h('div', { class: 'toolbar' }, field('Project', proj), field('Status date', at), h('span', { class: 'spacer' }),
+      exportBar(() => `/v1/projects/${proj.value}/evm?status_date=${at.value}`, () => { const p = S.ref.projects.find((x) => x.id === proj.value); return `Earned value — ${p ? p.code + ' ' + p.name : ''} at ${at.value}`; })), out);
   await load();
 }
 
@@ -1728,6 +1768,7 @@ async function renderDevices() {
     return h('span', { class: 'inline' }, reason, btn);
   };
   page('Field devices', 'Devices that may synchronise site records prepared offline. A revoked device can never synchronise again, including records it queued before the revocation.',
+    h('div', { class: 'toolbar' }, h('span', { class: 'spacer' }), exportBar('/v1/site/devices', 'Field devices')),
     S.can.has('site.device.register') ? reg : null, out,
     table(`Devices (${r.items.length})`, [
       { label: 'Device', cell: (d) => d.label }, { label: 'Person', cell: (d) => d.user_id }, { label: 'Status', cell: (d) => chip(d.status) },
@@ -1751,10 +1792,237 @@ async function renderStock() {
   ent.addEventListener('change', () => load().catch(showError));
   const tools = h('div', { class: 'toolbar' }, field('Legal entity', ent),
     S.can.has('stock.issue') ? h('a', { class: 'btn', href: '#/new/stockissue' }, 'Issue stock') : null,
-    S.can.has('stock.count') ? h('a', { class: 'btn ghost', href: '#/new/stockcount' }, 'Record a count') : null);
+    S.can.has('stock.count') ? h('a', { class: 'btn ghost', href: '#/new/stockcount' }, 'Record a count') : null,
+    h('span', { class: 'spacer' }), exportBar(() => `/v1/entities/${ent.value}/stock-on-hand`, () => `Stock on hand — ${(S.ref.legal_entities.find((e) => e.id === ent.value) || {}).name || ''}`, { entity: () => ent.value }));
   page('Stock on hand', 'Quantities and values by item and warehouse (the stores of your projects, or every warehouse for tenant-wide roles).', tools, out);
   await load();
 }
+
+
+// ---------- export (PDF / Word / Excel) ----------
+// The server renders the file from the same authorised read the screen
+// uses, stamped with the company, the person and the time.
+function exportBar(src, title, opts = {}) {
+  const val = (x) => (typeof x === 'function' ? x() : x);
+  const wrap = h('div', { class: 'export', role: 'group', 'aria-label': 'Export' }, h('span', { class: 'lbl' }, 'Export'));
+  for (const [fmt, label] of [['pdf', 'PDF'], ['docx', 'Word'], ['xlsx', 'Excel']]) {
+    const b = h('button', { type: 'button', class: 'ghost', 'data-export': fmt, 'aria-label': `Export as ${label}` }, label);
+    b.addEventListener('click', async () => {
+      clearError();
+      b.disabled = true;
+      try {
+        const qs = new URLSearchParams({ src: val(src), format: fmt, title: val(title) });
+        if (opts.entity && opts.entity()) qs.set('entity', opts.entity());
+        const r = await fetch('/v1/export?' + qs, { headers: { Authorization: 'Bearer ' + S.token } });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          const e = d.error || {};
+          throw new ApiError(r.status, e.code || 'error', e.message || r.statusText, r.headers.get('WWW-Authenticate'));
+        }
+        const blob = await r.blob();
+        const name = (/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || `serk-export.${fmt}`;
+        const url = URL.createObjectURL(blob);
+        const a = h('a', { href: url, download: name, hidden: true });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        say(`${label} file ready: ${name}`);
+      } catch (e) { showError(e); } finally { b.disabled = false; }
+    });
+    wrap.append(b);
+  }
+  return wrap;
+}
+
+// ---------- reports ----------
+const REPORTS = [
+  ['#/tb', 'Trial balance', 'Posted debits and credits by account at any date, with the balance check.', 'journal.read'],
+  ['#/aging/ap', 'Payables aging', 'Approved supplier invoices still open, by days past due.', 'scope.tenant_wide'],
+  ['#/aging/ar', 'Receivables aging', 'Approved customer invoices still open after receipts and credit notes.', 'scope.tenant_wide'],
+  ['#/recon', 'Reconciliation', 'Every subledger against the general ledger: payables, bank, receivables, inventory.', 'journal.read'],
+  ['#/cost', 'Project cost report', 'Budget, commitments, receipts, invoices and posted actuals by cost code.', 'p2p.read'],
+  ['#/evm', 'Earned value', 'Planned value, earned value and actual cost from the baseline schedule.', 'p2p.read'],
+  ['#/stock', 'Stock on hand', 'Quantities and values by item and warehouse.', 'p2p.read'],
+  ['#/journals', 'Journals', 'Draft and approved journals awaiting decision.', 'journal.read'],
+];
+async function renderReports() {
+  const grid = h('div', { class: 'reportgrid' });
+  for (const [href, t, d, perm] of REPORTS) {
+    if (!allowed(perm)) continue;
+    grid.append(h('a', { class: 'card', href }, h('h3', {}, t), h('p', {}, d)));
+  }
+  page('Reports', 'Every report and every list can be exported as PDF, Word or Excel with the company letterhead.', grid,
+    h('p', { class: 'foot-note' }, 'Exports contain only what you may see. Each export is recorded with your name and the time.'));
+}
+
+function entityToolbar(ent, at, extra) {
+  return h('div', { class: 'toolbar' }, field('Legal entity', ent), field('As at', at), h('span', { class: 'spacer' }), extra);
+}
+
+async function renderTB() {
+  const ent = select('legal_entity_id', entityOpts());
+  const at = input('as_of', { type: 'date', value: today() });
+  const out = h('div');
+  const src = () => `/v1/reports/trial-balance?entity=${ent.value}&as_of=${at.value}`;
+  const load = async () => {
+    out.textContent = '';
+    if (!ent.value || !at.value) return;
+    const r = await api('GET', src());
+    const rows = r.accounts.filter((a) => a.debit !== '0' || a.credit !== '0');
+    rows.push({ _class: 'total', account_code: '', account_name: 'Total', account_type: '', debit: r.total_debit, credit: r.total_credit, balance: r.difference });
+    out.append(h('p', { class: r.balanced ? 'notice' : 'alert', role: 'status' }, r.balanced ? 'Debits equal credits: the ledger balances.' : `Out of balance by ${money(r.difference)}.`),
+      table(`Trial balance at ${r.as_of}`, [
+        { label: 'Code', cell: (a) => h('span', { class: 'ref' }, a.account_code) }, { label: 'Account', cell: (a) => a.account_name },
+        { label: 'Type', cell: (a) => (a.account_type ? words(a.account_type.toLowerCase()) : '') },
+        { label: 'Debit', num: true, cell: (a) => money(a.debit) }, { label: 'Credit', num: true, cell: (a) => money(a.credit) },
+        { label: 'Balance', num: true, cell: (a) => money(a.balance) }], rows, 'No posted entries.'));
+  };
+  for (const el of [ent, at]) el.addEventListener('change', () => load().catch(showError));
+  page('Trial balance', 'Posted journal lines summed by account up to the date chosen. Only posted entries count.',
+    entityToolbar(ent, at, exportBar(src, () => `Trial balance at ${at.value}`, { entity: () => ent.value })), out);
+  await load();
+}
+
+async function renderAging(kind) {
+  const ar = kind === 'ar';
+  const ent = select('legal_entity_id', entityOpts());
+  const at = input('as_of', { type: 'date', value: today() });
+  const out = h('div');
+  const title = ar ? 'Receivables aging' : 'Payables aging';
+  const src = () => `/v1/reports/${kind}-aging?entity=${ent.value}&as_of=${at.value}`;
+  const buckets = [['not_due', 'Not due'], ['d1_30', '1–30'], ['d31_60', '31–60'], ['d61_90', '61–90'], ['over_90', 'Over 90'], ['open', 'Open']];
+  const load = async () => {
+    out.textContent = '';
+    if (!ent.value || !at.value) return;
+    const r = await api('GET', src());
+    const parties = [...r.by_party, { ...r.total, _class: 'total' }];
+    out.append(table(`${title} by ${ar ? 'customer' : 'supplier'} at ${r.as_of}`, [
+      { label: ar ? 'Customer' : 'Supplier', cell: (p) => p.party },
+      ...buckets.map(([k, l]) => ({ label: l, num: true, cell: (p) => money(p[k]) }))], parties, 'Nothing open.'),
+    table(`Open invoices (${r.items.length})`, [
+      { label: ar ? 'Customer' : 'Supplier', cell: (i) => i.party }, { label: 'Invoice', cell: (i) => h('span', { class: 'ref' }, i.document) },
+      { label: 'Invoice date', cell: (i) => i.invoice_date }, { label: 'Due', cell: (i) => i.due_date },
+      { label: 'Days overdue', num: true, cell: (i) => (i.days_overdue ? String(i.days_overdue) : '') },
+      { label: 'Open', num: true, cell: (i) => `${money(i.open)} ${i.currency}` }], r.items, 'Nothing open.'));
+  };
+  for (const el of [ent, at]) el.addEventListener('change', () => load().catch(showError));
+  page(title, ar ? 'Approved customer invoices less confirmed receipts and approved credit notes, by days past due.'
+    : 'Approved supplier invoices less released payments, by days past due.',
+  entityToolbar(ent, at, exportBar(src, () => `${title} at ${at.value}`, { entity: () => ent.value })), out);
+  await load();
+}
+
+// ---------- notifications ----------
+// The bell counts the items waiting for you (the same queues as "My work"),
+// refreshed every minute while the tab is visible. New items can also raise
+// a desktop notification if you allow it. Nothing is ever approved
+// automatically: notifications only point you at work.
+const BELL = { timer: null, items: [], total: null, open: false };
+const seenKey = () => `serk-seen-${S.me ? S.me.tenant_id + '/' + S.me.user_id : ''}`;
+function readSeen() { try { return JSON.parse(localStorage.getItem(seenKey()) || '{}'); } catch { return {}; } }
+function writeSeen(v) { try { localStorage.setItem(seenKey(), JSON.stringify(v)); } catch { /* storage unavailable */ } }
+function setBell(items) {
+  const prev = BELL.total;
+  BELL.items = items;
+  BELL.total = items.reduce((n, q) => n + (q.n || 0), 0);
+  const c = $('bell-count');
+  c.textContent = BELL.total > 99 ? '99+' : String(BELL.total);
+  c.hidden = !BELL.total;
+  $('bell').setAttribute('aria-label', `Notifications: ${BELL.total} item${BELL.total === 1 ? '' : 's'} waiting`);
+  if (prev != null && BELL.total > prev && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    const grew = items.filter((q) => q.n).map((q) => q.label).slice(0, 3).join(', ');
+    try { new Notification('SERK Construction', { body: `${BELL.total - prev} new item(s) waiting: ${grew}`, tag: 'serk-work' }); } catch { /* not allowed here */ }
+  }
+  if (BELL.open) renderDrawer();
+}
+async function pollBell() {
+  if (!S.token || document.hidden) return;
+  try { setBell(await workQueues()); } catch { /* next poll */ }
+}
+function startBell() {
+  $('bell').hidden = false;
+  stopBell(true);
+  pollBell();
+  BELL.timer = setInterval(pollBell, 60000);
+}
+function stopBell(keep) {
+  if (BELL.timer) clearInterval(BELL.timer);
+  BELL.timer = null;
+  if (!keep) { $('bell').hidden = true; $('bell-count').hidden = true; BELL.total = null; closeDrawer(); }
+}
+function renderDrawer() {
+  const d = $('drawer');
+  const seen = readSeen();
+  const list = BELL.items.filter((q) => q.n);
+  const enable = 'Notification' in window && Notification.permission === 'default'
+    ? h('button', { type: 'button', class: 'ghost' }, 'Enable desktop alerts') : null;
+  if (enable) enable.addEventListener('click', async () => { try { await Notification.requestPermission(); } catch { /* ignored */ } renderDrawer(); });
+  d.replaceChildren(
+    h('header', {}, h('h2', { id: 'drawer-title' }, 'Notifications'), h('button', { type: 'button', class: 'ghost', 'aria-label': 'Close notifications', on: { click: closeDrawer } }, 'Close')),
+    list.length ? h('ul', {}, list.map((q) => h('li', {}, h('a', { href: q.href, on: { click: closeDrawer } },
+      h('span', { class: (seen[q.label] || 0) >= q.n ? 'dot seen' : 'dot', 'aria-hidden': 'true' }), h('span', {}, q.label,
+        (seen[q.label] || 0) < q.n ? h('span', { class: 'sr' }, ' (new)') : null), h('span', { class: 'count' }, String(q.n))))))
+      : h('p', { class: 'empty' }, 'You are all caught up.'),
+    h('div', { class: 'foot' }, h('a', { href: '#/home', on: { click: closeDrawer } }, 'Open my work'), h('span', { class: 'spacer' }), enable,
+      'Notification' in window && Notification.permission === 'granted' ? h('span', { class: 'hint' }, 'Desktop alerts on') : null));
+  d.setAttribute('aria-labelledby', 'drawer-title');
+}
+function openDrawer() {
+  BELL.open = true;
+  renderDrawer();
+  $('drawer').hidden = false;
+  $('bell').setAttribute('aria-expanded', 'true');
+  const seen = {};
+  for (const q of BELL.items) seen[q.label] = q.n || 0;
+  setTimeout(() => writeSeen(seen), 1500);
+  const first = $('drawer').querySelector('a, button');
+  if (first) first.focus();
+}
+function closeDrawer() {
+  if (!BELL.open) return;
+  BELL.open = false;
+  $('drawer').hidden = true;
+  $('bell').setAttribute('aria-expanded', 'false');
+}
+$('bell').addEventListener('click', () => (BELL.open ? closeDrawer() : openDrawer()));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && BELL.open) { closeDrawer(); $('bell').focus(); } });
+document.addEventListener('click', (e) => { if (BELL.open && !$('drawer').contains(e.target) && !$('bell').contains(e.target)) closeDrawer(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pollBell(); });
+
+// ---------- theme: day (green on cream) / night (cream on green) ----------
+const THEME_KEY = 'serk-theme';
+const SVGNS = 'http://www.w3.org/2000/svg';
+function icon(paths) {
+  const svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of paths) { const p = document.createElementNS(SVGNS, 'path'); p.setAttribute('d', d); svg.append(p); }
+  return svg;
+}
+const MOON = ['M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z'];
+const SUN = ['M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8z', 'M12 2v2', 'M12 20v2', 'M4.9 4.9l1.4 1.4', 'M17.7 17.7l1.4 1.4', 'M2 12h2', 'M20 12h2', 'M4.9 19.1l1.4-1.4', 'M17.7 6.3l1.4-1.4'];
+const isNight = () => (document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
+function paintThemeButton() {
+  const b = $('theme');
+  b.replaceChildren(icon(isNight() ? SUN : MOON));
+  b.setAttribute('aria-label', isNight() ? 'Switch to day theme' : 'Switch to night theme');
+  b.setAttribute('aria-pressed', String(isNight()));
+}
+(function initTheme() {
+  let t = null;
+  try { t = localStorage.getItem(THEME_KEY); } catch { /* storage unavailable */ }
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  paintThemeButton();
+  $('theme').addEventListener('click', () => {
+    const next = isNight() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem(THEME_KEY, next); } catch { /* storage unavailable */ }
+    paintThemeButton();
+    say(next === 'dark' ? 'Night theme' : 'Day theme');
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintThemeButton);
+}());
 
 // ---------- boot ----------
 $('signout').addEventListener('click', () => signOut());

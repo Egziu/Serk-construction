@@ -90,6 +90,10 @@ type Config struct {
 	StagingLoginPassphrase []byte
 	StagingTenant          string
 	StagingProjects        []string
+
+	// CompanyName is the letterhead on exported documents (optional;
+	// default: each legal entity's registered name).
+	CompanyName string
 }
 
 // ErrInvalid wraps every validation failure.
@@ -153,6 +157,7 @@ func Load(src Source) (Config, error) {
 		TokenIssuer:       src.str("SERK_TOKEN_ISSUER", "serk-id"),
 		TokenAudience:     src.str("SERK_TOKEN_AUDIENCE", "serk-construction"),
 		SoDStrict:         src.str("SERK_SOD_STRICT", "true") != "false",
+		CompanyName:       strings.TrimSpace(src.Getenv("SERK_COMPANY_NAME")),
 	}
 	var err error
 	if c.TenantDBSecret, err = src.secret("SERK_TENANT_DB_SECRET"); err != nil {

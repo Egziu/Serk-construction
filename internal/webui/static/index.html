@@ -6,19 +6,38 @@
 <meta name="color-scheme" content="light dark">
 <title>SERK Construction — Operations</title>
 <link rel="icon" href="data:,">
+<link rel="preload" href="fonts/manrope.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="app.css">
 <script type="module" src="app.js"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="top" role="banner">
-  <div class="brand"><span class="mark" aria-hidden="true"></span><span>SERK Construction</span></div>
-  <div class="who" id="who" hidden>
-    <span id="who-name"></span>
-    <span id="who-mfa" class="chip" hidden>MFA</span>
-    <button type="button" id="signout" class="ghost">Sign out</button>
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+      <path class="m1" d="M4 27V9l12-6 12 6v18h-5V12l-7-3.5L9 12v15z"/>
+      <rect class="m2" x="12" y="15" width="8" height="12" rx="1"/>
+    </svg>
+    <span class="name">SERK Construction</span>
+    <span class="tag">Operations</span>
+  </div>
+  <div class="topright">
+    <button type="button" id="bell" class="iconbtn" aria-label="Notifications" aria-expanded="false" aria-controls="drawer" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+      <span id="bell-count" class="badge" hidden></span>
+    </button>
+    <button type="button" id="theme" class="iconbtn" aria-label="Switch to night theme" title="Day / night">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+    </button>
+    <div class="who" id="who" hidden>
+      <span id="who-name"></span>
+      <span id="who-mfa" class="chip" hidden>MFA</span>
+      <button type="button" id="signout" class="ghost">Sign out</button>
+    </div>
   </div>
 </header>
+<section id="drawer" class="drawer" aria-label="Notifications" hidden></section>
 <div class="shell">
   <nav id="nav" aria-label="Main" hidden></nav>
   <main id="main" tabindex="-1">

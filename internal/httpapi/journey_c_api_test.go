@@ -78,7 +78,7 @@ func (a *p2pAPI) seedInventoryGRN(t *testing.T) (grn, journal string) {
 	po, err := svc.CreatePOFromAward(ctx, buyer, rfq, map[int]string{1: a.accounts["1200"], 2: a.accounts["1200"]})
 	must("po", err)
 	must("po approve", svc.ApprovePO(ctx, pmgr, po, ""))
-	grn, err = svc.CreateGRN(ctx, store, po, time.Now(), "DN-C-1", []kernel.GRNLine{{POLineNo: 1, QtyReceived: d("12")}, {POLineNo: 2, QtyReceived: d("300")}})
+	grn, err = svc.CreateGRN(ctx, store, po, time.Now().UTC(), "DN-C-1", []kernel.GRNLine{{POLineNo: 1, QtyReceived: d("12")}, {POLineNo: 2, QtyReceived: d("300")}})
 	must("grn", err)
 	must("grn submit", svc.SubmitGRN(ctx, store, grn))
 	journal, err = svc.ConfirmGRN(ctx, se, grn)
