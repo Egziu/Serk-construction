@@ -125,8 +125,14 @@ func main() {
 	} else {
 		log.Warn("abuse limits are per replica (SERK_ABUSE_DSN not set): refused in production")
 	}
+	var staging *httpapi.StagingLogin
+	if len(cfg.StagingLoginPassphrase) > 0 && cfg.Env != config.Production {
+		log.Warn("STAGING persona sign-in enabled: test environment with synthetic data only", "tenant", cfg.StagingTenant)
+		staging = &httpapi.StagingLogin{Passphrase: cfg.StagingLoginPassphrase, Tenant: cfg.StagingTenant, Projects: cfg.StagingProjects,
+			Signer: httpapi.HS256Verifier{Secret: cfg.HS256Secret, Issuer: cfg.TokenIssuer, Audience: cfg.TokenAudience}}
+	}
 	h := httpapi.New(httpapi.Config{Verifier: verifier, Kernel: svc, Store: router, Logger: log, RatePerMinute: cfg.RatePerMinute, Metrics: metrics,
-		Abuse: abuse})
+		Abuse: abuse, Staging: staging})
 	if cfg.SchedulerDSN != "" {
 		sched, err := pgxpool.New(ctx, cfg.SchedulerDSN)
 		if err != nil {

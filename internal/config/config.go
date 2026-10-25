@@ -83,6 +83,13 @@ type Config struct {
 	// binding); computed in the API, never by the database (R10-F4). Never
 	// rotated in place.
 	BankDigestKey []byte
+
+	// Staging persona sign-in (test environments only; refused in
+	// production): a shared passphrase, the synthetic tenant the personas
+	// belong to and the projects project-scoped personas may see.
+	StagingLoginPassphrase []byte
+	StagingTenant          string
+	StagingProjects        []string
 }
 
 // ErrInvalid wraps every validation failure.
@@ -192,6 +199,15 @@ func Load(src Source) (Config, error) {
 	c.BankDataKeyPreviousID = src.str("SERK_BANK_DATA_KEY_PREVIOUS_ID", "k0")
 	if c.AbuseKey, err = src.secret("SERK_ABUSE_KEY"); err != nil {
 		return Config{}, err
+	}
+	if c.StagingLoginPassphrase, err = src.secret("SERK_STAGING_LOGIN_PASSPHRASE"); err != nil {
+		return Config{}, err
+	}
+	c.StagingTenant = src.Getenv("SERK_STAGING_TENANT")
+	for _, p := range strings.Split(src.Getenv("SERK_STAGING_PROJECTS"), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			c.StagingProjects = append(c.StagingProjects, p)
+		}
 	}
 	if c.WorkflowTimerInterval, err = src.num("SERK_WORKFLOW_TIMER_INTERVAL_SECONDS", 30); err != nil {
 		return Config{}, err
@@ -354,6 +370,20 @@ func (c Config) Validate() error {
 	default:
 		if err := checkSecret(c.HS256Secret, false); err != "" {
 			bad("SERK_TOKEN_SECRET %s", err)
+		}
+	}
+	if len(c.StagingLoginPassphrase) > 0 || c.StagingTenant != "" {
+		switch {
+		case prod:
+			bad("SERK_STAGING_LOGIN_PASSPHRASE / SERK_STAGING_TENANT are test-environment sign-in and are refused in production")
+		case oidc:
+			bad("the staging persona sign-in mints HS256 tokens and cannot be combined with OIDC")
+		case len(c.StagingLoginPassphrase) < 16:
+			bad("SERK_STAGING_LOGIN_PASSPHRASE must be at least 16 characters")
+		case c.StagingTenant == "":
+			bad("SERK_STAGING_TENANT is required with SERK_STAGING_LOGIN_PASSPHRASE")
+		case string(c.StagingLoginPassphrase) == string(c.HS256Secret) || string(c.StagingLoginPassphrase) == string(c.TenantDBSecret):
+			bad("SERK_STAGING_LOGIN_PASSPHRASE must differ from every secret")
 		}
 	}
 	if prod && !c.SoDStrict {

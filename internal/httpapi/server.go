@@ -44,6 +44,9 @@ type Config struct {
 	// Metrics receives the API's counters and histograms; nil creates a
 	// private registry (expose it with Server.Metrics().Handler()).
 	Metrics *obs.Registry
+	// Staging enables the test-environment persona sign-in (never in
+	// production; see StagingLogin).
+	Staging *StagingLogin
 }
 
 // serverMetrics are the API's own instruments (GATEA-11).
@@ -154,6 +157,7 @@ func New(cfg Config) *Server {
 	s.registerStock()
 	s.registerSchedule()
 	s.registerSite()
+	s.registerStaging()
 	// Operations console: static assets only; it has no authority of its own.
 	s.mux.Handle("GET /console/", webui.Handler())
 	s.mux.Handle("GET /{$}", http.RedirectHandler("/console/", http.StatusFound))

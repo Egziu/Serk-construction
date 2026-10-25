@@ -386,6 +386,40 @@ function renderSignin(msg) {
   v.append(form);
   document.title = 'Sign in — SERK Construction';
   ta.focus();
+  stagingSignin(v, ta);
+}
+
+// Test environments only: the server offers /staging/* when it runs with
+// SERK_ENV=staging and a staging passphrase (refused in production). The
+// minted token is an ordinary bearer token; it carries no extra authority.
+async function stagingSignin(v, ta) {
+  let data;
+  try {
+    const r = await fetch('/staging/personas');
+    if (!r.ok) return;
+    data = await r.json();
+  } catch { return; }
+  const sel = h('select', { name: 'persona', required: true });
+  for (const p of data.personas) sel.append(h('option', { value: p.id }, `${p.label} — ${p.roles.join(', ')}`));
+  const pw = h('input', { type: 'password', name: 'passphrase', autocomplete: 'off', required: true });
+  const panel = h('form', { class: 'panel signin', on: { submit: async (ev) => {
+    ev.preventDefault();
+    clearError();
+    try {
+      const r = await fetch('/staging/token', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passphrase: pw.value, persona: sel.value }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new ApiError(r.status, (d.error || {}).code || 'error', (d.error || {}).message || r.statusText);
+      ta.value = d.token;
+      ta.form.requestSubmit();
+    } catch (e) { showError(e); }
+  } } },
+  h('h2', {}, 'Test environment sign-in'),
+  h('p', { class: 'notice' }, 'STAGING — synthetic data only. Pick a test persona; each person holds one duty, so switch persona to approve what another prepared. Step-up actions need a sign-in made within the last 10 minutes.'),
+  field('Persona', sel),
+  field('Staging passphrase', pw),
+  h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Sign in as persona')));
+  v.prepend(panel);
 }
 async function signOut(msg) {
   if (S.token) { try { await api('POST', '/v1/identity/logout'); } catch { /* session may already be gone */ } }
