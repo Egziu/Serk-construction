@@ -11,12 +11,15 @@
 // Environment: SERK_ENV, SERK_ADMIN_DSN (schema owner), SERK_DB_BASE_DSN,
 // SERK_TENANT_DB_SECRET, SERK_APPROVAL_SIGNING_KEY, SERK_BANK_DATA_KEY and
 // SERK_BANK_DIGEST_KEY (optional; the company bank account is skipped
-// without them), SERK_SEED_TENANT (uuid). Writes KEY=value lines (tenant and
-// project ids) to the file named by --out, for the staging sign-in.
+// without them), SERK_SEED_TENANT (uuid) and optionally SERK_SEED_TENANT_2
+// (uuid) with SERK_SEED_TENANT_2_NAME. Writes KEY=value lines (tenant,
+// project ids and the SERK_STAGING_COMPANIES list) to the file named by
+// --out, for the staging sign-in.
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -44,8 +47,20 @@ func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }
 
 type project struct{ code, name, id string }
 
+// company is one synthetic tenant to seed.
+type company struct {
+	tenant, name, shortCode, letterhead string
+	projects                            []project
+}
+
+type seeded struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Projects []string `json:"projects"`
+}
+
 func main() {
-	out := flag.String("out", "", "file to write SERK_STAGING_TENANT / SERK_STAGING_PROJECTS to")
+	out := flag.String("out", "", "file to write SERK_STAGING_TENANT / SERK_STAGING_PROJECTS / SERK_STAGING_COMPANIES to")
 	flag.Parse()
 	env := os.Getenv("SERK_ENV")
 	if env != "development" && env != "staging" {
@@ -59,15 +74,39 @@ func main() {
 		fmt.Fprintln(os.Stderr, "SERK_ADMIN_DSN, SERK_DB_BASE_DSN, SERK_SEED_TENANT, SERK_TENANT_DB_SECRET and a different SERK_APPROVAL_SIGNING_KEY (>= 32 bytes) are required")
 		os.Exit(2)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	companies := []company{{tenant: tenant, name: "SERK Demo Construction (synthetic)", shortCode: "serk-demo", letterhead: "SERK DEMO CONSTRUCTION PLC (synthetic)",
+		projects: []project{{code: "P-001", name: "Mekelle Ring Road"}, {code: "P-002", name: "Addis Mixed-Use Tower"}}}}
+	if t2 := os.Getenv("SERK_SEED_TENANT_2"); t2 != "" {
+		name := envOr("SERK_SEED_TENANT_2_NAME", "Senselet Construction PLC (synthetic)")
+		companies = append(companies, company{tenant: t2, name: name, shortCode: "senselet", letterhead: strings.ToUpper(name),
+			projects: []project{{code: "SC-101", name: "Adwa Housing Phase 2"}, {code: "SC-102", name: "Aksum Water Supply Extension"}}})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
+	var all []seeded
+	for _, c := range companies {
+		all = append(all, seedCompany(ctx, c, adminDSN, baseDSN, sec, approval))
+	}
+	if *out == "" {
+		return
+	}
+	js, _ := json.Marshal(all)
+	body := fmt.Sprintf("SERK_STAGING_TENANT=%s\nSERK_STAGING_PROJECTS=%s\nSERK_STAGING_COMPANIES='%s'\n", all[0].ID, strings.Join(all[0].Projects, ","), string(js))
+	if err := os.WriteFile(*out, []byte(body), 0o600); err != nil {
+		fail("write "+*out, err)
+	}
+}
+
+func seedCompany(ctx context.Context, co company, adminDSN, baseDSN, sec, approval string) seeded {
+	tenant := co.tenant
+	projects := co.projects
 
 	// 1. Tenant, its database role and its approval verification key.
 	conn, err := pgx.Connect(ctx, adminDSN)
 	if err != nil {
 		fail("connect", err)
 	}
-	if err := postgres.ProvisionTenant(ctx, conn, tenant, "SERK Demo Construction (synthetic)", postgres.TenantPassword([]byte(sec), tenant)); err != nil {
+	if err := postgres.ProvisionTenant(ctx, conn, tenant, co.name, postgres.TenantPassword([]byte(sec), tenant)); err != nil {
 		fail("provision tenant", err)
 	}
 	if err := postgres.InstallApprovalKey(ctx, conn, tenant, "v1", attest.TenantKey([]byte(approval), tenant)); err != nil {
@@ -80,8 +119,30 @@ func main() {
 		fail("admin store", err)
 	}
 	defer admin.Close()
-	projects := []project{{code: "P-001", name: "Mekelle Ring Road"}, {code: "P-002", name: "Addis Mixed-Use Tower"}}
 
+	// 3. Governed setup through the kernel, as distinct synthetic people.
+	router, err := postgres.NewRouter(ctx, postgres.RouterConfig{Credentials: postgres.DerivedCredentials{BaseDSN: baseDSN, Secret: []byte(sec)}})
+	if err != nil {
+		fail("router", err)
+	}
+	defer router.Close()
+	svc := kernel.New(router, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: []byte(approval)})
+	bankKey, digestKey := os.Getenv("SERK_BANK_DATA_KEY"), os.Getenv("SERK_BANK_DIGEST_KEY")
+	if len(bankKey) >= 32 && len(digestKey) >= 32 && bankKey != digestKey {
+		svc.UseBankDataKeys(datakey.Ring{Current: datakey.Key{ID: envOr("SERK_BANK_DATA_KEY_ID", "k1"), Master: []byte(bankKey)}, DigestKey: []byte(digestKey)})
+	}
+	now := time.Now()
+	person := func(id string, scoped bool, roles ...string) auth.Principal {
+		p := auth.Principal{Kind: auth.KindHuman, UserID: id, TenantID: tenant, Roles: roles, IssuedAt: now.Add(-time.Minute), MFA: true, AuthTime: now}
+		if scoped {
+			for _, pr := range projects { // ids are known once reference data exists
+				if pr.id != "" {
+					p.ProjectIDs = append(p.ProjectIDs, pr.id)
+				}
+			}
+		}
+		return p
+	}
 	// Idempotence: an existing entity means the seed already ran.
 	var entity string
 	err = admin.WithTenant(ctx, tenant, func(ctx context.Context, tx pgx.Tx) error {
@@ -97,9 +158,9 @@ func main() {
 	})
 	switch {
 	case err == nil:
-		fmt.Println("serk-seed: tenant already seeded; nothing changed")
-		report(*out, tenant, entity, projects)
-		return
+		fmt.Printf("serk-seed: %s already seeded; checking platform settings and rules\n", co.name)
+		seedPlatform(ctx, svc, co, person)
+		return report(co, entity, projects)
 	case !errors.Is(err, pgx.ErrNoRows):
 		fail("existing data", err)
 	}
@@ -108,7 +169,7 @@ func main() {
 	acct := map[string]string{}
 	err = admin.WithTenant(ctx, tenant, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
-		if entity, err = postgres.CreateLegalEntity(ctx, tx, tenant, "SERK DEMO CONSTRUCTION PLC (synthetic)", "ET", "ETB", "USD"); err != nil {
+		if entity, err = postgres.CreateLegalEntity(ctx, tx, tenant, co.letterhead, "ET", "ETB", "USD"); err != nil {
 			return err
 		}
 		for i := range projects {
@@ -150,29 +211,6 @@ func main() {
 		fail("reference data", err)
 	}
 
-	// 3. Governed setup through the kernel, as distinct synthetic people.
-	router, err := postgres.NewRouter(ctx, postgres.RouterConfig{Credentials: postgres.DerivedCredentials{BaseDSN: baseDSN, Secret: []byte(sec)}})
-	if err != nil {
-		fail("router", err)
-	}
-	defer router.Close()
-	svc := kernel.New(router, auth.NewAuthorizer(nil, true)).UseApprovalSigner(attest.Signer{Master: []byte(approval)})
-	bankKey, digestKey := os.Getenv("SERK_BANK_DATA_KEY"), os.Getenv("SERK_BANK_DIGEST_KEY")
-	if len(bankKey) >= 32 && len(digestKey) >= 32 && bankKey != digestKey {
-		svc.UseBankDataKeys(datakey.Ring{Current: datakey.Key{ID: envOr("SERK_BANK_DATA_KEY_ID", "k1"), Master: []byte(bankKey)}, DigestKey: []byte(digestKey)})
-	}
-	allProjects := make([]string, len(projects))
-	for i, p := range projects {
-		allProjects[i] = p.id
-	}
-	now := time.Now()
-	person := func(id string, scoped bool, roles ...string) auth.Principal {
-		p := auth.Principal{Kind: auth.KindHuman, UserID: id, TenantID: tenant, Roles: roles, IssuedAt: now.Add(-time.Minute), MFA: true, AuthTime: now}
-		if scoped {
-			p.ProjectIDs = allProjects
-		}
-		return p
-	}
 	planner, finMgr := person("u-pm", true, "project_manager"), person("u-finance-manager", false, "finance_manager")
 	controller, cfo := person("u-controller", false, "controller"), person("u-cfo", false, "cfo")
 	buyer, procMgr := person("u-buyer", true, "procurement_officer"), person("u-proc-manager", true, "procurement_manager")
@@ -239,24 +277,19 @@ func main() {
 	} else {
 		fmt.Println("serk-seed: SERK_BANK_DATA_KEY/SERK_BANK_DIGEST_KEY not set; company bank account skipped")
 	}
-	fmt.Println("serk-seed: synthetic tenant seeded")
-	report(*out, tenant, entity, projects)
+	seedPlatform(ctx, svc, co, person)
+	fmt.Printf("serk-seed: %s seeded\n", co.name)
+	return report(co, entity, projects)
 }
 
-func report(out, tenant, entity string, projects []project) {
+func report(co company, entity string, projects []project) seeded {
 	ids := make([]string, len(projects))
 	for i, p := range projects {
 		ids[i] = p.id
-		fmt.Printf("  project %s %-24s %s\n", p.code, p.name, p.id)
+		fmt.Printf("  project %s %-32s %s\n", p.code, p.name, p.id)
 	}
-	fmt.Printf("  tenant %s, legal entity %s\n", tenant, entity)
-	if out == "" {
-		return
-	}
-	body := fmt.Sprintf("SERK_STAGING_TENANT=%s\nSERK_STAGING_PROJECTS=%s\n", tenant, strings.Join(ids, ","))
-	if err := os.WriteFile(out, []byte(body), 0o600); err != nil {
-		fail("write "+out, err)
-	}
+	fmt.Printf("  tenant %s, legal entity %s\n", co.tenant, entity)
+	return seeded{ID: co.tenant, Name: co.name, Projects: ids}
 }
 
 func envOr(name, def string) string {
@@ -264,4 +297,54 @@ func envOr(name, def string) string {
 		return v
 	}
 	return def
+}
+
+// seedPlatform adds the company portal settings and the starter automation
+// rules when they are missing (idempotent, so an already-seeded company
+// gets them on upgrade).
+func seedPlatform(ctx context.Context, svc *kernel.Service, co company, person func(string, bool, ...string) auth.Principal) {
+	step := func(stage string, err error) {
+		if err != nil {
+			fail(stage, err)
+		}
+	}
+	secAdmin := person("u-security-admin", false, "security_admin")
+	if cur, err := svc.TenantSettings(ctx, secAdmin); err == nil && cur.Version == 0 {
+		_, err = svc.SaveTenantSettings(ctx, secAdmin, postgres.TenantSettings{DisplayName: co.name, ShortCode: co.shortCode, LetterheadName: co.letterhead,
+			Country: "ET", Timezone: "Africa/Addis_Ababa", Locale: "en", ExportDailyLimit: 200})
+		step("tenant settings", err)
+	}
+	owner, wfAdmin := person("u-process-owner", false, "process_owner"), person("u-workflow-admin", false, "workflow_admin")
+	existing, err := svc.ListRules(ctx, owner, "")
+	step("list rules", err)
+	have := map[string]bool{}
+	for _, r := range existing {
+		have[r.Code] = true
+	}
+	for _, r := range []kernel.RuleInput{
+		{Code: "AP-INVOICE-STALE", Name: "Supplier invoices waiting more than 2 days", Description: "Submitted supplier invoices not decided within 48 hours are escalated to the AP supervisor.",
+			Body: []byte(`{"when":{"kind":"document_stale","subject":"supplier_invoice","status":"SUBMITTED","hours":48},"then":{"notify_role":"ap_supervisor","severity":"warn","title":"Invoice waiting"}}`)},
+		{Code: "PR-STALE", Name: "Requisitions waiting more than 3 days", Description: "Submitted requisitions not decided within 72 hours are escalated to project managers.",
+			Body: []byte(`{"when":{"kind":"document_stale","subject":"purchase_requisition","status":"SUBMITTED","hours":72},"then":{"notify_role":"project_manager","severity":"warn","title":"Requisition waiting"}}`)},
+		{Code: "AP-DUE-7D", Name: "Supplier invoices due within 7 days", Description: "Treasury is told which approved invoices fall due in the coming week.",
+			Body: []byte(`{"when":{"kind":"invoice_due","days":7},"then":{"notify_role":"treasury_officer","severity":"info"}}`)},
+		{Code: "AR-OVERDUE-30", Name: "Customer invoices overdue 30 days", Description: "The AR supervisor is told about receivables more than 30 days past due.",
+			Body: []byte(`{"when":{"kind":"receivable_overdue","days":30},"then":{"notify_role":"ar_supervisor","severity":"warn"}}`)},
+		{Code: "PO-OVERDUE", Name: "Purchase orders past their needed-by date", Description: "Open purchase orders whose goods were needed before today.",
+			Body: []byte(`{"when":{"kind":"po_overdue"},"then":{"notify_role":"procurement_manager","severity":"warn"}}`)},
+		{Code: "BUDGET-90", Name: "Cost codes at 90% of budget", Description: "Project managers are told when a cost code has consumed 90% of its budget.",
+			Body: []byte(`{"when":{"kind":"budget_threshold","percent":90},"then":{"notify_role":"project_manager","severity":"critical"}}`)},
+		{Code: "SPI-LOW", Name: "Schedule performance below 0.9", Description: "Planners are told when a project's SPI falls below 0.9.",
+			Body: []byte(`{"when":{"kind":"schedule_risk","ratio":"0.9"},"then":{"notify_role":"planner","severity":"warn"}}`)},
+		{Code: "EXPORT-50", Name: "More than 50 exports in a day", Description: "Security is told when one person exports more than 50 files in 24 hours.",
+			Body: []byte(`{"when":{"kind":"export_volume","count":50},"then":{"notify_role":"security_admin","severity":"critical"}}`)},
+	} {
+		if have[r.Code] {
+			continue
+		}
+		rule, err := svc.ProposeRule(ctx, owner, r)
+		step("rule "+r.Code, err)
+		_, err = svc.DecideRule(ctx, wfAdmin, rule.ID, true, "")
+		step("rule activate "+r.Code, err)
+	}
 }

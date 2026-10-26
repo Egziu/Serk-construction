@@ -229,7 +229,7 @@ const ACTION_LABEL = { submit: 'Submit for approval', approve: 'Approve', reject
   verify: 'Verify measurement', certify: 'Certify', invoice: 'Issue customer invoice' };
 
 const NAV = [
-  ['Overview', [['#/home', 'My work', null], ['#/reports', 'Reports', null]]],
+  ['Overview', [['#/home', 'My work', null], ['#/ask', 'Ask', 'intelligence.read'], ['#/risk', 'Risks', 'intelligence.read'], ['#/reports', 'Reports', null]]],
   ['Project', [['#/list/boq_version', 'BOQ', 'p2p.read'], ['#/list/purchase_requisition', 'Requisitions', 'p2p.read'], ['#/cost', 'Cost report', 'p2p.read']]],
   ['Planning', [['#/list/schedule_version', 'Schedules', 'p2p.read'], ['#/list/schedule_progress', 'Progress', 'p2p.read'], ['#/evm', 'Earned value', 'p2p.read']]],
   ['Procurement', [['#/list/rfq', 'RFQs', 'p2p.read'], ['#/list/rfq_quote', 'Quotes', 'p2p.read'], ['#/list/purchase_order', 'Purchase orders', 'p2p.read'], ['#/list/supplier', 'Suppliers', 'p2p.read']]],
@@ -246,7 +246,8 @@ const NAV = [
     ['#/list/customer_receipt', 'Receipts', 'scope.tenant_wide'], ['#/list/customer', 'Customers', 'p2p.read']]],
   ['Finance', [['#/journals', 'Journals', 'journal.read'], ['#/recon', 'Reconciliation', 'journal.read'], ['#/tb', 'Trial balance', 'journal.read'],
     ['#/aging/ap', 'Payables aging', 'scope.tenant_wide'], ['#/aging/ar', 'Receivables aging', 'scope.tenant_wide'], ['#/list/p2p_policy', 'P2P policies', 'scope.tenant_wide'],
-    ['#/list/contract_policy', 'Contract policies', 'scope.tenant_wide']]],
+    ['#/list/contract_policy', 'Contract policies', 'scope.tenant_wide'], ['#/controls', 'Control review', 'scope.tenant_wide']]],
+  ['Company', [['#/automation', 'Automation rules', 'automation.manage|automation.activate|workflow.read'], ['#/settings', 'Company settings', null]]],
 ];
 const allowed = (perm) => !perm || perm.split('|').some((p) => S.can.has(p));
 
@@ -353,6 +354,11 @@ async function route() {
       case 'reports': return await renderReports();
       case 'tb': return await renderTB();
       case 'aging': return await renderAging(a === 'ar' ? 'ar' : 'ap');
+      case 'ask': return await renderAsk();
+      case 'risk': return await renderRisk(a);
+      case 'controls': return await renderControls();
+      case 'automation': return await renderAutomation();
+      case 'settings': return await renderSettings();
       default: return await renderHome();
     }
   } catch (e) {
@@ -373,6 +379,8 @@ function renderSignin(msg) {
       S.me = await api('GET', '/v1/identity/me');
       S.can = new Set(S.me.permissions);
       S.ref = S.can.has('p2p.read') ? await api('GET', '/v1/p2p-reference') : { legal_entities: [], projects: [], accounts: [] };
+      try { S.company = await api('GET', '/v1/tenant/settings'); } catch { S.company = null; }
+      brandCompany();
       $('who-name').textContent = `${S.me.user_id} · ${S.me.roles.join(', ')}`;
       $('who-mfa').hidden = !S.me.mfa;
       $('who').hidden = false;
@@ -411,13 +419,15 @@ async function stagingSignin(v, ta) {
   } catch { return; }
   const sel = h('select', { name: 'persona', required: true });
   for (const p of data.personas) sel.append(h('option', { value: p.id }, `${p.label} — ${p.roles.join(', ')}`));
+  const co = h('select', { name: 'company', required: true });
+  for (const c of data.companies || []) co.append(h('option', { value: c.id }, c.name));
   const pw = h('input', { type: 'password', name: 'passphrase', autocomplete: 'off', required: true });
   const panel = h('form', { class: 'panel signin', on: { submit: async (ev) => {
     ev.preventDefault();
     clearError();
     try {
       const r = await fetch('/staging/token', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passphrase: pw.value, persona: sel.value }) });
+        body: JSON.stringify({ passphrase: pw.value, persona: sel.value, company: co.value || undefined }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new ApiError(r.status, (d.error || {}).code || 'error', (d.error || {}).message || r.statusText);
       ta.value = d.token;
@@ -425,7 +435,8 @@ async function stagingSignin(v, ta) {
     } catch (e) { showError(e); }
   } } },
   h('h2', {}, 'Test environment sign-in'),
-  h('p', { class: 'notice' }, 'STAGING — synthetic data only. Pick a test persona; each person holds one duty, so switch persona to approve what another prepared. Step-up actions need a sign-in made within the last 10 minutes.'),
+  h('p', { class: 'notice' }, 'STAGING — synthetic data only. Pick a company and a test persona; each person holds one duty, so switch persona to approve what another prepared. Step-up actions need a sign-in made within the last 10 minutes.'),
+  (data.companies || []).length > 1 ? field('Company', co) : null,
   field('Persona', sel),
   field('Staging passphrase', pw),
   h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Sign in as persona')));
@@ -433,7 +444,8 @@ async function stagingSignin(v, ta) {
 }
 async function signOut(msg) {
   if (S.token) { try { await api('POST', '/v1/identity/logout'); } catch { /* session may already be gone */ } }
-  S.token = null; S.me = null; S.ref = null; S.can = new Set();
+  S.token = null; S.me = null; S.ref = null; S.can = new Set(); S.company = null;
+  brandCompany();
   stopBell();
   history.replaceState(null, '', '#/');
   renderSignin(msg || 'You have signed out.');
@@ -1918,14 +1930,14 @@ async function renderAging(kind) {
 // refreshed every minute while the tab is visible. New items can also raise
 // a desktop notification if you allow it. Nothing is ever approved
 // automatically: notifications only point you at work.
-const BELL = { timer: null, items: [], total: null, open: false };
+const BELL = { timer: null, items: [], server: [], total: null, open: false };
 const seenKey = () => `serk-seen-${S.me ? S.me.tenant_id + '/' + S.me.user_id : ''}`;
 function readSeen() { try { return JSON.parse(localStorage.getItem(seenKey()) || '{}'); } catch { return {}; } }
 function writeSeen(v) { try { localStorage.setItem(seenKey(), JSON.stringify(v)); } catch { /* storage unavailable */ } }
 function setBell(items) {
   const prev = BELL.total;
   BELL.items = items;
-  BELL.total = items.reduce((n, q) => n + (q.n || 0), 0);
+  BELL.total = items.reduce((n, q) => n + (q.n || 0), 0) + (BELL.server || []).filter((n) => !n.read_at).length;
   const c = $('bell-count');
   c.textContent = BELL.total > 99 ? '99+' : String(BELL.total);
   c.hidden = !BELL.total;
@@ -1938,7 +1950,11 @@ function setBell(items) {
 }
 async function pollBell() {
   if (!S.token || document.hidden) return;
-  try { setBell(await workQueues()); } catch { /* next poll */ }
+  try {
+    const [queues, server] = await Promise.all([workQueues(), api('GET', '/v1/notifications?limit=50').catch(() => ({ items: [] }))]);
+    BELL.server = server.items || [];
+    setBell(queues);
+  } catch { /* next poll */ }
 }
 function startBell() {
   $('bell').hidden = false;
@@ -1958,8 +1974,19 @@ function renderDrawer() {
   const enable = 'Notification' in window && Notification.permission === 'default'
     ? h('button', { type: 'button', class: 'ghost' }, 'Enable desktop alerts') : null;
   if (enable) enable.addEventListener('click', async () => { try { await Notification.requestPermission(); } catch { /* ignored */ } renderDrawer(); });
+  const server = (BELL.server || []).slice(0, 20);
+  const serverList = server.length ? h('ul', {}, server.map((n) => h('li', {}, h('a', { href: n.href || '#/home', on: { click: async () => {
+    closeDrawer();
+    if (!n.read_at) { try { await api('POST', `/v1/notifications/${n.id}/read`); n.read_at = new Date().toISOString(); } catch { /* ignore */ } }
+  } } },
+    h('span', { class: n.read_at ? 'dot seen' : 'dot', 'aria-hidden': 'true' }),
+    h('span', {}, h('span', { class: n.severity === 'critical' ? 'chip bad' : n.severity === 'warn' ? 'chip warn' : 'chip' }, n.severity), ' ', n.title,
+      n.read_at ? null : h('span', { class: 'sr' }, ' (unread)')),
+    h('span', { class: 'hint' }, when(n.created_at).split(',')[0]))))) : null;
   d.replaceChildren(
     h('header', {}, h('h2', { id: 'drawer-title' }, 'Notifications'), h('button', { type: 'button', class: 'ghost', 'aria-label': 'Close notifications', on: { click: closeDrawer } }, 'Close')),
+    serverList ? h('h3', { class: 'drawer-sub' }, 'Alerts') : null, serverList,
+    h('h3', { class: 'drawer-sub' }, 'Waiting for you'),
     list.length ? h('ul', {}, list.map((q) => h('li', {}, h('a', { href: q.href, on: { click: closeDrawer } },
       h('span', { class: (seen[q.label] || 0) >= q.n ? 'dot seen' : 'dot', 'aria-hidden': 'true' }), h('span', {}, q.label,
         (seen[q.label] || 0) < q.n ? h('span', { class: 'sr' }, ' (new)') : null), h('span', { class: 'count' }, String(q.n))))))
@@ -1989,6 +2016,229 @@ $('bell').addEventListener('click', () => (BELL.open ? closeDrawer() : openDrawe
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && BELL.open) { closeDrawer(); $('bell').focus(); } });
 document.addEventListener('click', (e) => { if (BELL.open && !$('drawer').contains(e.target) && !$('bell').contains(e.target)) closeDrawer(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pollBell(); });
+
+
+// ---------- company branding ----------
+// The vendor is SERK Construction OS; the construction company using it is
+// the tenant. Its name leads once signed in.
+function brandCompany() {
+  const name = document.querySelector('.brand .name');
+  const tag = document.querySelector('.brand .tag');
+  if (S.company && S.company.display_name) {
+    name.textContent = S.company.display_name;
+    tag.textContent = 'SERK Construction OS';
+  } else {
+    name.textContent = 'SERK Construction OS';
+    tag.textContent = 'Operations';
+  }
+}
+
+// ---------- ask ----------
+const SUGGESTED = ['Which projects are over budget?', 'Which activities are behind schedule?', 'Which purchase orders have not been delivered?',
+  'Which invoices are awaiting approval?', 'What is the cash requirement for the next 90 days?', 'Which projects have deteriorating margins?',
+  'What changed last week?', 'Are there duplicate invoices or suspicious payments?'];
+async function renderAsk() {
+  const q = h('input', { type: 'text', name: 'question', maxlength: '500', autocomplete: 'off', placeholder: 'Ask about your projects, money or risks' });
+  const out = h('div', { 'aria-live': 'polite' });
+  const ask = async (question) => {
+    clearError();
+    out.replaceChildren(h('p', { class: 'hint' }, 'Working it out from your records…'));
+    try {
+      const a = await api('POST', '/v1/assistant/ask', { question });
+      const lines = a.text.split('\n');
+      out.replaceChildren(h('div', { class: 'panel answer' },
+        h('p', { class: 'eyebrow' }, `${words(a.intent)} · data as of ${a.freshness}${a.phrased_by_model ? ' · phrased by a language model from these facts' : ''}`),
+        h('div', { class: 'answer-text' }, lines.map((l) => h('p', {}, l))),
+        a.assumptions && a.assumptions.length ? h('details', {}, h('summary', {}, 'Assumptions and method'), h('ul', {}, a.assumptions.map((x) => h('li', {}, x)))) : null,
+        a.missing && a.missing.length ? h('p', { class: 'notice' }, 'Missing or not assessable: ', a.missing.join('; ')) : null,
+        a.sources && a.sources.length ? h('div', {}, h('h2', { class: 'section' }, 'Sources'), h('ul', { class: 'sources' }, a.sources.map((s) => h('li', {}, h('a', { href: s.href }, s.label))))) : null));
+    } catch (e) { showError(e); out.textContent = ''; }
+  };
+  const form = h('form', { class: 'askbar', on: { submit: (ev) => { ev.preventDefault(); if (q.value.trim()) ask(q.value.trim()); } } },
+    q, h('button', { type: 'submit' }, 'Ask'));
+  page('Ask', 'Answers come from the company’s own records, with the formula, the sources and what is missing. Nothing is invented, and nothing is decided for you.',
+    form, h('div', { class: 'chips' }, SUGGESTED.map((t) => h('button', { type: 'button', class: 'ghost', on: { click: () => { q.value = t; ask(t); } } }, t))), out);
+  q.focus();
+}
+
+// ---------- risks ----------
+const LEVEL = { high: 'chip bad', medium: 'chip warn', low: 'chip ok', unknown: 'chip' };
+function findingCard(f) {
+  return h('div', { class: 'panel finding' },
+    h('div', { class: 'pagehead' }, h('div', {}, h('p', { class: 'eyebrow' }, f.area), h('h3', {}, f.title)), h('span', { class: LEVEL[f.level] || 'chip' }, f.level)),
+    f.metric ? h('p', {}, h('strong', {}, words(f.metric)), f.value ? `: ${f.value}` : '', f.threshold ? ` (threshold ${f.threshold})` : '') : null,
+    f.amounts ? h('dl', { class: 'kv' }, Object.entries(f.amounts).flatMap(([k, v]) => [h('dt', {}, words(k)), h('dd', {}, v)])) : null,
+    f.advice ? h('p', { class: 'advice' }, f.advice) : null,
+    f.missing && f.missing.length ? h('p', { class: 'hint' }, 'Missing: ', f.missing.join('; ')) : null,
+    f.formula ? h('p', { class: 'hint' }, 'How: ', f.formula) : null,
+    f.evidence && f.evidence.length ? h('p', {}, f.evidence.map((e, i) => [i ? ' · ' : '', h('a', { href: e.href }, e.label)])) : null);
+}
+async function renderRisk(projectId) {
+  if (projectId) {
+    const a = await api('GET', `/v1/intelligence/projects/${projectId}/risks`);
+    const parts = [h('p', {}, h('span', { class: LEVEL[a.overall] }, `overall ${a.overall}`), ` · computed ${a.data_as_of} · ${a.algorithm}`)];
+    if (a.forecast) {
+      const f = a.forecast;
+      parts.push(h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Forecast of final cost'),
+        h('dl', { class: 'kv' }, ...[['Budget at completion (BAC)', f.bac], ['Planned value (PV)', f.pv], ['Earned value (EV)', f.ev], ['Actual cost (AC)', f.ac],
+          ['SPI', f.spi || 'not defined'], ['CPI', f.cpi || 'not defined'], ['Estimate at completion (EAC)', f.eac || 'not computable'], ['Estimate to complete (ETC)', f.etc || '—'],
+          ['Variance at completion (VAC)', f.vac || '—'], ['Percent complete (EV / BAC)', f.percent_complete || '—'], ['Method', f.method]].flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])),
+        h('details', {}, h('summary', {}, 'Assumptions'), h('ul', {}, (f.assumptions || []).map((x) => h('li', {}, x))))));
+    }
+    parts.push(...a.findings.map(findingCard));
+    if (a.history && a.history.length) parts.push(h('p', { class: 'hint' }, 'Recorded assessments: ', a.history.map((p) => `${when(p.at).split(',')[0]} ${p.overall}`).join(' · ')));
+    page(`${a.code} ${a.name} — risks`, 'Deterministic assessment from approved baselines, posted ledger cost and approved purchase orders. Every finding shows its formula and evidence.', ...parts);
+    return;
+  }
+  const r = await api('GET', '/v1/intelligence/portfolio');
+  const cards = h('div', { class: 'cards' });
+  for (const a of r.projects) {
+    const counts = {};
+    for (const f of a.findings) counts[f.level] = (counts[f.level] || 0) + 1;
+    cards.append(h('a', { class: a.overall === 'high' ? 'card hot' : 'card', href: `#/risk/${a.project_id}` },
+      h('div', { class: 'pagehead' }, h('div', { class: 't' }, `${a.code} ${a.name}`), h('span', { class: LEVEL[a.overall] }, a.overall)),
+      h('div', { class: 'hint' }, Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(' · ')),
+      a.forecast && a.forecast.eac ? h('div', { class: 'hint' }, `EAC ${a.forecast.eac} · VAC ${a.forecast.vac}`) : null));
+  }
+  page('Risks', `Each project assessed on schedule, cost, budget consumption and procurement (${r.algorithm}). Open a project for the formulas, evidence and advice.`,
+    r.projects.length ? cards : h('p', { class: 'empty' }, 'No projects in view.'));
+}
+
+async function renderControls() {
+  const ent = select('legal_entity_id', entityOpts());
+  const out = h('div');
+  const load = async () => {
+    out.textContent = '';
+    if (!ent.value) return;
+    const [cash, ctl] = await Promise.all([api('GET', `/v1/intelligence/cash?entity=${ent.value}`), api('GET', `/v1/intelligence/controls?entity=${ent.value}`)]);
+    out.append(h('div', { class: 'panel' }, h('div', { class: 'pagehead' }, h('h2', { class: 'section' }, '90-day cash outlook'), h('span', { class: LEVEL[cash.level] }, cash.level)),
+      h('dl', { class: 'kv' }, ...[['Cash held (ledger)', cash.cash_held], ['Payables due in 90 days', `${cash.payables_due.total} (overdue ${cash.payables_due.overdue})`],
+        ['Receivables due in 90 days', `${cash.receivables_due.total} (overdue ${cash.receivables_due.overdue})`], ['Net position', cash.net_90]].flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])),
+      h('p', { class: 'hint' }, cash.formula), h('details', {}, h('summary', {}, 'Assumptions'), h('ul', {}, cash.assumptions.map((x) => h('li', {}, x)))),
+      cash.missing && cash.missing.length ? h('p', { class: 'notice' }, 'Missing: ' + cash.missing.join('; ')) : null));
+    out.append(h('h2', { class: 'section' }, `Items for review (${ctl.items.length})`));
+    if (!ctl.items.length) out.append(h('p', { class: 'notice' }, 'No duplicate invoice numbers and no payments just under the dual-approval threshold.'));
+    for (const f of ctl.items) out.append(h('div', { class: 'panel finding' }, h('div', { class: 'pagehead' }, h('h3', {}, f.title), h('span', { class: LEVEL[f.level] }, f.level)),
+      h('p', {}, f.detail), h('p', {}, f.evidence.map((e, i) => [i ? ' · ' : '', h('a', { href: e.href }, e.label)]))));
+  };
+  ent.addEventListener('change', () => load().catch(showError));
+  page('Control review', 'Flags for a reviewer, never accusations: duplicate invoice numbers and payments just under the dual-approval threshold, plus the cash outlook.',
+    h('div', { class: 'toolbar' }, field('Legal entity', ent)), out);
+  await load();
+}
+
+// ---------- automation rules ----------
+async function renderAutomation() {
+  const [rules, cat] = await Promise.all([api('GET', '/v1/automation/rules'), api('GET', '/v1/automation/catalogue')]);
+  const parts = [h('p', { class: 'notice' }, cat.note)];
+  const canManage = S.can.has('automation.manage'), canActivate = S.can.has('automation.activate');
+  if (canManage) {
+    const code = input('code', { type: 'text', maxlength: '40', required: true, placeholder: 'AP-STALE' });
+    const name = input('name', { type: 'text', maxlength: '120', required: true });
+    const desc = h('textarea', { name: 'description', maxlength: '2000' });
+    const kind = select('kind', cat.conditions.map((c) => ({ value: c.kind, label: c.kind })));
+    const kdesc = h('p', { class: 'hint' });
+    const params = h('div', { class: 'grid' });
+    const role = input('notify_role', { type: 'text', maxlength: '40', placeholder: 'ap_supervisor' });
+    const sev = select('severity', [{ value: 'info', label: 'info' }, { value: 'warn', label: 'warn' }, { value: 'critical', label: 'critical' }]);
+    const title = input('title', { type: 'text', maxlength: '200' });
+    const PARAMS = { document_stale: ['subject', 'status', 'hours'], invoice_due: ['days'], receivable_overdue: ['days'], po_overdue: [], budget_threshold: ['percent'],
+      stock_below: ['item_code', 'quantity'], schedule_risk: ['ratio'], cost_risk: ['ratio'], export_volume: ['count'] };
+    const inputs = {};
+    const paint = () => {
+      params.textContent = '';
+      kdesc.textContent = (cat.conditions.find((c) => c.kind === kind.value) || {}).description || '';
+      for (const k of PARAMS[kind.value] || []) { inputs[k] = input(k, { type: 'text', maxlength: '40' }); params.append(field(words(k), inputs[k])); }
+    };
+    kind.addEventListener('change', paint);
+    paint();
+    const form = h('form', { class: 'panel', novalidate: true, on: { submit: async (ev) => {
+      ev.preventDefault();
+      clearError();
+      const when = { kind: kind.value };
+      for (const k of PARAMS[kind.value] || []) {
+        const v = (inputs[k].value || '').trim();
+        if (!v) { showError(new Error(`Fill in ${words(k)}.`)); inputs[k].focus(); return; }
+        when[k] = /^(hours|days|percent|count)$/.test(k) ? Number(v) : v;
+      }
+      try {
+        await api('POST', '/v1/automation/rules', { code: code.value.trim().toUpperCase(), name: name.value.trim(), description: desc.value.trim(),
+          body: { when, then: { notify_role: role.value.trim(), severity: sev.value, title: title.value.trim() || undefined } } });
+        say('Rule proposed; someone else activates it.');
+        await renderAutomation();
+      } catch (e) { showError(e); }
+    } } },
+    h('h2', { class: 'section' }, 'Propose a rule'),
+    h('div', { class: 'grid' }, field('Code', code), field('Name', name), field('Condition', kind, kdesc)), params,
+    h('div', { class: 'grid' }, field('Notify role', role, 'A role name, e.g. ap_supervisor, project_manager, treasury_officer.'), field('Severity', sev), field('Title (optional)', title)),
+    field('Description', desc), h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Propose rule')));
+    parts.push(form);
+  }
+  const act = (r) => {
+    const box = h('span', { class: 'inline' });
+    if (r.status === 'DRAFT' && canActivate && r.created_by !== S.me.user_id) {
+      const b = h('button', { type: 'button' }, 'Activate');
+      b.addEventListener('click', async () => { clearError(); b.disabled = true; try { await api('POST', `/v1/automation/rules/${r.id}/activate`); say(`${r.code} active.`); await renderAutomation(); } catch (e) { b.disabled = false; showError(e); } });
+      box.append(b);
+    }
+    if (r.status !== 'RETIRED' && (canActivate || canManage)) {
+      const reason = input('reason', { type: 'text', maxlength: '500', 'aria-label': `Reason for retiring ${r.code}` });
+      const b = h('button', { type: 'button', class: 'danger' }, 'Retire');
+      b.addEventListener('click', async () => { clearError(); if (reason.value.trim().length < 5) { showError(new Error('Give a reason of at least 5 characters.')); reason.focus(); return; }
+        b.disabled = true; try { await api('POST', `/v1/automation/rules/${r.id}/retire`, { reason: reason.value.trim() }); say(`${r.code} retired.`); await renderAutomation(); } catch (e) { b.disabled = false; showError(e); } });
+      box.append(reason, b);
+    }
+    return box;
+  };
+  parts.push(table(`Rules (${rules.items.length})`, [
+    { label: 'Code', cell: (r) => h('span', { class: 'ref' }, r.code) }, { label: 'Name', cell: (r) => r.name },
+    { label: 'Condition', cell: (r) => { const w = r.body.when || {}; return Object.entries(w).map(([k, v]) => `${k}=${v}`).join(' '); } },
+    { label: 'Then', cell: (r) => { const t = r.body.then || {}; return `notify ${t.notify_role || t.notify_user} (${t.severity})`; } },
+    { label: 'Status', cell: (r) => chip(r.status) }, { label: 'Proposed by', cell: (r) => r.created_by }, { label: 'Activated by', cell: (r) => r.activated_by || '' },
+    { label: 'Last run', cell: (r) => (r.last_run_at ? `${when(r.last_run_at)} · ${r.last_run_findings} finding(s)` : 'not yet') }, { label: 'Action', cell: act }], rules.items, 'No rules yet.'));
+  page('Automation rules', 'Rules watch the company’s records and tell the right people. A rule is proposed by one person and activated by another; it never approves, posts, pays or releases anything.', ...parts);
+}
+
+// ---------- company settings ----------
+async function renderSettings() {
+  const st = await api('GET', '/v1/tenant/settings');
+  const can = S.can.has('tenant.settings.manage');
+  const f = {
+    display_name: input('display_name', { type: 'text', maxlength: '120', value: st.display_name, required: true }),
+    short_code: input('short_code', { type: 'text', maxlength: '32', value: st.short_code || '' }),
+    letterhead_name: input('letterhead_name', { type: 'text', maxlength: '160', value: st.letterhead_name || '' }),
+    country: input('country', { type: 'text', maxlength: '2', value: st.country }),
+    timezone: input('timezone', { type: 'text', maxlength: '64', value: st.timezone }),
+    locale: select('locale', [{ value: 'en', label: 'English' }, { value: 'am', label: 'Amharic (አማርኛ)' }, { value: 'ti', label: 'Tigrinya (ትግርኛ)' }]),
+    export_daily_limit: input('export_daily_limit', { type: 'number', min: '1', max: '100000', value: String(st.export_daily_limit) }),
+    theme_accent: input('theme_accent', { type: 'text', maxlength: '7', value: st.theme_accent || '', placeholder: '#1b4a33' }),
+  };
+  f.locale.value = st.locale;
+  if (!can) for (const el of Object.values(f)) el.disabled = true;
+  const form = h('form', { class: 'panel', novalidate: true, on: { submit: async (ev) => {
+    ev.preventDefault();
+    clearError();
+    try {
+      const body = { version: st.version };
+      for (const [k, el] of Object.entries(f)) body[k] = k === 'export_daily_limit' ? Number(el.value) : el.value.trim();
+      S.company = await api('PUT', '/v1/tenant/settings', body);
+      brandCompany();
+      say('Company settings saved.');
+      await renderSettings();
+    } catch (e) { showError(e); }
+  } } },
+  h('div', { class: 'grid' }, field('Company name', f.display_name), field('Portal code', f.short_code, 'Lowercase letters, digits and hyphens.'),
+    field('Letterhead on exports', f.letterhead_name, 'Printed on every PDF, Word and Excel export.'), field('Country', f.country), field('Time zone', f.timezone),
+    field('Language', f.locale, 'Interface translation to Amharic and Tigrinya is in preparation; data is stored unchanged.'),
+    field('Daily export limit per person', f.export_daily_limit, 'Beyond this, exports are refused for the day and security is told.'), field('Accent colour (optional)', f.theme_accent)),
+  can ? h('div', { class: 'actions' }, h('button', { type: 'submit' }, 'Save settings')) : h('p', { class: 'hint' }, 'Only a security administrator can change these.'));
+  page('Company settings', `${st.display_name} on SERK Construction OS. Version ${st.version}${st.updated_by ? `, last changed by ${st.updated_by} ${when(st.updated_at)}` : ''}.`, form,
+    h('div', { class: 'panel' }, h('h2', { class: 'section' }, 'Data protection'), h('ul', {},
+      h('li', {}, 'Every record is isolated per company by database row-level security; a session can only ever reach its own company.'),
+      h('li', {}, 'Exports carry the company letterhead, the person’s name and the time, and are counted against a daily limit.'),
+      h('li', {}, 'Bank account numbers are encrypted at rest and masked everywhere; revealing one needs a fresh multi-factor sign-in and is audited.'),
+      h('li', {}, 'Every approval is a signed human decision verified by the database. Automation and the assistant can only read and notify.'))));
+}
 
 // ---------- theme: day (green on cream) / night (cream on green) ----------
 const THEME_KEY = 'serk-theme';

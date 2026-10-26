@@ -213,7 +213,8 @@ func writeDOCX(w io.Writer, d Doc) error {
 	header := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ` + ns + `>` +
 		`<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="` + hexBrass + `"/></w:pBdr><w:tabs><w:tab w:val="right" w:pos="` + tab + `"/></w:tabs></w:pPr>` +
 		`<w:r><w:rPr><w:rFonts w:ascii="Georgia" w:hAnsi="Georgia"/><w:b/><w:color w:val="` + hexGreen + `"/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">` + xesc(d.Company) + `</w:t></w:r>` +
-		`<w:r><w:tab/></w:r><w:r><w:rPr><w:b/><w:caps/><w:color w:val="` + hexBrass + `"/><w:sz w:val="16"/></w:rPr><w:t>` + xesc(d.Brand) + `</w:t></w:r></w:p></w:hdr>`
+		`<w:r><w:tab/></w:r><w:r><w:rPr><w:b/><w:caps/><w:color w:val="` + hexBrass + `"/><w:sz w:val="16"/></w:rPr><w:t>` + xesc(d.Brand) + `</w:t></w:r></w:p>` +
+		wmPara(d) + `</w:hdr>`
 	footer := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ` + ns + `>` +
 		`<w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="4" w:space="4" w:color="` + hexLine + `"/></w:pBdr><w:tabs><w:tab w:val="right" w:pos="` + tab + `"/></w:tabs></w:pPr>` +
 		run(footerLine(d), false, 15, hexMuted) + `<w:r><w:tab/></w:r>` + run("Page ", true, 15, hexMuted) +
@@ -260,4 +261,11 @@ func writeDOCX(w io.Writer, d Doc) error {
 		{"docProps/app.xml", appProps(d)},
 	}
 	return zipFiles(w, files)
+}
+
+func wmPara(d Doc) string {
+	if d.Watermark == "" {
+		return ""
+	}
+	return `<w:p><w:pPr><w:jc w:val="right"/></w:pPr>` + run(d.Watermark, false, 14, hexMuted) + `</w:p>`
 }

@@ -90,10 +90,28 @@ type Config struct {
 	StagingLoginPassphrase []byte
 	StagingTenant          string
 	StagingProjects        []string
+	// StagingCompanies (SERK_STAGING_COMPANIES, JSON [{id,name,projects}])
+	// lists every synthetic company a tester may sign in to.
+	StagingCompanies []StagingCompany
 
 	// CompanyName is the letterhead on exported documents (optional;
-	// default: each legal entity's registered name).
+	// default: the tenant's letterhead setting, then each legal entity's
+	// registered name).
 	CompanyName string
+
+	// Optional language model for phrasing assistant answers (never for
+	// deciding anything): an OpenAI-compatible chat-completions endpoint.
+	AIEndpoint, AIModel string
+	AIKey               []byte
+	// AutomationInterval is how often active rules are evaluated (seconds).
+	AutomationInterval int
+}
+
+// StagingCompany is a synthetic company offered by the staging sign-in.
+type StagingCompany struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Projects []string `json:"projects"`
 }
 
 // ErrInvalid wraps every validation failure.
@@ -209,12 +227,27 @@ func Load(src Source) (Config, error) {
 		return Config{}, err
 	}
 	c.StagingTenant = src.Getenv("SERK_STAGING_TENANT")
+	if v := src.Getenv("SERK_STAGING_COMPANIES"); v != "" {
+		if err := json.Unmarshal([]byte(v), &c.StagingCompanies); err != nil {
+			return Config{}, fmt.Errorf("%w: SERK_STAGING_COMPANIES must be a JSON list of {id,name,projects}", ErrInvalid)
+		}
+		if c.StagingTenant == "" && len(c.StagingCompanies) > 0 {
+			c.StagingTenant, c.StagingProjects = c.StagingCompanies[0].ID, c.StagingCompanies[0].Projects
+		}
+	}
 	for _, p := range strings.Split(src.Getenv("SERK_STAGING_PROJECTS"), ",") {
 		if p = strings.TrimSpace(p); p != "" {
 			c.StagingProjects = append(c.StagingProjects, p)
 		}
 	}
 	if c.WorkflowTimerInterval, err = src.num("SERK_WORKFLOW_TIMER_INTERVAL_SECONDS", 30); err != nil {
+		return Config{}, err
+	}
+	if c.AutomationInterval, err = src.num("SERK_AUTOMATION_INTERVAL_SECONDS", 300); err != nil {
+		return Config{}, err
+	}
+	c.AIEndpoint, c.AIModel = src.Getenv("SERK_AI_ENDPOINT"), src.str("SERK_AI_MODEL", "")
+	if c.AIKey, err = src.secret("SERK_AI_KEY"); err != nil {
 		return Config{}, err
 	}
 	if c.RatePerMinute, err = src.num("SERK_RATE_PER_MIN", 300); err != nil {
@@ -390,6 +423,16 @@ func (c Config) Validate() error {
 		case string(c.StagingLoginPassphrase) == string(c.HS256Secret) || string(c.StagingLoginPassphrase) == string(c.TenantDBSecret):
 			bad("SERK_STAGING_LOGIN_PASSPHRASE must differ from every secret")
 		}
+	}
+	if c.AIEndpoint != "" || len(c.AIKey) > 0 {
+		if c.AIEndpoint == "" || c.AIModel == "" {
+			bad("SERK_AI_ENDPOINT and SERK_AI_MODEL are set together (SERK_AI_KEY optional)")
+		} else if prod && !strings.HasPrefix(c.AIEndpoint, "https://") {
+			bad("SERK_AI_ENDPOINT must use https in production")
+		}
+	}
+	if c.AutomationInterval < 30 || c.AutomationInterval > 86400 {
+		bad("SERK_AUTOMATION_INTERVAL_SECONDS must be 30..86400")
 	}
 	if prod && !c.SoDStrict {
 		bad("SERK_SOD_STRICT=false is not allowed in production")

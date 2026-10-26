@@ -470,6 +470,13 @@ func (l *pdfLayout) emit(w io.Writer) error {
 		l.text(fReg, 7.5, l.margin, l.margin-6, pdfMuted, foot)
 		pg := fmt.Sprintf("Page %d of %d", i+1, total)
 		l.text(fBold, 7.5, l.w-l.margin-textWidth(fBold, 7.5, pg), l.margin-6, pdfMuted, pg)
+		if l.d.Watermark != "" {
+			// Faint diagonal watermark: a copy carries its recipient.
+			wm := l.d.Watermark
+			size := 26.0
+			tw := textWidth(fBold, size, wm)
+			fmt.Fprintf(&l.cur.ops, "q 0.72 0.70 0.62 rg BT /F2 %.2f Tf 0.7071 0.7071 -0.7071 0.7071 %.2f %.2f Tm %s Tj ET Q\n", size, l.w/2-tw/2*0.7071, l.h/2-tw/2*0.7071, pdfStr(wm))
+		}
 	}
 
 	var out bytes.Buffer

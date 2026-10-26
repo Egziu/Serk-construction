@@ -167,6 +167,7 @@ func New(cfg Config) *Server {
 	s.registerStaging()
 	s.registerExport()
 	s.registerReports()
+	s.registerPlatform()
 	// Operations console: static assets only; it has no authority of its own.
 	s.mux.Handle("GET /console/", webui.Handler())
 	s.mux.Handle("GET /{$}", http.RedirectHandler("/console/", http.StatusFound))

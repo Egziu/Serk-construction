@@ -142,6 +142,9 @@ func writeXLSX(w io.Writer, d Doc) error {
 		sb.row(sb.title(0, xsMuted, d.Subtitle))
 	}
 	sb.row(sb.title(0, xsMuted, footerLine(d)))
+	if d.Watermark != "" {
+		sb.row(sb.title(0, xsMuted, d.Watermark))
+	}
 	sb.row()
 	addKV := func(b *sheetBuilder, kvs []KV) {
 		for _, kv := range kvs {

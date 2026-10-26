@@ -11,7 +11,8 @@
 # SERK_TENANT_DB_SECRET, SERK_APPROVAL_SIGNING_KEY, SERK_TOKEN_SECRET,
 # SERK_OWNER_PASSWORD, SERK_HEALTH_PASSWORD, SERK_TIMER_PASSWORD, SERK_RATELIMIT_PASSWORD,
 # SERK_ABUSE_KEY, SERK_BANK_DATA_KEY, SERK_BANK_DIGEST_KEY, SERK_SEED_TENANT,
-# SERK_STAGING_LOGIN_PASSPHRASE.
+# SERK_STAGING_LOGIN_PASSPHRASE. Optional: SERK_SEED_TENANT_2 (+ _NAME) for a
+# second synthetic company (e.g. Senselet Construction PLC).
 set -euo pipefail
 
 if [[ "${SERK_ENV:-}" != "staging" && "${SERK_ENV:-}" != "development" ]]; then
@@ -63,7 +64,7 @@ RUN=/tmp/serk
 mkdir -p "$RUN" && chmod 0700 "$RUN"
 export SERK_DB_BASE_DSN="postgres://${DB}"
 SERK_ADMIN_DSN="$OWNER_DSN" serk-seed --out "$RUN/seed.env"
-set -a; . "$RUN/seed.env"; set +a
+set -a; . "$RUN/seed.env"; set +a  # SERK_STAGING_TENANT, _PROJECTS, _COMPANIES
 
 export SERK_HEALTH_DSN="postgres://serk_health:${SERK_HEALTH_PASSWORD}@${DB}"
 export SERK_SCHEDULER_DSN="postgres://serk_timer:${SERK_TIMER_PASSWORD}@${DB}"

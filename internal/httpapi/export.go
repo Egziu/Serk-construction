@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/serk-group/serk-construction/internal/export"
+	"github.com/serk-group/serk-construction/internal/kernel"
 )
 
 // Exports (PDF, DOCX, XLSX) of any read the console shows.
@@ -129,7 +131,21 @@ func (s *Server) exportDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principalFrom(r.Context())
+	// Anti-exfiltration: the person's daily export budget (tenant setting).
+	if s.cfg.Kernel != nil {
+		if err := s.cfg.Kernel.RecordExport(r.Context(), p, u.Path, int64(len(body))); err != nil {
+			if errors.Is(err, kernel.ErrExportBudget) {
+				s.cfg.Logger.Warn("security", "event", "export_budget_exceeded", "tenant", p.TenantID, "sub", p.UserID)
+				w.Header().Set("Retry-After", "3600")
+				writeErr(w, http.StatusTooManyRequests, "export_budget", "daily export limit reached; security has been notified")
+				return
+			}
+			s.fail(w, err)
+			return
+		}
+	}
 	d.Company, d.Brand = s.companyName(r, q.Get("entity")), s.cfg.Brand
+	d.Watermark = "Confidential · prepared for " + p.UserID
 	d.Subtitle = cleanTitle(q.Get("subtitle"))
 	d.GeneratedBy, d.GeneratedAt = p.UserID, time.Now()
 	var out bytes.Buffer
@@ -151,6 +167,11 @@ func (s *Server) exportDoc(w http.ResponseWriter, r *http.Request) {
 func (s *Server) companyName(r *http.Request, entity string) string {
 	if s.cfg.CompanyName != "" {
 		return s.cfg.CompanyName
+	}
+	if s.cfg.Kernel != nil {
+		if st, err := s.cfg.Kernel.TenantSettings(r.Context(), principalFrom(r.Context())); err == nil && st.LetterheadName != "" {
+			return st.LetterheadName
+		}
 	}
 	code, body := s.internalGET(r, "/v1/p2p-reference")
 	if code != http.StatusOK {

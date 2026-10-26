@@ -22,8 +22,11 @@ type Doc struct {
 	Subtitle    string
 	GeneratedBy string
 	GeneratedAt time.Time
-	Meta        []KV
-	Sections    []Section
+	// Watermark is printed faintly across every PDF page and in the DOCX
+	// header and XLSX summary (who the copy was prepared for).
+	Watermark string
+	Meta      []KV
+	Sections  []Section
 }
 
 // KV is one labelled value.

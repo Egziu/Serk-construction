@@ -211,3 +211,14 @@ code { font-family: var(--mono); font-size: 13px; }
 .reportgrid .card h3 { font-family: var(--display); font-size: 18px; margin: 0 0 6px; font-weight: 600; }
 .reportgrid .card p { margin: 0; color: var(--muted); font-size: 14px; }
 .foot-note { color: var(--muted); font-size: 12px; margin-top: 28px; }
+
+/* ---------- ask, risks, automation ---------- */
+.askbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.askbar input { flex: 1; font-size: 16px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+.chips button { min-height: 32px; padding: 4px 12px; font-size: 13px; font-weight: 500; }
+.answer .answer-text p { margin: 6px 0; font-size: 16px; }
+.answer .sources { margin: 0; padding-left: 18px; }
+.finding h3 { font-family: var(--display); font-size: 18px; font-weight: 600; margin: 0; }
+.finding .advice { border-left: 3px solid var(--brass); padding-left: 10px; margin: 10px 0; }
+.drawer-sub { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 10px 16px 2px; font-weight: 700; }

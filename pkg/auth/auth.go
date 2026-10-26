@@ -136,6 +136,14 @@ const (
 	// PermSiteDeviceManage revokes anyone's field device (identity
 	// administration); an owner revokes their own with PermSiteDeviceRegister.
 	PermSiteDeviceManage Permission = "site.device.manage"
+
+	// Platform (migration 0038): tenant portal settings, automation rules
+	// (maker/checker), intelligence. None of these can decide a financial
+	// document; they configure, observe and recommend.
+	PermTenantSettingsManage Permission = "tenant.settings.manage"
+	PermAutomationManage     Permission = "automation.manage"
+	PermAutomationActivate   Permission = "automation.activate"
+	PermIntelligenceRead     Permission = "intelligence.read"
 )
 
 // Role is a named permission bundle. Roles are tenant-scoped data in
@@ -149,41 +157,41 @@ type Role struct {
 // tests: no role holds two of journal create/approve/post; no role holds both
 // fx.manage and fx.approve; no role both defines and publishes workflows.
 var DefaultRoles = map[string]Role{
-	"accountant": {Name: "accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead,
+	"accountant": {Name: "accountant", Permissions: []Permission{PermIntelligenceRead, PermJournalCreate, PermJournalRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead,
 		PermBankReconcile, PermP2PRead}},
 	// Treasury prepares and releases payments (two different officers: the
 	// database refuses release by the preparer). It does not import bank
 	// statements: the evidence that settles a payment comes from someone
 	// independent of the payment (review 3, H2).
-	"treasury_officer": {Name: "treasury_officer", Permissions: []Permission{PermFXManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead,
+	"treasury_officer": {Name: "treasury_officer", Permissions: []Permission{PermIntelligenceRead, PermFXManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead,
 		PermPaymentPrepare, PermPaymentRelease, PermBankAcctManage, PermP2PRead}},
 	"bank_statement_officer": {Name: "bank_statement_officer", Permissions: []Permission{PermBankImport, PermScopeTenantWide, PermP2PRead}},
-	"finance_manager": {Name: "finance_manager", Permissions: []Permission{PermJournalApprove, PermJournalRead, PermFXRead, PermFXApprove,
+	"finance_manager": {Name: "finance_manager", Permissions: []Permission{PermIntelligenceRead, PermJournalApprove, PermJournalRead, PermFXRead, PermFXApprove,
 		PermFXPolicyApprove, PermWBSApprove, PermScopeTenantWide, PermWorkflowRead, PermAPApproveException, PermPaymentApprove,
 		PermSupplierBankApprove, PermBankDetailsReveal, PermCustomerApprove, PermStockItemApprove, PermP2PRead}},
-	"controller": {Name: "controller", Permissions: []Permission{PermJournalPost, PermJournalReverse, PermJournalRead, PermPeriodClose,
+	"controller": {Name: "controller", Permissions: []Permission{PermIntelligenceRead, PermJournalPost, PermJournalReverse, PermJournalRead, PermPeriodClose,
 		PermAccountManage, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PPolicyManage, PermContractPolicyManage, PermP2PRead}},
-	"cfo": {Name: "cfo", Permissions: []Permission{PermJournalRead, PermFXRead, PermFXApprove, PermFXApproveExcept, PermFXPolicyApprove,
+	"cfo": {Name: "cfo", Permissions: []Permission{PermIntelligenceRead, PermJournalRead, PermFXRead, PermFXApprove, PermFXApproveExcept, PermFXPolicyApprove,
 		PermPeriodReopen, PermAuditRead, PermScopeTenantWide, PermWorkflowRead, PermWorkflowPublish, PermApprovalHighValue,
 		PermPaymentApprove, PermP2PPolicyApprove, PermBudgetOverride, PermBankAcctApprove, PermBankDetailsReveal, PermContractApprove, PermContractPolicyApprove, PermP2PRead}},
-	"auditor":            {Name: "auditor", Permissions: []Permission{PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PRead}},
-	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermStockIssueApprove, PermScheduleApprove, PermSiteDiaryApprove, PermP2PRead}},
+	"auditor":            {Name: "auditor", Permissions: []Permission{PermIntelligenceRead, PermJournalRead, PermAuditRead, PermFXRead, PermScopeTenantWide, PermWorkflowRead, PermP2PRead}},
+	"project_manager":    {Name: "project_manager", Permissions: []Permission{PermIntelligenceRead, PermJournalRead, PermFXRead, PermWBSManage, PermWorkflowRead, PermPRApprove, PermStockIssueApprove, PermScheduleApprove, PermSiteDiaryApprove, PermP2PRead}},
 	"project_accountant": {Name: "project_accountant", Permissions: []Permission{PermJournalCreate, PermJournalRead, PermFXRead, PermWorkflowRead}},
-	"process_owner":      {Name: "process_owner", Permissions: []Permission{PermWorkflowDefine, PermWorkflowRead}},
-	"workflow_admin":     {Name: "workflow_admin", Permissions: []Permission{PermWorkflowAdmin, PermWorkflowRead, PermScopeTenantWide}},
+	"process_owner":      {Name: "process_owner", Permissions: []Permission{PermWorkflowDefine, PermWorkflowRead, PermAutomationManage, PermIntelligenceRead, PermScopeTenantWide}},
+	"workflow_admin":     {Name: "workflow_admin", Permissions: []Permission{PermWorkflowAdmin, PermWorkflowRead, PermAutomationActivate, PermIntelligenceRead, PermScopeTenantWide}},
 	// Identity administration holds no financial permission at all.
-	"security_admin": {Name: "security_admin", Permissions: []Permission{PermIdentityRevoke, PermAuditRead, PermSiteDeviceManage}},
+	"security_admin": {Name: "security_admin", Permissions: []Permission{PermIdentityRevoke, PermAuditRead, PermSiteDeviceManage, PermTenantSettingsManage, PermScopeTenantWide}},
 	// Journey A operational roles.
 	"estimator":           {Name: "estimator", Permissions: []Permission{PermBOQManage, PermP2PRead}},
-	"commercial_manager":  {Name: "commercial_manager", Permissions: []Permission{PermBOQApprove, PermContractManage, PermIPCCertify, PermARCreditApprove, PermARRetentionApprove, PermP2PRead}},
+	"commercial_manager":  {Name: "commercial_manager", Permissions: []Permission{PermIntelligenceRead, PermBOQApprove, PermContractManage, PermIPCCertify, PermARCreditApprove, PermARRetentionApprove, PermP2PRead}},
 	"site_engineer":       {Name: "site_engineer", Permissions: []Permission{PermPRCreate, PermGRNConfirm, PermRFQEvaluate, PermMeasureVerify, PermStockIssueApprove, PermSiteDiaryManage, PermSiteDeviceRegister, PermP2PRead}},
 	"storekeeper":         {Name: "storekeeper", Permissions: []Permission{PermGRNCreate, PermStockReceive, PermStockIssue, PermStockCount, PermStockTransfer, PermP2PRead}},
 	"procurement_officer": {Name: "procurement_officer", Permissions: []Permission{PermSupplierManage, PermRFQManage, PermPOManage, PermStockItemManage, PermP2PRead}},
-	"procurement_manager": {Name: "procurement_manager", Permissions: []Permission{PermSupplierApprove, PermRFQAward, PermPOApprove, PermWarehouseManage, PermP2PRead}},
+	"procurement_manager": {Name: "procurement_manager", Permissions: []Permission{PermIntelligenceRead, PermSupplierApprove, PermRFQAward, PermPOApprove, PermWarehouseManage, PermP2PRead}},
 	"ap_clerk":            {Name: "ap_clerk", Permissions: []Permission{PermAPEnter, PermP2PRead}},
 	"ap_supervisor":       {Name: "ap_supervisor", Permissions: []Permission{PermAPApprove, PermP2PRead}},
 	// Journey B operational roles.
-	"quantity_surveyor": {Name: "quantity_surveyor", Permissions: []Permission{PermMeasureCreate, PermIPCPrepare, PermP2PRead}},
+	"quantity_surveyor": {Name: "quantity_surveyor", Permissions: []Permission{PermIntelligenceRead, PermMeasureCreate, PermIPCPrepare, PermP2PRead}},
 	"ar_clerk": {Name: "ar_clerk", Permissions: []Permission{PermCustomerManage, PermARInvoiceCreate, PermARReceiptCreate, PermARCreditCreate, PermARRetentionCreate, PermScopeTenantWide,
 		PermP2PRead}},
 	// Approves stock count adjustments. Separate from the journal chain: the
@@ -191,7 +199,7 @@ var DefaultRoles = map[string]Role{
 	// controller, and its preparer may do neither.
 	"inventory_controller": {Name: "inventory_controller", Permissions: []Permission{PermStockAdjustApprove, PermStockTransferApprove, PermScopeTenantWide, PermP2PRead}},
 	// Plans and reports progress; a project manager approves (GATED-02).
-	"planner":       {Name: "planner", Permissions: []Permission{PermScheduleManage, PermP2PRead}},
+	"planner":       {Name: "planner", Permissions: []Permission{PermIntelligenceRead, PermScheduleManage, PermP2PRead}},
 	"ar_supervisor": {Name: "ar_supervisor", Permissions: []Permission{PermARInvoiceApprove, PermARReceiptConfirm, PermScopeTenantWide, PermP2PRead}},
 }
 

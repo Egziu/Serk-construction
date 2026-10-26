@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/serk-group/serk-construction/internal/aiphrase"
 	"github.com/serk-group/serk-construction/internal/config"
 	"github.com/serk-group/serk-construction/internal/httpapi"
 	"github.com/serk-group/serk-construction/internal/kernel"
@@ -85,6 +86,17 @@ func main() {
 		log.Warn("approval signing key is inside the API process (refused in production): run serk-signer and set SERK_SIGNER_SOCKET")
 	}
 	svc := kernel.New(router, auth.NewAuthorizer(nil, cfg.SoDStrict)).UseApprovalSigner(issuer)
+	if cfg.AIEndpoint != "" {
+		ph, err := aiphrase.New(aiphrase.Config{Endpoint: cfg.AIEndpoint, APIKey: string(cfg.AIKey), Model: cfg.AIModel})
+		if err != nil {
+			log.Error("assistant model", "err", err)
+			os.Exit(1)
+		}
+		svc.UsePhraser(ph)
+		log.Info("assistant phrasing model enabled (rephrases computed facts only)", "model", cfg.AIModel)
+	} else {
+		log.Info("assistant runs deterministically (no SERK_AI_ENDPOINT)")
+	}
 	if ring := cfg.BankDataRing(); ring != nil {
 		svc.UseBankDataKeys(*ring)
 	} else {
@@ -130,6 +142,9 @@ func main() {
 		log.Warn("STAGING persona sign-in enabled: test environment with synthetic data only", "tenant", cfg.StagingTenant)
 		staging = &httpapi.StagingLogin{Passphrase: cfg.StagingLoginPassphrase, Tenant: cfg.StagingTenant, Projects: cfg.StagingProjects,
 			Signer: httpapi.HS256Verifier{Secret: cfg.HS256Secret, Issuer: cfg.TokenIssuer, Audience: cfg.TokenAudience}}
+		for _, c := range cfg.StagingCompanies {
+			staging.Companies = append(staging.Companies, httpapi.StagingCompany{ID: c.ID, Name: c.Name, Projects: c.Projects})
+		}
 	}
 	h := httpapi.New(httpapi.Config{Verifier: verifier, Kernel: svc, Store: router, Logger: log, RatePerMinute: cfg.RatePerMinute, Metrics: metrics,
 		Abuse: abuse, Staging: staging, CompanyName: cfg.CompanyName})
@@ -141,6 +156,7 @@ func main() {
 		}
 		defer sched.Close()
 		go runWorkflowTimers(ctx, svc, sched, time.Duration(cfg.WorkflowTimerInterval)*time.Second, log)
+		go runAutomation(ctx, svc, sched, time.Duration(cfg.AutomationInterval)*time.Second, log)
 	} else {
 		log.Warn("workflow timers disabled (SERK_SCHEDULER_DSN not set): SLA escalation and expiry will not run")
 	}
@@ -148,6 +164,29 @@ func main() {
 	if err := httpapi.Listen(ctx, cfg.Listen, h, log); err != nil {
 		log.Error("server", "err", err)
 		os.Exit(1)
+	}
+}
+
+// runAutomation evaluates the customers' active rules and records risk
+// snapshots. Like the workflow timers it learns tenant ids from the
+// scheduler login and acts inside each tenant's own role; it only notifies.
+func runAutomation(ctx context.Context, svc *kernel.Service, sched *pgxpool.Pool, every time.Duration, log *slog.Logger) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	lister := func(ctx context.Context) ([]string, error) { return postgres.DueAutomationTenants(ctx, sched, 1000) }
+	for {
+		res, err := svc.RunDueAutomation(ctx, lister)
+		if err != nil && ctx.Err() == nil {
+			log.Error("automation", "err", err)
+		}
+		if res.Rules+res.Snapshots > 0 {
+			log.Info("automation", "rules", res.Rules, "findings", res.Findings, "notified", res.Notified, "resolved", res.Resolved, "snapshots", res.Snapshots)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
 	}
 }
 
